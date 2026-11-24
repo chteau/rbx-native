@@ -3505,6 +3505,18 @@ both the plain fetch failure and the silent fall back to a default
   manifest). The `flatpak` workflow builds and lints it on PRs that touch
   packaging. Not done yet: the Flathub submission itself, which waits for
   a tagged release.
+- [x] **Credits for the free assets we ship.** `CREDITS.md` lists every
+  third-party font, icon set, 3D model source, built-in data set and
+  embedded program, plus the projects ideas came from: owner, link,
+  licence, whether the credit is required, and what it's used for. It's
+  generated from `assets/credits.toml`, which Help › About RbxNative
+  (Settings' About page) also reads, and a test keeps the two in step.
+  Every package (release zips and tarballs, the AppImage, the Windows
+  setup, the macOS app, the Flatpak and test builds) carries `CREDITS.md`
+  and a `licenses/` folder with the texts that have to travel with the
+  files (the fonts' OFL, Lucide's ISC, Twemoji's CC BY 4.0, Loren's and
+  Promise's MIT, csg.js and rbx-dom's MIT). Free kits model cards name
+  each model's own artists.
 
 ### Collaboration (`rbx_presence`)
 - [x] **Live co-editing between rbx-native editors, and with Studio

@@ -5,12 +5,11 @@
 use gpui_kit::component::input::SelectAll;
 use gpui_kit::*;
 
-use super::{menus, MenuQuit, MenuStudioSettings, Template};
+use super::{menus, MenuAbout, MenuQuit, MenuStudioSettings, Template};
 
-actions!(menu_bar, [MenuAbout, MenuHide, MenuHideOthers, MenuShowAll]);
+actions!(menu_bar, [MenuHide, MenuHideOthers, MenuShowAll]);
 
 pub(super) fn install(cx: &mut App) {
-    cx.on_action(|_: &MenuAbout, _| about());
     cx.on_action(|_: &MenuHide, cx| cx.hide());
     cx.on_action(|_: &MenuHideOthers, cx| cx.hide_other_apps());
     cx.on_action(|_: &MenuShowAll, cx| cx.unhide_other_apps());
@@ -117,11 +116,4 @@ pub(super) fn picked_by_key(command: crate::shortcuts::Command) -> bool {
         key_char: None,
     };
     crate::shortcuts::pressed(command, &keystroke)
-}
-
-/// AppKit's standard About panel: the bundle's name, icon and version.
-fn about() {
-    if let Some(main) = objc2::MainThreadMarker::new() {
-        objc2_app_kit::NSApplication::sharedApplication(main).orderFrontStandardAboutPanel(None);
-    }
 }
