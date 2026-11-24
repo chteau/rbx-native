@@ -6,7 +6,7 @@
 
 use glam::Vec3;
 
-use crate::gizmo::{Axis, End, Shape};
+use crate::gizmo::{Axis, End, Shape, Skin};
 
 use super::pipeline::{self, Surface, Target};
 use mesh::{Vertex, CAPACITY};
@@ -75,15 +75,17 @@ impl Draggers {
         held: Option<End>,
         hover: Option<Axis>,
         eye: Vec3,
+        skin: Skin,
     ) {
         let Some(shape) = shape else {
             self.count = 0;
             return;
         };
 
-        let mut vertices = mesh::mesh(&shape, held, eye);
+        let mut vertices = mesh::hovered_mesh(&shape, held, hover, eye);
+        mesh::recolor(&mut vertices, skin);
         if let Some(axis) = hover {
-            mesh::light(&mut vertices, axis);
+            mesh::light(&mut vertices, axis, skin);
         }
         self.count = vertices.len() as u32;
         queue.write_buffer(&self.vertices, 0, bytemuck::cast_slice(&vertices));

@@ -80,7 +80,7 @@ fn a_gizmo_fits_the_buffer_it_reserved() {
 
 #[test]
 fn the_move_arms_fill_exactly_what_they_reserve() {
-    let vertices = arms(&handles(), Vec3::splat(40.0), arrow, every, false);
+    let vertices = arms(&handles(), Vec3::splat(40.0), every, false);
     assert_eq!(vertices.len(), ARROW_VERTICES);
 }
 
@@ -146,7 +146,7 @@ fn every_arrow_is_wound_outwards() {
 
 #[test]
 fn a_whole_gizmo_is_wound_outwards() {
-    assert!(signed_volume(&arms(&handles(), Vec3::splat(40.0), arrow, every, false)) > 0.0);
+    assert!(signed_volume(&arms(&handles(), Vec3::splat(40.0), every, false)) > 0.0);
 }
 
 /// A torus is a closed surface, so the same divergence-theorem check that
@@ -233,7 +233,7 @@ fn the_arms_are_painted_back_to_front() {
     // painted first and the one reaching towards it last, so that with the
     // depth test off the near arm still ends up on top.
     let handles = Handles::new(Vec3::ZERO, basis(None), 1.0);
-    let vertices = arms(&handles, Vec3::new(100.0, 0.0, 0.0), arrow, every, false);
+    let vertices = arms(&handles, Vec3::new(100.0, 0.0, 0.0), every, false);
 
     let (chunks, _) = vertices.as_chunks::<VERTICES_PER_ARM>();
     let first = chunks.first().expect("six arms");
@@ -327,7 +327,7 @@ fn each_arm_carries_its_axis_colour() {
 fn a_local_gizmo_points_along_the_parts_own_axes() {
     let rotation = glam::Mat3::from_rotation_y(std::f32::consts::FRAC_PI_2);
     let handles = Handles::new(Vec3::ZERO, basis(Some(rotation)), 1.0);
-    let vertices = arms(&handles, Vec3::splat(40.0), arrow, every, false);
+    let vertices = arms(&handles, Vec3::splat(40.0), every, false);
 
     // The red (X) arrow's tip now stands on world -Z, not world +X.
     let red = Axis::X.color().map(f32::to_bits);
@@ -546,7 +546,7 @@ fn a_many_part_model_draws_its_parts_hotspots_up_to_the_cap() {
 #[test]
 fn a_hovered_ring_is_drawn_brighter_and_alone() {
     let mut vertices = rings(&handles(), Vec3::splat(40.0));
-    light(&mut vertices, Axis::Y);
+    light(&mut vertices, Axis::Y, crate::gizmo::Skin::Classic);
     let lit = vertices
         .iter()
         .filter(|vertex| vertex.color != Axis::Y.color());
@@ -604,4 +604,65 @@ fn a_lit_handle_keeps_its_hue() {
     let old = [0.565, 0.598, 0.95];
     let new = lit(Axis::Z.color());
     assert!(new[0] < old[0] - 0.3 && new[1] < old[1] - 0.3, "{new:?}");
+}
+
+fn next_gen_handles(eye: Vec3) -> Handles {
+    let pose = crate::camera::look_at_pose(eye, Vec3::ZERO);
+    Handles::new(Vec3::ZERO, basis(None), 3.0).skinned(
+        crate::gizmo::Skin::NextGen,
+        pose,
+        false,
+        false,
+    )
+}
+
+#[test]
+fn next_gen_move_draws_three_arrows_and_three_squares() {
+    let eye = Vec3::splat(40.0);
+    let classic = mesh(&Shape::Move(handles()), None, eye).len();
+    let next_gen = mesh(&Shape::Move(next_gen_handles(eye)), None, eye).len();
+    // Classic's six arrows and origin ball against three arrows and three
+    // two-sided squares.
+    assert_eq!(classic, 6 * VERTICES_PER_ARM + VERTICES_PER_BALL);
+    assert_eq!(next_gen, 3 * VERTICES_PER_ARM + 3 * 12);
+}
+
+#[test]
+fn a_hovered_next_gen_arrow_thickens() {
+    let eye = Vec3::splat(40.0);
+    let handles = next_gen_handles(eye);
+    let widest = |hover| {
+        hovered_mesh(&Shape::Move(handles), None, hover, eye)
+            .iter()
+            // The X arrow's own shaft: the squares share its colour.
+            .filter(|vertex| vertex.color == Axis::X.color())
+            .map(|vertex| Vec3::from(vertex.position))
+            .filter(|point| point.y.abs() < 0.5 && point.z.abs() < 0.5)
+            .map(|point| point.y.hypot(point.z))
+            .fold(0.0, f32::max)
+    };
+    let ratio = widest(Some(Axis::X)) / widest(None);
+    assert!((ratio - 1.3).abs() < 1e-3, "{ratio}");
+}
+
+#[test]
+fn next_gen_rotate_draws_near_halves_inside_a_view_ring() {
+    let eye = Vec3::splat(40.0);
+    let classic = mesh(&Shape::Rotate(handles()), None, eye).len();
+    let next_gen = mesh(&Shape::Rotate(next_gen_handles(eye)), None, eye);
+    let view = next_gen
+        .iter()
+        .filter(|vertex| vertex.color == crate::gizmo::VIEW_COLOR)
+        .count();
+    assert_eq!(view, classic / 3);
+    assert_eq!(next_gen.len() - view, classic / 2);
+}
+
+#[test]
+fn the_next_gen_skin_repaints_the_axis_colours() {
+    let mut vertices = mesh(&Shape::Move(handles()), None, Vec3::splat(40.0));
+    recolor(&mut vertices, crate::gizmo::Skin::NextGen);
+    assert!(vertices
+        .iter()
+        .all(|vertex| Axis::ALL.iter().all(|axis| vertex.color != axis.color())));
 }
