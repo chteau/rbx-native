@@ -3041,6 +3041,41 @@ both the plain fetch failure and the silent fall back to a default
   `legacy-universe:manage` game-icon route
   (`docs/research/update-planning-icon-api.md`). Timer edits apply to the
   next update only.
+- [x] **New Studio Camera Controls (beta)**: Studio's reworked edit camera,
+  behind a beta of the same name, off by default (the old camera stays as
+  it was). Measured in Studio 0.748 from `workspace.CurrentCamera.CFrame`
+  and `Focus` sampled every frame, beta off and on (2026-11-24):
+  - Old camera: W/A/S/D/Q/E move 2 studs per rendered frame (no ramp,
+    frame-rate bound), Shift a fifth of that; a wheel notch moves 15 studs
+    along the cursor's ray; the right button orbits the focus at 0.4°/px
+    yaw and 0.3°/px pitch; the middle button pans 0.8 studs/px; F snaps.
+  - New camera: time-based flight that ramps up with a 0.137 s time
+    constant and stops with 0.040 s; the speed is the multiplier (2.00x)
+    times the focus distance while orbiting, kept as it was once flying;
+    right button + wheel steps the multiplier by 2^(1/4); the wheel zooms
+    by 2^(1/5) per notch (5 notches halve the distance), towards the focus
+    while orbiting and towards the surface under the cursor while flying,
+    easing in over about a quarter second; the right button turns 0.65°/px
+    about the focus while orbiting and in place while flying; Alt + right
+    drag dollies, doubling the distance every 150 px; the middle button
+    pans at the focus depth while orbiting; F glides in and frames the
+    selection's box at 70% of the view on whichever axis fills first, then
+    orbits its centre. Adaptive, FPS and Orbit modes sit under the View
+    Selector like in Studio.
+- [x] **Next-Gen Draggers (beta)**: Studio's redesigned Move and Rotate
+  handles as a second skin on the same gizmo code, behind a beta of the
+  same name, off by default. Read off Studio 0.748's DraggerFramework and
+  checked against screenshots at fixed cameras: the Dragger Visualization
+  colours (X 237,77,59, Y 71,184,79, Z 68,127,253, view 230,230,230),
+  handles sized as Studio's (arrows reaching 0.188 x sin(fov) x depth,
+  rings 0.147 x, thin shafts and small heads), Move's arrows on the
+  positive ends only with a square per plane that slides the selection in
+  it, a hovered arrow 30% thicker, and Rotate's rings drawn and grabbed on
+  their near half inside a white view ring (turns about the line from the
+  camera) with a trackball inside for a free turn. Scale's balls take the
+  colours; their shape doesn't change with the beta. Still classic with it
+  on: arrows start at a fixed gap rather than at the part's surface, and
+  Transform and Edit Pivot keep their combined classic handles.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
@@ -3789,7 +3824,8 @@ there. What each does live, and where it stands here:
 | New Video API | `VideoPlayer` (Looping, PlaybackSpeed, Volume, TimeLength, IsPlaying, Resolution) and a `VideoDisplay` GuiObject (VideoColor3, VideoTransparency, ScaleType, ResampleMode, TileSize) | Not built: no video decoding here |
 | AvatarAbilities Character Controller Library | No new creatable class beyond `ControllerManager` | Not built: nothing to mirror yet |
 | Animation Graph State Machines | `AnimationGraphDefinition` creatable | Already here (Animation) |
-| Next-Gen Draggers, New Studio Camera Controls (Updated) | Studio's own draggers and edit camera | Not built: Studio UI feel, a re-measure job each |
+| New Studio Camera Controls (Updated) | Time-based flight with a ramp, speed from the focus distance, log zoom to the cursor, Alt + right dolly, F glides and frames at 70%, Adaptive/FPS/Orbit modes | Built behind a beta of the same name (PR #PRNUM) |
+| Next-Gen Draggers | New colours, smaller handles, positive Move arrows plus plane squares, near-half rings in a view ring with a trackball | Built behind a beta of the same name (PR #PRNUM) |
 | Face Capture, Live Animation Creator, Animation Generation, Prompt-to-Avatar, Scene Generation, Playtest Agent | Assistant/camera/AI tools in Studio | Not built: Roblox's cloud AI services |
 | Party Simulator, Remote Breakpoints, Server Inspection | Team Test and server tooling | Not built: needs real Roblox servers |
 | Package Overrides, Auto-Reimport, Video Uploads, Visualizing UGC Validation, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
@@ -4009,16 +4045,9 @@ on in real Studio and measuring it there, the same as everything above.
   material pass already honours `SurfaceAppearance.AlphaMode`; this is the
   same switch on the variant path. Measured 2026-11-21: default Opaque, enum
   Overlay 0, Transparency 1, TintMask 2, Opaque 3.
-- [ ] 📋 **New Studio Camera Controls (Updated)**: Studio's reworked edit
-  camera. The viewport camera here was matched to the old one; this needs
-  the new one's speeds, focus and orbit measured.
 - [ ] 📋 **New Video API** (`VideoPlayer`): videos on several surfaces,
   wired into the new Audio API. Nothing here plays video or audio yet; a
   still first frame is what the viewer could draw.
-- [ ] 📋 **Next-Gen Draggers**: Roblox's redesigned Move, Rotate and Scale
-  draggers. The draggers here were matched to the current ones (see
-  "What's been implemented" → Editor); the new look is a second skin on the
-  same gizmo code once it ships.
 - [ ] 📋 **Party Simulator**: Party API logic in Server & Clients
   playtests. That rides on the sandbox Play's multiple clients.
 - [ ] 📋 **Playtest Agent**: an Assistant subagent that playtests by

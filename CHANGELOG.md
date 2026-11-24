@@ -4,6 +4,7 @@
 
 - **Union, Negate, Intersect and Separate.** The Model tab has Studio's solid modeling tools now, with the same shortcuts (Ctrl+Shift+G / N / I / U, Ungroup moved to Ctrl+U like Studio). What we save is what current Studio saves, collision data included, so Studio opens our unions, can Separate them, and we Separate theirs.
 - **AI assistants can cut holes now.** `SubtractAsync`, `UnionAsync` and `IntersectAsync` work in edit scripts and through MCP, same as in Studio: you get a new union back and your parts stay put. The modeling guide teaches doorways, windows and arches with them, and when framing with parts is still the cheaper call.
+- **Studio's new camera and draggers (betas).** Turn on "New Studio Camera Controls" in Beta Features and the edit camera flies like Studio's beta: it eases up to speed and stops quick, the speed follows how far you are from what you're looking at (2.00x by default, right button + wheel changes it), the wheel zooms towards what's under the cursor, Alt + right drag dollies, and F glides in and frames the selection the way Studio does. Adaptive, FPS and Orbit are under the view cube. "Next-Gen Draggers" gives Move and Rotate Studio's new look: its colours, smaller handles, plane squares to drag along two axes, a view ring and a trackball. I measured all of it in Studio 0.748 with the betas on and off. (@chteau)
 
 ## 2026-11-23
 
