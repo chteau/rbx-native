@@ -1,6 +1,9 @@
 //! The download half of `collect`: meshes and textures fetched and parsed
 //! into the item.
 
+use glam::{Mat4, Vec3};
+
+use super::super::visual::{cframe_matrix, Place};
 use super::*;
 
 fn note(subject: String, message: String) -> Finding {
@@ -20,6 +23,15 @@ pub(in crate::shell::ugc) fn mesh_geometry(
     bytes: &[u8],
     scale_to: Option<[f32; 3]>,
 ) -> Result<Geometry, rbx_mesh::MeshError> {
+    placed_geometry(bytes, scale_to).map(|(g, _)| g)
+}
+
+/// [`mesh_geometry`] and the stretch the part draws the file's vertices
+/// with: the viewer scales them about the file's origin, not their centre.
+fn placed_geometry(
+    bytes: &[u8],
+    scale_to: Option<[f32; 3]>,
+) -> Result<(Geometry, Stretch), rbx_mesh::MeshError> {
     let sm = rbx_mesh::parse_skinned(bytes)?;
     let mesh = &sm.mesh;
     let center = mesh.bounds.center();
@@ -46,7 +58,14 @@ pub(in crate::shell::ugc) fn mesh_geometry(
             .map(|i| i.iter().count().min(255) as u8)
             .collect()
     });
-    Ok(Geometry {
+    let stretch = Stretch {
+        factor: Vec3::from(factor),
+        centre: match scale_to {
+            Some(_) => Vec3::from(center) * Vec3::from(factor),
+            None => Vec3::ZERO,
+        },
+    };
+    let geometry = Geometry {
         positions,
         triangles,
         uvs: mesh.vertices.iter().map(|v| v.uv).collect(),
@@ -55,7 +74,31 @@ pub(in crate::shell::ugc) fn mesh_geometry(
             skin.bones.iter().map(|b| b.name.clone()).collect()
         }),
         in_studs: scale_to.is_some(),
-    })
+    };
+    Ok((geometry, stretch))
+}
+
+/// How a part draws its mesh file: each vertex times `factor`, so the
+/// centred geometry sits `centre` off the part's origin.
+#[derive(Clone, Copy)]
+struct Stretch {
+    factor: Vec3,
+    centre: Vec3,
+}
+
+/// The stretch a cage that is a `MeshPart` of its own draws with: its file
+/// stretched to the part's `Size` about the file's origin.
+fn stretch_to(geometry: &Geometry, size: [f32; 3]) -> Vec3 {
+    let (lo, hi) = geometry.positions.iter().fold(
+        (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)),
+        |(lo, hi), p| (lo.min(Vec3::from(*p)), hi.max(Vec3::from(*p))),
+    );
+    let extent = hi - lo;
+    Vec3::select(
+        extent.cmpgt(Vec3::ZERO),
+        Vec3::from(size) / extent,
+        Vec3::ONE,
+    )
 }
 
 /// Blocking. `fetch` downloads an asset's bytes by id.
@@ -64,15 +107,25 @@ pub(in crate::shell::ugc) fn resolve(
     fetch: &dyn Fn(&Key) -> Result<Vec<u8>, String>,
 ) -> Collected {
     let mut notes = plan.notes.clone();
+    let mut places: Vec<Place> = Vec::new();
+    let mut stretches: Vec<(Ref, Vec3)> = Vec::new();
     let parts = plan
         .parts
         .iter()
         .map(|p| {
             let geometry = p.mesh.as_ref().and_then(|id| {
                 match fetch(id)
-                    .and_then(|b| mesh_geometry(&b, Some(p.size)).map_err(|e| e.to_string()))
+                    .and_then(|b| placed_geometry(&b, Some(p.size)).map_err(|e| e.to_string()))
                 {
-                    Ok(g) => Some(g),
+                    Ok((g, stretch)) => {
+                        places.push(Place {
+                            name: p.name.clone(),
+                            node: p.node,
+                            local: Mat4::from_translation(stretch.centre),
+                        });
+                        stretches.push((p.node, stretch.factor));
+                        Some(g)
+                    }
                     Err(e) => {
                         notes.push(note(
                             p.name.clone(),
@@ -119,6 +172,20 @@ pub(in crate::shell::ugc) fn resolve(
     for c in ordered {
         match fetch(&c.mesh).and_then(|b| mesh_geometry(&b, None).map_err(|e| e.to_string())) {
             Ok(g) => {
+                // A WrapLayer's cages are drawn the way its handle draws
+                // its mesh, after the layer's origin.
+                let stretch = match c.fit {
+                    Some(size) => stretch_to(&g, size),
+                    None => stretches
+                        .iter()
+                        .find(|(node, _)| *node == c.node)
+                        .map_or(Vec3::ONE, |(_, f)| *f),
+                };
+                places.push(Place {
+                    name: c.name.clone(),
+                    node: c.node,
+                    local: Mat4::from_scale(stretch) * cframe_matrix(&c.origin),
+                });
                 let template = match c.kind {
                     CageKind::Inner => {
                         inner.get_or_insert_with(|| g.clone());
@@ -152,6 +219,7 @@ pub(in crate::shell::ugc) fn resolve(
         notes,
         from_file: false,
         head: None,
+        places,
     }
 }
 

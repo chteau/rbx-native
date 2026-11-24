@@ -4,8 +4,8 @@ use gpui_kit::component::Root;
 use gpui_kit::*;
 
 use super::super::Shell;
-use super::check::Check;
-use super::{ItemKind, ItemSource};
+use super::check::{Check, Run};
+use super::{visual, ItemKind, ItemSource};
 use crate::tokens;
 
 mod view;
@@ -19,6 +19,13 @@ struct ValidatorWindow {
     shell: Entity<Shell>,
     check: Check,
     scroll: ScrollHandle,
+    /// The finding drawn on the model (Visualizing UGC Validation), by its
+    /// index in the findings.
+    shown: Option<usize>,
+    /// Where the shown finding was last drawn, so a redraw only happens
+    /// when its part moved.
+    drawn_at: Option<glam::Mat4>,
+    _subscriptions: Vec<Subscription>,
 }
 
 fn slot(view: &mut ValidatorWindow) -> &mut Check {
@@ -114,19 +121,90 @@ impl ValidatorWindow {
                 .unwrap_or_default();
             (source, kind)
         };
+        // The drawing follows the item as it moves and goes with the window.
+        let observe = cx.observe(&shell, |view: &mut ValidatorWindow, _, cx| view.redraw(cx));
+        let release = cx.on_release(|view: &mut ValidatorWindow, cx| {
+            if view.shown.is_some() {
+                view.shell.update(cx, |shell, cx| {
+                    shell
+                        .viewport
+                        .update(cx, |v, _| v.set_ugc_validation(Vec::new()))
+                });
+            }
+        });
         let mut view = ValidatorWindow {
             shell,
             check: Check::new(source, kind),
             scroll: ScrollHandle::new(),
+            shown: None,
+            drawn_at: None,
+            _subscriptions: vec![observe, release],
         };
         view.restart(cx);
         view
     }
 
     fn restart(&mut self, cx: &mut Context<Self>) {
+        self.clear(cx);
         let shell = self.shell.clone();
         self.check.start(&shell, cx, slot);
         cx.notify();
+    }
+
+    /// Whether findings can be clicked to draw them: the beta is on and the
+    /// item is in the place, not a file.
+    fn picking(&self) -> bool {
+        crate::beta::enabled(visual::BETA_ID)
+            && matches!(self.check.source, Some(ItemSource::Instance { .. }))
+    }
+
+    /// Draws finding `index` on the model, as clicking a check's row does in
+    /// Studio: another row replaces the drawing, and one with nothing to
+    /// point at clears it.
+    fn show(&mut self, index: usize, cx: &mut Context<Self>) {
+        self.shown = Some(index);
+        self.drawn_at = None;
+        self.redraw(cx);
+        cx.notify();
+    }
+
+    fn redraw(&mut self, cx: &mut Context<Self>) {
+        let Some(index) = self.shown else { return };
+        let picked = match &self.check.run {
+            Run::Done(done) => done
+                .findings
+                .get(index)
+                .filter(|f| visual::drawable(f.rule))
+                .and_then(|f| {
+                    let at = visual::frame(&self.shell.read(cx).dom, &done.collected, f)?;
+                    Some((at, f, &done.collected))
+                }),
+            _ => None,
+        };
+        let at = picked.as_ref().map(|p| p.0);
+        if at.is_some() && at == self.drawn_at {
+            return;
+        }
+        self.drawn_at = at;
+        let segments = picked.map_or_else(Vec::new, |(at, f, collected)| {
+            visual::drawing(collected, f, at)
+        });
+        self.shell.update(cx, |shell, cx| {
+            shell
+                .viewport
+                .update(cx, |v, _| v.set_ugc_validation(segments))
+        });
+    }
+
+    fn clear(&mut self, cx: &mut Context<Self>) {
+        self.drawn_at = None;
+        if self.shown.take().is_some() {
+            self.shell.update(cx, |shell, cx| {
+                shell
+                    .viewport
+                    .update(cx, |v, _| v.set_ugc_validation(Vec::new()))
+            });
+        }
     }
 
     fn use_selection(&mut self, cx: &mut Context<Self>) {
