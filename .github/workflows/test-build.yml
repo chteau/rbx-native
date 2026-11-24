@@ -88,6 +88,10 @@ jobs:
           if [ "${{ matrix.os }}" = windows ]; then
             .github/release/windivert.sh dist
           fi
+          # The app bundle carries its own (macos-app.sh).
+          if [ "${{ matrix.os }}" != macos ]; then
+            .github/release/notices.sh dist
+          fi
           {
             cat .github/test-build/README-ALPHA.txt
             echo
