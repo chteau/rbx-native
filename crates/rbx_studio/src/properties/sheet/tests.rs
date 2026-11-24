@@ -238,3 +238,21 @@ fn brick_color_is_the_closest_table_colour_to_the_parts_color() {
     assert_eq!(brick.value, "Bright red");
     assert_eq!(brick.edit, Some(EditKind::BrickColor(21)));
 }
+
+#[test]
+fn a_variants_alpha_mode_is_listed_only_under_its_beta() {
+    // Tests never read beta.json, so the beta is off here, as by default.
+    let rows = rows("MaterialVariant", &[("AlphaMode", Variant::Enum(1))]);
+    assert!(!names(&rows).contains(&"AlphaMode"));
+    assert!(names(&rows).contains(&"StudsPerTile"));
+
+    let db = ReflectionDatabase::embedded();
+    let alpha_mode = db.resolve_property("MaterialVariant", "AlphaMode").unwrap();
+    assert!(listed("MaterialVariant", alpha_mode, true));
+    assert!(!listed("MaterialVariant", alpha_mode, false));
+    // Another class's AlphaMode is no business of this beta.
+    let appearance = db
+        .resolve_property("SurfaceAppearance", "AlphaMode")
+        .unwrap();
+    assert!(listed("SurfaceAppearance", appearance, false));
+}

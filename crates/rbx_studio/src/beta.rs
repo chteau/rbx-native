@@ -79,6 +79,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",
     },
     Feature {
+        id: crate::properties::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID,
+        name: "MaterialVariant Alpha Mode",
+        description: "Lists AlphaMode on a MaterialVariant and draws each mode the way Studio's beta of the same name does: Overlay shows the part colour where the colour map is clear, TintMask tints only where it is opaque, and Transparency cuts the surface out below half alpha. Off, the alpha is ignored, as in Studio, but the property still saves.",
+    },
+    Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,
         name: "Module require graph",
         description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",
@@ -190,6 +195,9 @@ pub(crate) fn init() {
         .map(|path| Choices::load(&path))
         .unwrap_or_default();
     rbx_lua::set_luau_exports(choices.is_on(LUAU_EXPORTS_BETA_ID));
+    rbx_viewer::set_variant_alpha_modes(
+        choices.is_on(crate::properties::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID),
+    );
     let _ = LAUNCH.set(choices);
 }
 
