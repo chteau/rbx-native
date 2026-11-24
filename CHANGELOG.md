@@ -2,6 +2,7 @@
 
 ## 2026-11-24
 
+- **Big video uploads don't eat your RAM anymore.** Uploading a video used to load the whole file into memory, twice, so a 1 GB video took about 2 GB of RAM. Now the length and size are read straight off the file and the upload streams from disk: a 1 GB video peaks at 6 MB, same for a 3.5 GB one. Import 3D's images stream the same way. (@chteau)
 - **Seeing where an avatar item check failed.** Turn on the Visualizing UGC Validation beta and clicking a finding in Check Avatar Item draws it on the item in the 3D view, same colours as Studio: the open edges of a mesh that isn't watertight, and the cage vertices whose UVs moved off the template. Checks Studio doesn't draw don't draw here either. (@chteau)
 - **MaterialVariant alpha modes (beta).** Turn on "MaterialVariant Alpha Mode" in Beta Features and a variant's `AlphaMode` works like Studio's beta of the same name. Overlay shows the part colour where the colour map is see-through, TintMask only tints where it's solid, and Transparency cuts the surface out below half alpha. Opaque looks like it always did. I measured each one in Studio side by side. The AlphaMode row shows in Properties with the beta on, and the value saves either way. (@chteau)
 - **`PyramidHandleAdornment` draws now.** It's live in Studio, so it's drawn next to the other handle adornments, with Sides (3 to 32), Size, Height, negative values, DoubleSided and AlwaysOnTop matching what Studio shows. (@chteau)

@@ -2413,7 +2413,10 @@ both the plain fetch failure and the silent fall back to a default
   video lands as a `VideoFrame` in the selected GUI or a new `ScreenGui`.
   Refusals (not ID-verified, too long, the daily limit, the price) and a
   pending review are said in plain words. Studio's own Asset Manager
-  checks none of the limits before it queues a video.
+  checks none of the limits before it queues a video. The file is never
+  loaded whole: the boxes are found by seeking, and the upload streams
+  from disk (as do Import 3D's images), so memory stays flat up to the
+  3.75 GB limit.
 - [x] **Reimport and Auto-Reimport** (`shell/reimport.rs`), behind an
   "Auto-Reimport" beta like Studio's. Import 3D stamps the model with an
   `RBX_ReimportId` (a UUID string, as Studio writes it) and keeps its file
