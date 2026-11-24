@@ -72,6 +72,7 @@ pub(super) fn group(catalogue: &BTreeMap<String, Value>) -> Vec<Pack> {
         let model = KitModel {
             id: slug.clone(),
             name: name(slug, asset),
+            author: authors(asset),
             thumb: Thumb::Url(format!(
                 "https://cdn.polyhaven.com/asset_img/thumbs/{slug}.png?width=256&height=256"
             )),

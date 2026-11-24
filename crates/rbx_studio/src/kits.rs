@@ -85,6 +85,9 @@ pub(crate) struct KitModel {
     /// A Poly Haven slug, or `<pack>/<file stem>` for an added pack.
     pub(crate) id: String,
     pub(crate) name: String,
+    /// Who made it, as its card credits them: a Poly Haven model's own
+    /// artists, an added pack's author.
+    pub(crate) author: String,
     pub(crate) thumb: Thumb,
 }
 
