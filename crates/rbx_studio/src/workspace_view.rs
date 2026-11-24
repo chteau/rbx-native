@@ -522,10 +522,7 @@ impl WorkspaceView {
         // Nothing held survives losing focus: the release events would be
         // delivered elsewhere, leaving the camera drifting for good and the
         // cursor hidden with no way to bring it back.
-        let blur = cx.on_blur(&focus, window, |view, _, _| {
-            view.end_look();
-            view.release_summon();
-        });
+        let blur = cx.on_blur(&focus, window, |view, _, _| view.drop_held());
         // Alt-tabbing away never blurs the focus handle, so the window's own
         // activation is watched too, and, since it's the authoritative OS
         // focus signal (unlike the in-app `focus` handle above), it's also
@@ -533,8 +530,7 @@ impl WorkspaceView {
         let deactivated = cx.observe_window_activation(window, |view, window, _| {
             let active = window.is_window_active();
             if !active {
-                view.end_look();
-                view.release_summon();
+                view.drop_held();
             }
             if view.pacing.set_active(active) {
                 view.retarget_pacing();
@@ -932,6 +928,16 @@ impl WorkspaceView {
     /// Ends the look however it ended, button up inside or outside the panel,
     /// lost focus, window deactivated, because each of those otherwise leaves
     /// the cursor hidden with the camera still turning.
+    /// The view lost the keyboard: every release from here on lands
+    /// elsewhere (a camera key held while the Command Bar takes focus types
+    /// into it and lets go there), so nothing held may stay held, a movement
+    /// key or `Shift` no more than the look button.
+    fn drop_held(&mut self) {
+        self.end_look();
+        self.release_summon();
+        self.pump.input(CameraInput::Release);
+    }
+
     fn end_look(&mut self) {
         self.lock.release();
         self.cursor = None;

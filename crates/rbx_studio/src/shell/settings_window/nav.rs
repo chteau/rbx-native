@@ -1,4 +1,4 @@
-//! The left column: search, the eleven pages, the two settings that are
+//! The left column: search, the twelve pages, the two settings that are
 //! windows of their own, and the config folder.
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -23,10 +23,11 @@ pub(super) enum Page {
     Ai,
     Account,
     Beta,
+    About,
 }
 
 impl Page {
-    pub(super) const ALL: [Page; 11] = [
+    pub(super) const ALL: [Page; 12] = [
         Page::Appearance,
         Page::Accessibility,
         Page::Layout,
@@ -38,6 +39,7 @@ impl Page {
         Page::Ai,
         Page::Account,
         Page::Beta,
+        Page::About,
     ];
 
     pub(super) fn label(self) -> &'static str {
@@ -53,6 +55,7 @@ impl Page {
             Page::Ai => "AI assistants",
             Page::Account => "Account",
             Page::Beta => "Beta features",
+            Page::About => "About",
         }
     }
 
@@ -69,6 +72,7 @@ impl Page {
             Page::Ai => "bot",
             Page::Account => "user",
             Page::Beta => "flask-conical",
+            Page::About => "info",
         }
     }
 
@@ -77,7 +81,7 @@ impl Page {
     pub(super) fn has_reset(self) -> bool {
         match self {
             Page::Beta => !crate::beta::features().is_empty(),
-            Page::Ai => false,
+            Page::Ai | Page::About => false,
             _ => true,
         }
     }
@@ -96,6 +100,7 @@ impl Page {
             Page::Ai => "Let Claude or another MCP client read, edit and playtest the open place.",
             Page::Account => "Your Roblox access and what RbxNative shares about you.",
             Page::Beta => "Try features before they\u{2019}re finished. Switch one off if it misbehaves.",
+            Page::About => "The version you\u{2019}re running, and the people whose work RbxNative is built on.",
         };
         (self.label(), subtitle)
     }

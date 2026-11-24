@@ -13,10 +13,12 @@ use super::{SettingsWindow, ThemeInstall};
 impl Shell {
     /// Brings the Settings window forward, opening it if it isn't.
     /// Opens Settings on the page named `key` (as `Page::from_key` reads
-    /// it). A window already open is only brought forward.
+    /// it). A window already open is brought forward and switches to it
+    /// when it sees the notify.
     pub(crate) fn open_settings_on(&mut self, key: &'static str, cx: &mut Context<Self>) {
         self.settings_open_on = Some(key);
         self.open_settings(cx);
+        cx.notify();
     }
 
     pub(crate) fn settings_window(&self) -> Option<AnyWindowHandle> {

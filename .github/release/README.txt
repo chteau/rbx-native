@@ -39,7 +39,9 @@ lists the options.
 
 LICENSE.txt is RbxNative's license, THIRD-PARTY-LICENSES.html covers the
 Rust crates built into it, and THIRD-PARTY-EMBEDDED.txt the programs it
-carries inside (luau-lsp, cloudflared, slirp4netns). On Windows,
+carries inside (luau-lsp, cloudflared, slirp4netns). CREDITS.md lists
+the fonts, icons, 3D models and ideas it uses and who made them, and
+licenses/ holds the licence texts that travel with them. On Windows,
 WinDivert-LICENSE.txt covers WinDivert (LGPLv3), shipped unmodified from
 https://github.com/basil00/WinDivert.
 

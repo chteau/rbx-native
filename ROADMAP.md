@@ -3508,6 +3508,18 @@ both the plain fetch failure and the silent fall back to a default
   manifest). The `flatpak` workflow builds and lints it on PRs that touch
   packaging. Not done yet: the Flathub submission itself, which waits for
   a tagged release.
+- [x] **Credits for the free assets we ship.** `CREDITS.md` lists every
+  third-party font, icon set, 3D model source, built-in data set and
+  embedded program, plus the projects ideas came from: owner, link,
+  licence, whether the credit is required, and what it's used for. It's
+  generated from `assets/credits.toml`, which Help › About RbxNative
+  (Settings' About page) also reads, and a test keeps the two in step.
+  Every package (release zips and tarballs, the AppImage, the Windows
+  setup, the macOS app, the Flatpak and test builds) carries `CREDITS.md`
+  and a `licenses/` folder with the texts that have to travel with the
+  files (the fonts' OFL, Lucide's ISC, Twemoji's CC BY 4.0, Loren's and
+  Promise's MIT, csg.js and rbx-dom's MIT). Free kits model cards name
+  each model's own artists.
 
 ### Collaboration (`rbx_presence`)
 - [x] **Live co-editing between rbx-native editors, and with Studio
@@ -3705,29 +3717,33 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   to the metre. No skinned rigs, since the glTF export has none either
   ([FBX Exporting Option](https://devforum.roblox.com/t/fbx-exporting-option/231566)).
 
-- [ ] 📋 **Pre-publish check**: one button before publishing that runs
-  the Security Audit (remotes the server trusts without checking) plus
-  what it doesn't cover: broken asset ids, deprecated calls (`wait`,
-  `spawn`, `delay`), unanchored parts that fall at start, DataStore calls
-  without `pcall`, and huge unions or part counts, each linking to where
-  it is in the place.
-- [ ] 📋 **Free model kits in the Toolbox**: Poly Haven's CC0 models
+- [x] **Pre-publish check**: View › Pre-publish Check runs the Security
+  Audit plus broken asset ids, deprecated calls, unanchored parts that fall
+  at start, DataStore/MemoryStore calls outside `pcall`, mesh, union, part
+  and instance budgets and streamed parts read without `WaitForChild`, each
+  linking to where it is. Save/Publish to Roblox runs it first, and
+  `rbxaudit --prepublish` does the same in CI. Rules in
+  `docs/prepublish-check.md`.
+- [x] **Free model kits in the Toolbox**: Poly Haven's CC0 models
   (public API, no key) browsed and imported in one click, scaled to studs
   with pivots set and a credit attribute; Kenney packs (CC0, but no
   automated downloads) added from a downloaded zip. Quaternius moved to a
   non-CC0 licence and Poly Pizza's API needs a key, so neither is listed.
   The MCP `import_model` tool lets an assistant pull a kit in itself.
-  Built on `feat/kit-browser`.
+  Shipped as the Toolbox's Free kits tab.
 - [ ] 📋 **Blender integration, someday**: building with Parts covers
   modeling for now. Later, a live link to Blender (send a selection over,
   get the mesh back as a MeshPart, keep the two in sync) for anything
   Parts and CSG can't do.
 
 ### Play / Test workflow
-- [ ] 📋 **Shareable bug repros**: Recorded playtests (`.rbxrec`) keep
-  positions and events; Local Run's `.rbxnrec` replays the whole session
-  deterministically. This is the share side: export a session, open one
-  a teammate sent, and watch exactly what happened, frame by frame.
+- [x] **Shareable bug repros**: the Playtests dock's Export repro… writes
+  one `.rbxrepro` (the recording, the place or just its id and hash, the
+  editor version and a note), which opens read-only in its own window with
+  the session on the timeline and its errors, chat and marks in Output.
+  Copy bug report puts a Markdown summary on the clipboard. Format in
+  `docs/repro-format.md`. Replaying a Local Run `.rbxnrec` the same way
+  waits for Local Run.
 - [ ] 📋 **Integration tests on Local Run**: `rbxlua test` already runs
   TestEZ/Jest-Lua specs headlessly for CI. Next is running whole-game
   tests on Local Run (a server and clients, physics, remotes, players
@@ -4002,7 +4018,7 @@ there. What each does live, and where it stands here:
   does not read yet either. Checked against API dump version-4f087c32742644ab on 2026-10-19: not shipped
   yet. Only an `AnimatedImageService` with `RobloxScriptSecurity` members
   is there; no image property or class a place could carry.
-- [ ] 📋 **2D particles** (Late 2026): sparks, smoke and fireworks in screen
+- [x] **2D particles** (Late 2026): sparks, smoke and fireworks in screen
   space, on UI surfaces. The CPU particle simulation behind
   `ParticleEmitter` already exists in 3D. A GUI emitter would reuse it in
   screen space, with the same still-frame question as above. Checked against API dump version-4f087c32742644ab on 2026-10-19: the class is in

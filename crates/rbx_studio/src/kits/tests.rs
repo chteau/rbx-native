@@ -167,6 +167,7 @@ fn an_added_zip_unpacks_its_models_with_previews_and_resolves_them() {
     let pack = add_pack(&path).unwrap();
     assert_eq!(pack.name, "Platformer Kit");
     assert_eq!(pack.author, "Kenney");
+    assert!(pack.models.iter().all(|model| model.author == "Kenney"));
     let ids: Vec<&str> = pack.models.iter().map(|m| m.id.as_str()).collect();
     assert_eq!(
         ids,
@@ -216,7 +217,7 @@ fn poly_haven_groups_by_collection_then_by_first_category() {
     let catalogue: BTreeMap<String, serde_json::Value> = [
         (
             "barrel_01",
-            json!({ "name": "Barrel 01", "categories": ["props", "containers", "collection: the_shed"] }),
+            json!({ "name": "Barrel 01", "categories": ["props", "containers", "collection: the_shed"], "authors": { "Rico Cilliers": "All" } }),
         ),
         ("crate_02", json!({ "name": "Crate 02", "categories": ["props"] })),
         ("rock_03", json!({ "name": "Rock 03", "categories": ["nature"] })),
@@ -231,6 +232,10 @@ fn poly_haven_groups_by_collection_then_by_first_category() {
         .collect();
     assert_eq!(names, [("The Shed", 1), ("Props", 2), ("Nature", 1)]);
     assert_eq!(packs[0].id, "polyhaven:collection/the_shed");
+    // The pack names Poly Haven, as its API terms ask; each card its artist.
+    assert_eq!(packs[0].author, "Poly Haven");
+    assert_eq!(packs[0].models[0].author, "Rico Cilliers");
+    assert_eq!(packs[2].models[0].author, "Poly Haven");
     assert_eq!(
         packs[0].models[0].thumb,
         Thumb::Url(
