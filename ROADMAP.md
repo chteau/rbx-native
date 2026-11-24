@@ -2356,6 +2356,19 @@ both the plain fetch failure and the silent fall back to a default
   a `Decal`. A mesh over the 20,000-triangle budget is refused before
   anything is uploaded, naming the mesh (the new `rbx_import` crate); an FBX
   whose triangles can't be counted is uploaded with a warning.
+- [x] **Reimport and Auto-Reimport** (`shell/reimport.rs`), behind an
+  "Auto-Reimport" beta like Studio's. Import 3D stamps the model with an
+  `RBX_ReimportId` (a UUID string, as Studio writes it) and keeps its file
+  in `<config>/reimport.json` on this device only, the same id to
+  `{"filepath"}` map Studio keeps in its own settings. The Explorer's menu
+  has Studio's Reimport submenu flat: Reimport, Configure Reimport…,
+  Remove Reimport Config and Auto-Reimport. A reimport uploads the file
+  again through Import 3D and updates matching `MeshPart`s by their path
+  of names (mesh, size, transform; texture only when the file has one),
+  adds new ones and leaves the rest, pivoted onto where the model now
+  stands. Auto-Reimport polls the file, reimports once it has settled,
+  marks the row in the Explorer, and is for the session only. Studio's
+  Creator and Import Preset choices aren't here, the importer has none.
 - [x] **`AnimationConstraint` rigs, the Avatar Joint Upgrade: rig
   insertion.** Insert Rig emits `AnimationConstraint` joints (with
   `RigAttachment`s) for R15 when `StarterPlayer.AvatarJointUpgrade` is on
@@ -3792,7 +3805,8 @@ there. What each does live, and where it stands here:
 | Next-Gen Draggers, New Studio Camera Controls (Updated) | Studio's own draggers and edit camera | Not built: Studio UI feel, a re-measure job each |
 | Face Capture, Live Animation Creator, Animation Generation, Prompt-to-Avatar, Scene Generation, Playtest Agent | Assistant/camera/AI tools in Studio | Not built: Roblox's cloud AI services |
 | Party Simulator, Remote Breakpoints, Server Inspection | Team Test and server tooling | Not built: needs real Roblox servers |
-| Package Overrides, Auto-Reimport, Video Uploads, Visualizing UGC Validation, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
+| Auto-Reimport | Explorer › Reimport › Auto-Reimport, shown once the model has saved reimport settings (an `RBX_ReimportId` attribute plus a file path kept on the device); on, it reimports at once and again on every save, for the session | Built behind a beta of the same name |
+| Package Overrides, Video Uploads, Visualizing UGC Validation, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
 
 #### Renderer
 - [ ] 📋 **New primitive shapes: Capsule, Cone, Disc and rounded
@@ -3980,9 +3994,6 @@ there. What each does live, and where it stands here:
 Studio's own betas as of 2026-11-20 that nothing here answers yet. Each one
 is a beta, so its shape can still change; the work starts by switching it
 on in real Studio and measuring it there, the same as everything above.
-- [ ] 📋 **Auto-Reimport**: a toggle that reimports an instance by itself
-  when its local file changes. The 3D import item's importer is where it
-  would hang off; a file watcher on the imported path is all it adds.
 - [ ] 📋 **AvatarAbilities character controller library**: a Luau
   character controller on `ControllerManager` physics instead of the
   Humanoid state machine. For the editor that is a Rig insertion option
