@@ -102,6 +102,10 @@ pub(crate) fn open_wizard(
     let options = options(title, (1040., 720.), None, cx);
     let opened = cx
         .open_window(options, move |window, cx| {
+            if on_finish.is_none() {
+                // A standalone wizard can replace Home and keep the app alive.
+                crate::mark_primary(window, cx);
+            }
             let view = cx.new(|cx| wizard::Wizard::new(boot, plan, on_finish, window, cx));
             cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
         })
@@ -152,4 +156,37 @@ pub(crate) fn open_publishing(on_change: impl Fn(&mut App) + 'static, cx: &mut A
         let view = cx.new(|cx| publishing::Publishing::new(on_change, window, cx));
         cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    use gpui_kit::{AnyWindowHandle, AppContext, EmptyView, TestAppContext, WindowOptions};
+
+    use super::{open_wizard, setup::SetupPlan};
+
+    #[gpui_kit::test]
+    fn standalone_wizard_keeps_the_app_alive_after_home_closes(cx: &mut TestAppContext) {
+        let wizard = cx.update(|cx| {
+            gpui_kit::init(cx);
+            let home = cx
+                .open_window(WindowOptions::default(), |window, cx| {
+                    crate::mark_primary(window, cx);
+                    cx.new(|_| EmptyView)
+                })
+                .unwrap();
+            let wizard =
+                open_wizard(Rc::new(RefCell::new(None)), SetupPlan::KEY_ONLY, None, cx).unwrap();
+            home.update(cx, |_, window, _| window.remove_window())
+                .unwrap();
+            AnyWindowHandle::from(wizard).window_id()
+        });
+        cx.read(|cx| {
+            let windows = &cx.global::<crate::PrimaryWindows>().0;
+            assert!(windows.contains(&wizard));
+            assert_eq!(windows.len(), 1);
+        });
+    }
 }

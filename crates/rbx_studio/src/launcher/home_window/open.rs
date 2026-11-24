@@ -417,13 +417,16 @@ impl HomeWindow {
         if self.pick.is_some() {
             return self.manage_key(cx);
         }
-        crate::launcher::open_wizard(
+        if crate::launcher::open_wizard(
             self.boot.clone(),
             crate::launcher::setup::SetupPlan::KEY_ONLY,
             None,
             cx,
-        );
-        window.remove_window();
+        )
+        .is_some()
+        {
+            window.remove_window();
+        }
     }
 }
 
