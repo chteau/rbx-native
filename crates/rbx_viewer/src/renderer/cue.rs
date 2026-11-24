@@ -26,7 +26,7 @@
 use rbx_dom::Ref;
 
 use super::geometry::Meshes;
-use super::highlight::{Highlights, Source};
+use super::highlight::{Highlights, Onto, Source};
 use super::pipeline::{self, Surface, Target};
 use super::post::Targets;
 use crate::pick::Selected;
@@ -143,6 +143,8 @@ pub(super) struct Cues {
     /// and so free, while the view is off.
     heat: Highlights,
     heat_bins: Vec<Highlight>,
+    /// Whether this frame drew a selection or hover mask to composite.
+    masked: bool,
 }
 
 impl Cues {
@@ -184,13 +186,14 @@ impl Cues {
             ..scene
         };
         Cues {
-            pass: Highlights::new(device, queue, frame, target, empty()),
+            pass: Highlights::new(device, queue, frame, target, Onto::Frame, empty()),
             selection: Vec::new(),
             hover: Vec::new(),
             occluded: false,
             colors: OverlayColors::default(),
-            heat: Highlights::new(device, queue, frame, target, empty()),
+            heat: Highlights::new(device, queue, frame, target, Onto::Scene, empty()),
             heat_bins: Vec::new(),
+            masked: false,
         }
     }
 
@@ -380,6 +383,11 @@ impl Cues {
         self.heat.set_target(device, target, frame);
     }
 
+    /// The heat tint, into the scene, and the selection and hover masks.
+    /// After the depth-tested adornments are drawn: an outline fades where
+    /// an opaque one stands in front, `adornments_drawn` says whether one
+    /// did this frame.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn draw(
         &mut self,
         device: &wgpu::Device,
@@ -388,11 +396,33 @@ impl Cues {
         frame: &wgpu::BindGroup,
         meshes: &Meshes,
         size: (u32, u32),
+        adornments_drawn: bool,
     ) {
         self.heat
             .draw(device, encoder, targets, frame, meshes, size);
-        self.pass
-            .draw(device, encoder, targets, frame, meshes, size);
+        self.masked = self.pass.draw_mask(
+            device,
+            encoder,
+            targets,
+            frame,
+            meshes,
+            size,
+            Some(targets.adornment_depth_read(adornments_drawn)),
+        );
+    }
+
+    /// The selection and hover outlines onto the finished `frame`: over the
+    /// depth-tested adornments the resolve laid down, under the
+    /// `AlwaysOnTop` ones drawn after, where Studio puts them.
+    pub(super) fn composite(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &wgpu::Texture,
+    ) {
+        if self.masked {
+            self.pass.composite_onto(device, encoder, frame);
+        }
     }
 }
 
@@ -409,7 +439,7 @@ fn cue_highlights(
     let depth_mode = if occluded {
         DepthMode::Occluded
     } else {
-        DepthMode::AlwaysOnTop
+        DepthMode::Faded
     };
     [(selection, colors.selection), (hover, colors.hover)]
         .into_iter()
@@ -442,7 +472,7 @@ mod tests {
         assert_eq!(cues[0].fill_alpha, 0.0);
         assert_eq!(cues[0].outline, [0.106, 0.462, 0.911]);
         assert_eq!(cues[0].outline_alpha, 1.0);
-        assert_eq!(cues[0].depth_mode, DepthMode::AlwaysOnTop);
+        assert_eq!(cues[0].depth_mode, DepthMode::Faded);
     }
 
     /// The same setting the container box carries: geometry in front of the

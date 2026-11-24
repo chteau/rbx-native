@@ -37,6 +37,7 @@ use crate::scene::{
 };
 
 use batches::{claim_runs, draw_order, mesh_batches, shape_batches};
+pub(in crate::renderer) use pipelines::Onto;
 use pipelines::{Composite, Mask, MaskInstance, Paint};
 
 /// The highlighted unit shapes, drawn against [`Meshes`]' shared buffers.
@@ -76,6 +77,7 @@ pub(super) struct Highlights {
     /// What the pipelines were built for, so [`Self::rebuild`] can build them
     /// later without being handed the target again.
     format: Target,
+    onto: Onto,
     /// The mask texture and the bind group reading it, reallocated whenever
     /// the frame changes size. `None` until the first frame draws one.
     target: Option<MaskTarget>,
@@ -99,7 +101,10 @@ struct ClaimRuns {
 
 struct Gpu {
     mask: Mask,
-    composite: Composite,
+    /// Onto the scene, built with the rest. Onto the frame it is built for
+    /// the frame's own format the first time one is drawn, see
+    /// [`Highlights::composite_onto`].
+    composite: Option<(Target, Composite)>,
 }
 
 struct MaskTarget {
@@ -132,6 +137,7 @@ impl Highlights {
         queue: &wgpu::Queue,
         frame: &wgpu::BindGroupLayout,
         target: Target,
+        onto: Onto,
         scene: Source<'_>,
     ) -> Self {
         let mut pass = Highlights {
@@ -146,6 +152,7 @@ impl Highlights {
             }),
             gpu: None,
             format: target,
+            onto,
             target: None,
             order: Vec::new(),
             runs: None,
@@ -167,7 +174,7 @@ impl Highlights {
     ) {
         self.format = target;
         if self.gpu.is_some() {
-            self.gpu = Some(Gpu::new(device, frame, target));
+            self.gpu = Some(Gpu::new(device, frame, target, self.onto));
         }
         self.target = None;
     }
@@ -275,73 +282,118 @@ impl Highlights {
         meshes: &Meshes,
         size: (u32, u32),
     ) {
-        if self.is_empty() {
+        if !self.draw_mask(device, encoder, targets, frame, meshes, size, None) {
             return;
+        }
+        let (
+            Some(Gpu {
+                composite: Some((_, composite)),
+                ..
+            }),
+            Some(target),
+        ) = (&self.gpu, &self.target)
+        else {
+            return;
+        };
+        let (view, resolve) = targets.color();
+        paint(encoder, composite, target, view, resolve);
+    }
+
+    /// The mask on its own, `false` with nothing to draw. `adornment_depth`
+    /// is group 1 of the passes that mark what is visible (see
+    /// [`DepthMode::Faded`]), which only the editor's cues draw.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn draw_mask(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        targets: &Targets,
+        frame: &wgpu::BindGroup,
+        meshes: &Meshes,
+        size: (u32, u32),
+        adornment_depth: Option<&wgpu::BindGroup>,
+    ) -> bool {
+        if self.is_empty() {
+            return false;
         }
         self.fit(device, size, targets.samples());
         if self.runs.is_none() {
             self.runs = Some(self.plan_runs());
         }
         let (Some(gpu), Some(target), Some(runs)) = (&self.gpu, &self.target, &self.runs) else {
-            return;
+            return false;
         };
 
-        {
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("rbxview highlight mask"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &target.view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        // Zero is "no highlight here", so a cleared mask is an
-                        // empty one, see `highlight.wgsl`.
-                        load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: targets.depth(),
-                    // Loaded and stored unchanged: `Occluded` tests against
-                    // what the scene pass wrote, and the passes after this one
-                    // still read the same values.
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-
-            pass.set_bind_group(0, frame, &[]);
-            for claim in runs {
-                self.draw_mask(&mut pass, gpu, meshes, claim);
-            }
-        }
-
-        let (view, resolve) = targets.color();
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("rbxview highlight"),
+            label: Some("rbxview highlight mask"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view,
+                view: &target.view,
                 depth_slice: None,
-                resolve_target: resolve,
+                resolve_target: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
+                    // Zero is "no highlight here", so a cleared mask is an
+                    // empty one, see `highlight.wgsl`.
+                    load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT),
                     store: wgpu::StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: targets.depth(),
+                // Loaded and stored unchanged: `Occluded` tests against
+                // what the scene pass wrote, and the passes after this one
+                // still read the same values.
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
             timestamp_writes: None,
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_pipeline(&gpu.composite.pipeline);
-        pass.set_bind_group(0, &target.bind_group, &[]);
-        pass.draw(0..3, 0..1);
+
+        pass.set_bind_group(0, frame, &[]);
+        if let Some(depth) = adornment_depth {
+            pass.set_bind_group(1, depth, &[]);
+        }
+        for claim in runs {
+            self.draw_mask_runs(&mut pass, gpu, meshes, claim);
+        }
+        true
+    }
+
+    /// Paints the mask [`Self::draw_mask`] just drew onto `frame`, the
+    /// finished frame, through its non-sRGB view.
+    pub(super) fn composite_onto(
+        &mut self,
+        device: &wgpu::Device,
+        encoder: &mut wgpu::CommandEncoder,
+        frame: &wgpu::Texture,
+    ) {
+        let (Some(gpu), Some(target)) = (&mut self.gpu, &self.target) else {
+            return;
+        };
+        let color = Target {
+            format: frame.format().remove_srgb_suffix(),
+            samples: 1,
+        };
+        if gpu
+            .composite
+            .as_ref()
+            .is_none_or(|(made_for, _)| *made_for != color)
+        {
+            let composite = Composite::new(device, color, self.format.samples, Onto::Frame);
+            gpu.composite = Some((color, composite));
+        }
+        let Some((_, composite)) = &gpu.composite else {
+            return;
+        };
+        let view = frame.create_view(&wgpu::TextureViewDescriptor {
+            format: Some(color.format),
+            ..Default::default()
+        });
+        paint(encoder, composite, target, &view, None);
     }
 
     /// Every claim's runs, in draw order: each batch split into the runs of
@@ -360,7 +412,7 @@ impl Highlights {
     }
 
     /// One claim's mask draws, from its runs as [`Self::plan_runs`] found them.
-    fn draw_mask<'p>(
+    fn draw_mask_runs<'p>(
         &'p self,
         pass: &mut wgpu::RenderPass<'p>,
         gpu: &'p Gpu,
@@ -368,27 +420,33 @@ impl Highlights {
         runs: &ClaimRuns,
     ) {
         let mode = runs.claim.1;
-        pass.set_pipeline(gpu.mask.shapes(mode));
-        for (position, ranges) in &runs.shapes {
-            let batch = &self.shapes.groups()[*position];
-            let Some(mesh) = meshes.get(batch.key) else {
-                continue;
-            };
-            pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
-            for run in ranges {
-                mesh.draw_range(pass, run.clone());
+        let (cover, visible) = gpu.mask.shapes(mode);
+        for pipeline in std::iter::once(cover).chain(visible) {
+            pass.set_pipeline(pipeline);
+            for (position, ranges) in &runs.shapes {
+                let batch = &self.shapes.groups()[*position];
+                let Some(mesh) = meshes.get(batch.key) else {
+                    continue;
+                };
+                pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
+                for run in ranges {
+                    mesh.draw_range(pass, run.clone());
+                }
             }
         }
 
-        pass.set_pipeline(gpu.mask.meshes(mode));
-        for (position, ranges) in &runs.meshes {
-            let batch = &self.meshes.groups()[*position];
-            let geometry = &batch.extra;
-            pass.set_vertex_buffer(0, geometry.vertices.slice(..));
-            pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
-            pass.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
-            for run in ranges {
-                pass.draw_indexed(0..geometry.index_count, 0, run.clone());
+        let (cover, visible) = gpu.mask.meshes(mode);
+        for pipeline in std::iter::once(cover).chain(visible) {
+            pass.set_pipeline(pipeline);
+            for (position, ranges) in &runs.meshes {
+                let batch = &self.meshes.groups()[*position];
+                let geometry = &batch.extra;
+                pass.set_vertex_buffer(0, geometry.vertices.slice(..));
+                pass.set_vertex_buffer(1, batch.slots.buffer().slice(..));
+                pass.set_index_buffer(geometry.indices.slice(..), wgpu::IndexFormat::Uint32);
+                for run in ranges {
+                    pass.draw_indexed(0..geometry.index_count, 0, run.clone());
+                }
             }
         }
     }
@@ -402,7 +460,7 @@ impl Highlights {
     ) {
         let highlights = &scene.highlights[..scene.highlights.len().min(MAX_HIGHLIGHTS)];
         if !highlights.is_empty() && self.gpu.is_none() {
-            self.gpu = Some(Gpu::new(device, frame, self.format));
+            self.gpu = Some(Gpu::new(device, frame, self.format, self.onto));
         }
 
         self.claims = highlights
@@ -432,9 +490,9 @@ impl Highlights {
     /// shape, a window resize would otherwise cost one texture per frame of
     /// the drag.
     fn fit(&mut self, device: &wgpu::Device, size: (u32, u32), samples: u32) {
-        let Some(gpu) = &self.gpu else {
+        if self.gpu.is_none() {
             return;
-        };
+        }
         if self
             .target
             .as_ref()
@@ -446,7 +504,7 @@ impl Highlights {
         let view = pipelines::mask_texture(device, size, samples);
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("rbxview highlight composite"),
-            layout: &gpu.composite.layout,
+            layout: &pipelines::composite_layout(device, samples),
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
@@ -467,12 +525,47 @@ impl Highlights {
 }
 
 impl Gpu {
-    fn new(device: &wgpu::Device, frame: &wgpu::BindGroupLayout, target: Target) -> Self {
+    fn new(
+        device: &wgpu::Device,
+        frame: &wgpu::BindGroupLayout,
+        target: Target,
+        onto: Onto,
+    ) -> Self {
         Gpu {
-            mask: Mask::new(device, frame, target),
-            composite: Composite::new(device, target),
+            mask: Mask::new(device, frame, target, onto),
+            composite: (onto == Onto::Scene)
+                .then(|| (target, Composite::new(device, target, target.samples, onto))),
         }
     }
+}
+
+/// One full-frame triangle reading the mask into `view`.
+fn paint(
+    encoder: &mut wgpu::CommandEncoder,
+    composite: &Composite,
+    target: &MaskTarget,
+    view: &wgpu::TextureView,
+    resolve: Option<&wgpu::TextureView>,
+) {
+    let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        label: Some("rbxview highlight"),
+        color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: resolve,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Load,
+                store: wgpu::StoreOp::Store,
+            },
+        })],
+        depth_stencil_attachment: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+        multiview_mask: None,
+    });
+    pass.set_pipeline(&composite.pipeline);
+    pass.set_bind_group(0, &target.bind_group, &[]);
+    pass.draw(0..3, 0..1);
 }
 
 /// The three parts of a [`Scene`](crate::scene::Scene) this pass is built

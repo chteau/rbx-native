@@ -30,13 +30,18 @@ const CLASS: &str = "Highlight";
 pub(crate) const MAX_HIGHLIGHTS: usize = 255;
 
 /// Which side of the scene's depth a highlight is allowed to show on,
-/// `Enum.HighlightDepthMode`.
+/// `Enum.HighlightDepthMode`, plus the one way the editor's own selection
+/// cue shows that no `Highlight` can ask for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DepthMode {
     /// Drawn whatever stands between the camera and the object.
     AlwaysOnTop,
     /// Drawn only where the object itself is the nearest surface.
     Occluded,
+    /// Drawn everywhere, but its outline fades to a fifth where a part or
+    /// an opaque depth-tested adornment stands in front: Studio's own
+    /// selection and hover outline (see `renderer::cue`).
+    Faded,
 }
 
 /// One `Highlight`, resolved: the parts it covers and how it paints them.
