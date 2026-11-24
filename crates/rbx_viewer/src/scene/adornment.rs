@@ -38,7 +38,7 @@ use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use super::props::{bool_or, cframe_or, float_or, int_or, linear_color_or, vector3_or, Properties};
-use super::{descendants, Placement};
+use super::Placement;
 
 /// `GuiBase3d`, the base every adornment shares.
 const BASE_CLASS: &str = "GuiBase3d";
@@ -160,6 +160,8 @@ pub(crate) struct Picture {
     pub(crate) frame: Mat4,
     pub(crate) size: glam::Vec2,
     pub(crate) texture: AssetRef,
+    /// `Color3`, which Studio multiplies the image by.
+    pub(crate) color: [f32; 3],
     pub(crate) alpha: f32,
     /// As [`Solid::double_sided`].
     pub(crate) double_sided: bool,
@@ -186,7 +188,24 @@ pub(super) struct Adornee {
     pub(super) size: Vec3,
 }
 
-/// Every adornment this scene draws, in DOM order.
+impl Adornment {
+    /// Where the adornment stands, the mean of its pieces' own origins:
+    /// what Studio sorts the blended and `AlwaysOnTop` ones back to front
+    /// by.
+    pub(crate) fn centre(&self) -> Vec3 {
+        let origins = self.pieces.iter().map(|piece| match piece {
+            Piece::Solid(solid) => solid.frame.w_axis.truncate(),
+            Piece::Line(line) => (line.from + line.to) * 0.5,
+            Piece::Ring(ring) => ring.centre,
+            Piece::Picture(picture) => picture.frame.w_axis.truncate(),
+        });
+        origins.sum::<Vec3>() / self.pieces.len().max(1) as f32
+    }
+}
+
+/// Every adornment this scene draws, in DOM order, which is creation order
+/// as far as a file can tell: Studio breaks every draw-order tie between
+/// two adornments in favour of the later one.
 pub(crate) fn plan(
     dom: &WeakDom,
     database: &ReflectionDatabase,
@@ -199,7 +218,7 @@ pub(crate) fn plan(
     // same walk.
     let mut adornments: HashMap<String, bool> = HashMap::new();
     let mut found = Vec::new();
-    for referent in descendants(dom) {
+    for referent in in_order(dom) {
         let Some(instance) = dom.get(referent) else {
             continue;
         };
@@ -214,6 +233,19 @@ pub(crate) fn plan(
         }
     }
     found
+}
+
+/// Every instance in pre-order with siblings first to last, unlike
+/// [`super::descendants`], which visits them last to first.
+fn in_order(dom: &WeakDom) -> impl Iterator<Item = Ref> + '_ {
+    let mut pending: Vec<Ref> = dom.root_refs().iter().rev().copied().collect();
+    std::iter::from_fn(move || {
+        let referent = pending.pop()?;
+        if let Some(instance) = dom.get(referent) {
+            pending.extend(instance.children().iter().rev());
+        }
+        Some(referent)
+    })
 }
 
 /// Whether an adornment parented here is drawn at all, see this module's

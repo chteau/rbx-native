@@ -1,7 +1,6 @@
-// Solid adornment geometry: unlit, vertex-coloured triangles drawn into the
-// scene's HDR target, so an adornment tone maps with everything else. The
-// colours arrive linearized (see `scene::srgb_to_linear`), like every other
-// colour this renderer is handed.
+// Solid adornment geometry: unlit, vertex-coloured triangles. The colours
+// arrive sRGB-encoded, the values Studio blends adornments in (see
+// `renderer::adornment`).
 
 struct VertexInput {
     @location(0) position: vec3<f32>,
@@ -36,10 +35,26 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 // Every triangle is wound counter-clockwise from outside its shape, so a
 // back face of a `DoubleSided = false` adornment is one turned away from
 // the eye.
-@fragment
-fn fs_main(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+fn shade(input: VertexOutput, front: bool) -> vec4<f32> {
     if !front && input.single_sided > 0.5 {
         discard;
     }
     return input.color;
+}
+
+// Into the depth-tested layer: hidden by the scene's own depth (reversed-Z,
+// so nearer is greater), and premultiplied for the layer's "over".
+@fragment
+fn fs_layer(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let color = shade(input, front);
+    if input.clip_position.z < scene_depth(vec2<i32>(input.clip_position.xy)) {
+        discard;
+    }
+    return vec4<f32>(color.rgb * color.a, color.a);
+}
+
+// Onto the finished frame, blended by the pipeline in sRGB values.
+@fragment
+fn fs_top(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    return shade(input, front);
 }

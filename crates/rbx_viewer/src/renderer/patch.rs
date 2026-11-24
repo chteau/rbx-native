@@ -291,7 +291,7 @@ impl Renderer {
             // definition: a re-plan is a new vertex buffer.
             EffectKind::Adornments => {
                 self.adornments
-                    .replace(device, queue, self.target, scene.adornments(), images)
+                    .replace(device, queue, scene.adornments(), images)
             }
             EffectKind::Highlights => self.highlights.replace(
                 device,

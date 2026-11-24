@@ -51,7 +51,7 @@ pub(super) fn solid(mesh: AdornMesh, frame: Mat4, color: [f32; 4], out: &mut Vec
 }
 
 /// A textured quad in the frame's own XY plane, an `ImageHandleAdornment`.
-pub(super) fn picture_quad(picture: &AdornPicture, alpha: f32, out: &mut Vec<ImageVertex>) {
+pub(super) fn picture_quad(picture: &AdornPicture, color: [f32; 4], out: &mut Vec<ImageVertex>) {
     let half = picture.size * 0.5;
     let corner = |x: f32, y: f32| picture.frame.transform_point3(Vec3::new(x, y, 0.0));
     let (a, b, c, d) = (
@@ -76,7 +76,7 @@ pub(super) fn picture_quad(picture: &AdornPicture, alpha: f32, out: &mut Vec<Ima
         out.push(ImageVertex {
             position: position.to_array(),
             uv: texcoord.to_array(),
-            alpha,
+            color,
             single_sided: if picture.double_sided { 0.0 } else { 1.0 },
         });
     }
