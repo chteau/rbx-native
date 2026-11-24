@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-27
+
+- **RbxNative stays open when Home sends you to key setup.** Closing Home counted as closing the last window, so the app quit before you could use the publishing wizard. Setup counts as a main window now, and if it can't open, Home stays up. Thanks abid3 (#422, fixes #440). (@chteau)
+
 ## 2026-11-24
 
 - **Layered clothing from Studio-saved places fits in the 3D view.** Newer Studio saves a WrapLayer's and WrapTarget's cages as `CageMeshContent` and `ReferenceMeshContent` instead of the old `...Id` names, so the viewer and the avatar builder didn't find them and left the garment unfitted. Both read either name now. (@chteau)
