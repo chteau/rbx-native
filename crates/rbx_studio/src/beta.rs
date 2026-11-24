@@ -74,6 +74,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "The 3D view follows the place camera's ProjectionType, OrthographicSize and OrthographicMode, like Studio's beta of the same name: set workspace.CurrentCamera.ProjectionType to Orthographic and the view goes flat at that size, and zooming writes the size back.",
     },
     Feature {
+        id: crate::workspace_view::camera_row::BETA_ID,
+        name: "New Studio Camera Controls",
+        description: "The edit camera flies like Studio's beta of the same name: Adaptive, FPS and Orbit modes under the View Selector, fly speed that follows the focus distance, wheel zoom towards the cursor, Alt + right drag to dolly, and Focus that glides in and frames the selection at 70% of the view.",
+    },
+    Feature {
         id: crate::explorer::insert::UI_PARTICLES_BETA_ID,
         name: "UI Particles",
         description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",

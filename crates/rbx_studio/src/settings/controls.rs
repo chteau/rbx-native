@@ -60,6 +60,7 @@ impl Controls {
                 smoothing: number("camera", "smoothing")
                     .map(|n| n.clamp(0., 1.))
                     .unwrap_or(defaults.camera.smoothing),
+                ..defaults.camera
             },
             move_increment: increment("move", defaults.move_increment),
             rotate_increment: increment("rotate", defaults.rotate_increment),
@@ -106,6 +107,7 @@ mod tests {
                 sensitivity: 2.5,
                 speed: 0.5,
                 smoothing: 0.,
+                ..CameraFeel::default()
             },
             move_increment: 0.25,
             rotate_increment: 15.,
