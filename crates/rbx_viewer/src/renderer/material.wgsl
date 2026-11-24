@@ -31,6 +31,9 @@ const KIND_WATER: u32 = 5u;
 // above the kind's own byte (see `renderer::instance`).
 const KIND_MASK: u32 = 0xffu;
 const VARIANT_ALPHA_SHIFT: u32 = 8u;
+const VARIANT_ALPHA_MASK: u32 = 0xffu;
+// A block or a wedge: tiled from a corner of each face (see `anchored_face`).
+const FACE_ANCHORED: u32 = 0x10000u;
 const VARIANT_ALPHA_OVERLAY: u32 = 1u;
 const VARIANT_ALPHA_TRANSPARENCY: u32 = 2u;
 const VARIANT_ALPHA_TINT_MASK: u32 = 3u;
@@ -119,6 +122,11 @@ struct MaterialInput {
     // `VARIANT_ALPHA_*`, 0 (the alpha does nothing) everywhere but a
     // `MaterialVariant` whose `AlphaMode` is honoured.
     variant_alpha: u32,
+    // The part's size in studs, and whether it tiles from a corner of each
+    // face (`FACE_ANCHORED`). Left zeroed, centred tiling, by every pass but
+    // the block and wedge one.
+    extent: vec3<f32>,
+    anchored: bool,
     // How much of a `ForceField` mesh's own image is showing here, from
     // `force_field_window`. Left zeroed, no pattern, by every pass with no
     // image of its own, which is every plain part.
@@ -389,12 +397,47 @@ fn variant_albedo(part: vec3<f32>, map: vec4<f32>, mode: u32) -> vec3<f32> {
 /// blending: the single-axis case (`material_shade`'s fast path) and each leg
 /// of the triplanar blend both funnel through here so they sample identically.
 fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
-    let frame = face_frame(axis);
+    return sample_frame(face_frame(axis), vec2<f32>(0.0), input);
+}
+
+/// A block's or a wedge's face, tiled the way Studio tiles it (measured
+/// 2026-11-24 on all six faces of blocks of uneven size, turned or not, and
+/// a wedge, with `StudsPerTile` dividing none of them): the grid starts at
+/// the face's corner from which U and V both run into it, the four sides as
+/// `face_frame` has them, the top and bottom half a turn from it (top: U
+/// along -X, V along -Z; bottom: U along -X, V along +Z), and a wedge's
+/// slope laid flat in its own plane, U along -X and V down the slope from
+/// its high edge.
+fn anchored_face(input: MaterialInput) -> Mapped {
+    var frame: Frame;
+    let n = input.object_normal;
+    let w = abs(n);
+    if max(w.x, max(w.y, w.z)) >= TRIPLANAR_FAST_PATH * length(n) {
+        let axis = dominant_axis(n);
+        frame = face_frame(axis);
+        if axis.y != 0.0 {
+            frame.u = vec3<f32>(-1.0, 0.0, 0.0);
+            frame.v = vec3<f32>(0.0, 0.0, -axis.y);
+        }
+    } else {
+        // The slope's normal is the unit mesh's; in studs it is that over
+        // the size, and V runs across U within the plane it spans.
+        frame.u = vec3<f32>(-1.0, 0.0, 0.0);
+        frame.v = normalize(cross(frame.u, n / max(input.extent, vec3<f32>(0.001))));
+    }
+    // The face's centre sits on the part's (a wedge's slope passes through
+    // it too), so half the face's own extent along each direction moves
+    // the origin out to the corner.
+    let half = 0.5 * vec2<f32>(dot(abs(frame.u), input.extent), dot(abs(frame.v), input.extent));
+    return sample_frame(frame, half, input);
+}
+
+fn sample_frame(frame: Frame, origin: vec2<f32>, input: MaterialInput) -> Mapped {
     // Studs per tile, so a part keeps its texel density whatever its size.
-    let uv = vec2<f32>(
+    let uv = (vec2<f32>(
         dot(input.object_studs, frame.u),
         dot(input.object_studs, frame.v),
-    ) / max(input.studs_per_tile, 0.001);
+    ) + origin) / max(input.studs_per_tile, 0.001);
 
     // Sampled before any branch: implicit-derivative sampling is only defined
     // in uniform control flow, and `kind` varies per instance.
@@ -522,6 +565,9 @@ fn material_shade_with_normal(input: MaterialInput) -> Shaded {
 /// The pack projected and sampled, not yet shaded: what terrain blends
 /// several of before shading once.
 fn material_mapped(input: MaterialInput) -> Mapped {
+    if input.anchored {
+        return anchored_face(input);
+    }
     let weights = triplanar_weights(input.object_normal);
     let max_weight = max(weights.x, max(weights.y, weights.z));
 
