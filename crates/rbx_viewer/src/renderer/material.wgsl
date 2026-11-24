@@ -409,10 +409,10 @@ fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
 /// as `face_frame` has them, the top and bottom half a turn from it (top: U
 /// along -X, V along -Z; bottom: U along -X, V along +Z).
 ///
-/// The slopes are laid flat in their own plane: a wedge's with U along -X
-/// and V down from its high edge, a corner wedge's back slope with U along
-/// +X and V up from its low edge, its left slope with U along +Z and V down
-/// from the apex. A round side takes the face of its box the normal leans
+/// The slopes are laid flat in their own plane, V always running down
+/// from the top: a wedge's with U along -X, a corner wedge's back slope
+/// with U along +X and its left slope with U along +Z, each from the end U
+/// runs away from. A round side takes the face of its box the normal leans
 /// towards, that face's grid pushed out onto it from the cylinder's axis or
 /// the ball's centre, so two grids meet mirrored at each seam.
 fn anchored_face(input: MaterialInput) -> Mapped {
@@ -441,11 +441,10 @@ fn anchored_face(input: MaterialInput) -> Mapped {
         let slope = n / max(input.extent, vec3<f32>(0.001));
         if abs(n.x) > 0.001 {
             frame.u = vec3<f32>(0.0, 0.0, 1.0);
-            frame.v = normalize(cross(frame.u, slope));
         } else {
             frame.u = vec3<f32>(sign_of(n.z), 0.0, 0.0);
-            frame.v = normalize(cross(vec3<f32>(-1.0, 0.0, 0.0), slope));
         }
+        frame.v = normalize(cross(frame.u, slope));
     }
     // The face's centre sits on the part's (a slope passes through it too),
     // so half the face's own extent along each direction moves the origin
