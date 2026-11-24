@@ -30,6 +30,14 @@ fn a_lone_path_defaults_to_windowed_mode() {
 }
 
 #[test]
+fn variant_alpha_modes_are_off_unless_asked_for() {
+    assert!(!parse(&["a.rbxl"]).unwrap().variant_alpha_modes());
+    assert!(parse(&["a.rbxl", "--variant-alpha-modes"])
+        .unwrap()
+        .variant_alpha_modes());
+}
+
+#[test]
 fn orthographic_is_a_plain_flag() {
     let options = parse(&["a.rbxl", "--orthographic"]).unwrap();
     assert!(options.orthographic());

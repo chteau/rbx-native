@@ -253,6 +253,46 @@ fn the_shape_adornments_each_read_their_own_size() {
     );
 }
 
+/// Measured in Studio 0.748: `Sides` clamps to 3..=32, `Size` and `Height`
+/// pass through, negatives included, and the class defaults are 4, 1 and 2.
+#[test]
+fn a_pyramid_reads_its_sides_clamped_and_its_size_as_given() {
+    let pyramid = |properties: Vec<(&str, Variant)>| {
+        let planned = plan_of("PyramidHandleAdornment", properties);
+        // An adornment with nothing to draw is left out of the plan.
+        planned
+            .first()
+            .and_then(|adornment| Some(solids(adornment).first()?.mesh))
+    };
+    assert_eq!(
+        pyramid(vec![]),
+        Some(Mesh::Pyramid {
+            sides: 4,
+            size: 1.0,
+            height: 2.0
+        })
+    );
+    for (asked, drawn) in [(0, 3), (2, 3), (-3, 3), (7, 7), (100, 32)] {
+        let Some(Mesh::Pyramid { sides, .. }) = pyramid(vec![("Sides", Variant::Int32(asked))])
+        else {
+            panic!("a pyramid");
+        };
+        assert_eq!(sides, drawn, "Sides = {asked}");
+    }
+    assert_eq!(
+        pyramid(vec![
+            ("Size", Variant::Float32(-3.0)),
+            ("Height", Variant::Float32(-2.0)),
+        ]),
+        Some(Mesh::Pyramid {
+            sides: 4,
+            size: -3.0,
+            height: -2.0
+        })
+    );
+    assert_eq!(pyramid(vec![("Size", Variant::Float32(0.0))]), None);
+}
+
 /// A cylinder with no `Angle` at all is a whole cylinder: a zero-degree
 /// sector would draw nothing, which cannot be what a default does.
 #[test]

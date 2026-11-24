@@ -22,6 +22,10 @@
 //!   creator-docs points scripts at `SetBaseMaterialOverride` instead, so
 //!   this panel is where they get set.
 //!
+//! - `MaterialVariant.AlphaMode` is out unless the "MaterialVariant Alpha
+//!   Mode" beta is on, as in Studio 0.748, where the row appears under
+//!   Appearance only with that beta on. A stored value is kept either way.
+//!
 //! A property with neither a stored value nor a recorded default is left
 //! out too: what `Mass` or `AssemblyLinearVelocity` hold is computed by a
 //! running engine, and there is nothing true to show for it here. An
@@ -105,7 +109,10 @@ impl Sheet {
                     .collect();
                 claimed.extend(keys.iter().cloned());
                 // A spelling of another property is that property's row.
-                if !listed(property) || db.canonical_name(class, &property.name) != property.name {
+                let beta_on = crate::beta::enabled(MATERIAL_VARIANT_ALPHA_MODE_BETA_ID);
+                if !listed(&descriptor.name, property, beta_on)
+                    || db.canonical_name(class, &property.name) != property.name
+                {
                     continue;
                 }
                 let mut default = db.default_value(class, &property.name).cloned();
@@ -159,8 +166,14 @@ impl Sheet {
     }
 }
 
-fn listed(property: &PropertyDescriptor) -> bool {
-    !property.is_hidden() && !property.is_deprecated()
+/// Studio's "MaterialVariant Alpha Mode" beta: the `AlphaMode` row, and
+/// the 3D view honouring it (see `rbx_viewer::set_variant_alpha_modes`).
+pub(crate) const MATERIAL_VARIANT_ALPHA_MODE_BETA_ID: &str = "material-variant-alpha-mode";
+
+/// `alpha_mode_beta`: whether the "MaterialVariant Alpha Mode" beta is on.
+fn listed(class: &str, property: &PropertyDescriptor, alpha_mode_beta: bool) -> bool {
+    let beta_row = class == "MaterialVariant" && property.name == "AlphaMode";
+    !property.is_hidden() && !property.is_deprecated() && (alpha_mode_beta || !beta_row)
 }
 
 /// The dump's `ReadOnly`, or a property Studio never saves. A property saved

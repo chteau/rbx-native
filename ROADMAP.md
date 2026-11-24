@@ -694,6 +694,30 @@ and, on a model, each part's own face middles and centre, as the
   rig from the Explorer's **Play Animation** row (the rig the animation sits
   in, as the `Animate` script's are, else the bound one). Animation Graph
   Clip nodes naming a published id download before the preview starts.
+- [x] **MaterialVariant Alpha Mode** (Studio beta, PR #407): behind a
+  beta of the same name, a `MaterialVariant`'s `AlphaMode` decides what its
+  colour map's alpha does, measured in Studio 0.748 with the beta on:
+  Opaque ignores it (map times part colour, as with the beta off), TintMask
+  blends from the bare map where the alpha is clear to the tinted map where
+  it is opaque, Overlay from the part colour to the bare map, and
+  Transparency colours like TintMask and cuts the surface out (no
+  blending) below half alpha. Both ramps are linear in sRGB, as Studio
+  draws them. The Properties row shows only with the beta on; the value
+  round-trips either way. Still off from Studio: a variant's tiling starts
+  at the part's centre here and at each face's corner there, so a ramp
+  that starts at a plate's edge in Studio starts mid-plate here (true of
+  every variant, not just alpha modes).
+- [x] **`PyramidHandleAdornment`** (PR #407): live in Studio 0.748 and
+  drawn here like the other shape adornments, flat colour, single-sided
+  unless `DoubleSided`. Measured there: the base is a regular polygon on
+  the frame's origin with one edge flat along -Y and `Size` studs from that
+  edge to the top (an even polygon's inradius is `Size`/2), the apex
+  `Height` along -Z, `Sides` clamped to 3..32, negative `Height` flips the
+  apex to +Z, negative `Size` turns the base half a turn, `Height` 0 is a
+  flat polygon seen from both sides and `Size` 0 draws nothing.
+  `SizeRelativeOffset`, `CFrame`, `AlwaysOnTop`, `ZIndex`, `Transparency`
+  and `Color3` work as on the other handle adornments. `Shading` is not
+  read for any adornment yet.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
@@ -3840,7 +3864,7 @@ there. What each does live, and where it stands here:
 | Luau Exports and Cyclic Requires | `export local`/`const`/`function` make a module return a table of them; modules that export may require each other; `export` plus a top-level `return` is a compile error | Built behind a beta of the same name (PR #399) |
 | If Local/Const Bindings | `const x = 1` and `if local y = f() then` both run | Not built: `if local` needs Luau 740, newer than the 736 mlua ships |
 | InputActionLabel | A `GuiObject` (TextColor3 0.105, 0.164, 0.207, ImageColor3 white, TextSize 8); in edit it draws a white box with a placeholder cube glyph | Not built: the keybinding glyph set is Roblox's art, and what it shows in Play is unmeasured |
-| MaterialVariant Alpha Mode | `MaterialVariant.AlphaMode`, default Opaque (Overlay 0, Transparency 1, TintMask 2, Opaque 3) | Not built: the variant path has no alpha blending to switch yet |
+| MaterialVariant Alpha Mode | `MaterialVariant.AlphaMode`, default Opaque (Overlay 0, Transparency 1, TintMask 2, Opaque 3); the row shows under Appearance only with the beta on | Built behind a beta of the same name (PR #407) |
 | Collections | `CollectionService:CreateCollection(query)` returns a `CollectionHandle` (`Query`, `Root`, `Destroy`), no `GetInstances` | Not built: the handle's reads and callbacks aren't discoverable yet |
 | CreateAssetAsync Lua API | `AssetService:CreateAssetAsync` exists | Not built: an upload API, nothing for the editor to draw |
 | Mixed Content for CreateSurfaceAppearance | `AssetService:CreateSurfaceAppearanceAsync{ColorMap = Content}` returns a `SurfaceAppearance`; local `rbxasset://` content is refused in the client | Local Run's business (runtime API) |
@@ -3908,10 +3932,6 @@ there. What each does live, and where it stands here:
   `MaterialVariant`, `SurfaceAppearance`). It needs new captures from real
   Studio once it ships, the same discipline the lighting model was built
   under, and not a stretch of today's constants.
-- [ ] 📋 **`PyramidHandleAdornment`**: in the dump (with `DoubleSided`
-  like the other shapes) but not drawn here at all yet, so a place holding
-  one shows nothing. Its geometry (how `Sides`, `Height` and `Size` shape
-  it) has to be measured in Studio first.
 - [ ] 📋 **CSG on meshes** (moved from Late 2025 to Late 2026 in the same
   post). The from-scratch boolean (`scene::union::csg`) works on primitives. A
   `MeshPart` operand means feeding it `rbx_mesh` geometry instead. A saved
@@ -4063,11 +4083,6 @@ on in real Studio and measuring it there, the same as everything above.
   beta here (PR #399), from the `LuauExportValueSyntax` flag the shipped
   Luau 736 already has. `if local` needs Luau 740, so it waits for an mlua
   release carrying it. The bundled `luau-lsp` still needs to accept both.
-- [ ] 📋 **MaterialVariant Alpha Mode**: `AlphaMode` on a `MaterialVariant`
-  (plus an Opaque mode), the way a `SurfaceAppearance` already has one. The
-  material pass already honours `SurfaceAppearance.AlphaMode`; this is the
-  same switch on the variant path. Measured 2026-11-21: default Opaque, enum
-  Overlay 0, Transparency 1, TintMask 2, Opaque 3.
 - [ ] 📋 **New Video API** (`VideoPlayer`): videos on several surfaces,
   wired into the new Audio API. Nothing here plays video or audio yet; a
   still first frame is what the viewer could draw.

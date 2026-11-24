@@ -27,6 +27,18 @@ const KIND_NEON: u32 = 2u;
 const KIND_FORCE_FIELD: u32 = 3u;
 const KIND_GLASS: u32 = 4u;
 const KIND_WATER: u32 = 5u;
+// The instance buffer's kind word also carries `scene::material::VariantAlpha`
+// above the kind's own byte (see `renderer::instance`).
+const KIND_MASK: u32 = 0xffu;
+const VARIANT_ALPHA_SHIFT: u32 = 8u;
+const VARIANT_ALPHA_OVERLAY: u32 = 1u;
+const VARIANT_ALPHA_TRANSPARENCY: u32 = 2u;
+const VARIANT_ALPHA_TINT_MASK: u32 = 3u;
+// Below this colour map alpha a `Transparency` variant draws nothing. Studio
+// cuts it out rather than blending it: a white part over grey shows no grey
+// through it anywhere, and the edge sits where the map's alpha crosses one
+// half (both measured in Studio 0.748).
+const VARIANT_ALPHA_CUTOFF: f32 = 0.5;
 
 // Neon is unlit and over-bright. Roblox writes the part's own colour into the
 // frame and a far brighter value into the glow it blooms from, two outputs one
@@ -104,6 +116,9 @@ struct MaterialInput {
     layer: u32,
     studs_per_tile: f32,
     kind: u32,
+    // `VARIANT_ALPHA_*`, 0 (the alpha does nothing) everywhere but a
+    // `MaterialVariant` whose `AlphaMode` is honoured.
+    variant_alpha: u32,
     // How much of a `ForceField` mesh's own image is showing here, from
     // `force_field_window`. Left zeroed, no pattern, by every pass with no
     // image of its own, which is every plain part.
@@ -212,6 +227,8 @@ struct Mapped {
     // `MaterialInput`'s, passed through.
     pattern: f32,
     edge: f32,
+    // The colour map's alpha, which only a `Transparency` variant cuts on.
+    coverage: f32,
 }
 
 /// Whether a material shades procedurally whatever maps it is handed: Neon is
@@ -330,6 +347,44 @@ fn force_field_window(red: f32, phase: f32) -> f32 {
     return 1.0 - smoothstep(half * 0.5, half, abs(red - centre));
 }
 
+/// sRGB's transfer curve, both ways: a variant's colour map and the part's
+/// colour are blended in sRGB, not in linear light (see [`variant_albedo`]).
+fn srgb_encode(linear: vec3<f32>) -> vec3<f32> {
+    return select(
+        1.055 * pow(linear, vec3<f32>(1.0 / 2.4)) - 0.055,
+        linear * 12.92,
+        linear <= vec3<f32>(0.0031308),
+    );
+}
+
+fn srgb_decode(encoded: vec3<f32>) -> vec3<f32> {
+    return select(
+        pow((encoded + 0.055) / 1.055, vec3<f32>(2.4)),
+        encoded / 12.92,
+        encoded <= vec3<f32>(0.04045),
+    );
+}
+
+/// A textured surface's colour from the part's own (`part`, linear) and its
+/// colour map's texel, under a `MaterialVariant`'s `AlphaMode`.
+///
+/// Measured in Studio 0.748 with the beta on, a white map whose alpha ramps
+/// 0 to 1 across a red part: Overlay goes from the part's colour to the map
+/// untinted, TintMask (and Transparency, which only adds the cut-out in
+/// `material_output`) from the map untinted to the map tinted. Both ramps
+/// are straight lines in sRGB output, not in linear light, so they are
+/// blended in sRGB here.
+fn variant_albedo(part: vec3<f32>, map: vec4<f32>, mode: u32) -> vec3<f32> {
+    let tinted = part * map.rgb;
+    if mode == VARIANT_ALPHA_OVERLAY {
+        return srgb_decode(mix(srgb_encode(part), srgb_encode(map.rgb), map.a));
+    }
+    if mode == VARIANT_ALPHA_TRANSPARENCY || mode == VARIANT_ALPHA_TINT_MASK {
+        return srgb_decode(mix(srgb_encode(map.rgb), srgb_encode(tinted), map.a));
+    }
+    return tinted;
+}
+
 /// Projects the map pack along one world axis and samples it, before any
 /// blending: the single-axis case (`material_shade`'s fast path) and each leg
 /// of the triplanar blend both funnel through here so they sample identically.
@@ -350,7 +405,8 @@ fn sample_axis(axis: vec3<f32>, input: MaterialInput) -> Mapped {
 
     var mapped: Mapped;
     mapped.base_albedo = input.albedo;
-    mapped.albedo = input.albedo * color.rgb;
+    mapped.albedo = variant_albedo(input.albedo, color, input.variant_alpha);
+    mapped.coverage = color.a;
     mapped.geometric_normal = input.world_normal;
     mapped.normal = tangent_normal(normal.rgb, frame, input);
     mapped.world_position = input.world_position;
@@ -403,6 +459,9 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
         surface.edge = max(input.edge, force_field_intersection(frag));
     }
     let shaded = material_shade_with_normal(surface);
+    if input.variant_alpha == VARIANT_ALPHA_TRANSPARENCY && shaded.coverage < VARIANT_ALPHA_CUTOFF {
+        discard;
+    }
     if input.kind == KIND_WATER {
         // Replaces, rather than skips, the pack sample above: the samples
         // have to run in uniform control flow, and water's layer 0 is the
@@ -445,6 +504,7 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
 struct Shaded {
     color: vec3<f32>,
     normal: vec3<f32>,
+    coverage: f32,
 }
 
 /// The whole material model: project the pack onto the face (or, on a tilted
@@ -456,7 +516,7 @@ fn material_shade(input: MaterialInput) -> vec3<f32> {
 /// [`material_shade`] keeping the surface normal it shaded with.
 fn material_shade_with_normal(input: MaterialInput) -> Shaded {
     let mapped = material_mapped(input);
-    return Shaded(mapped_shade(mapped), mapped.normal);
+    return Shaded(mapped_shade(mapped), mapped.normal, mapped.coverage);
 }
 
 /// The pack projected and sampled, not yet shaded: what terrain blends
@@ -481,6 +541,7 @@ fn material_mapped(input: MaterialInput) -> Mapped {
     var mapped: Mapped;
     mapped.base_albedo = input.albedo;
     mapped.albedo = vec3<f32>(0.0);
+    mapped.coverage = 0.0;
     mapped.geometric_normal = input.world_normal;
     mapped.normal = vec3<f32>(0.0);
     mapped.world_position = input.world_position;
@@ -495,6 +556,7 @@ fn material_mapped(input: MaterialInput) -> Mapped {
     if weights.x >= TRIPLANAR_WEIGHT_EPSILON {
         let leg = sample_axis(vec3<f32>(sign_of(n.x), 0.0, 0.0), input);
         mapped.albedo += leg.albedo * weights.x;
+        mapped.coverage += leg.coverage * weights.x;
         mapped.normal += leg.normal * weights.x;
         mapped.metalness += leg.metalness * weights.x;
         mapped.roughness += leg.roughness * weights.x;
@@ -502,6 +564,7 @@ fn material_mapped(input: MaterialInput) -> Mapped {
     if weights.y >= TRIPLANAR_WEIGHT_EPSILON {
         let leg = sample_axis(vec3<f32>(0.0, sign_of(n.y), 0.0), input);
         mapped.albedo += leg.albedo * weights.y;
+        mapped.coverage += leg.coverage * weights.y;
         mapped.normal += leg.normal * weights.y;
         mapped.metalness += leg.metalness * weights.y;
         mapped.roughness += leg.roughness * weights.y;
@@ -509,6 +572,7 @@ fn material_mapped(input: MaterialInput) -> Mapped {
     if weights.z >= TRIPLANAR_WEIGHT_EPSILON {
         let leg = sample_axis(vec3<f32>(0.0, 0.0, sign_of(n.z)), input);
         mapped.albedo += leg.albedo * weights.z;
+        mapped.coverage += leg.coverage * weights.z;
         mapped.normal += leg.normal * weights.z;
         mapped.metalness += leg.metalness * weights.z;
         mapped.roughness += leg.roughness * weights.z;

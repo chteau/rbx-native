@@ -88,7 +88,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     input.reflectance = in.reflectance;
     input.layer = in.material.x;
     input.studs_per_tile = in.studs_per_tile;
-    input.kind = in.material.y;
+    input.kind = in.material.y & KIND_MASK;
+    input.variant_alpha = in.material.y >> VARIANT_ALPHA_SHIFT;
 
     // Straight (non-premultiplied) alpha: the translucent pipeline pairs this
     // with src_alpha / one_minus_src_alpha, and the opaque one always gets 1.

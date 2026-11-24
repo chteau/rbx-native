@@ -71,6 +71,9 @@ pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
 pub use isolation::STAGE_REACH;
 pub(crate) use isolation::{within as isolation_within, Isolation};
+pub use material::set_variant_alpha_modes;
+#[cfg(test)]
+pub(crate) use material::VariantAlpha;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
 #[cfg(test)]
 pub(crate) use particles::flat::read as read_gui_emitter;

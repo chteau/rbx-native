@@ -340,3 +340,6 @@ fn resolved_maps_change_when_a_material_joins_the_scene() {
     assert_ne!(after, before);
     assert_eq!(after[..before.len()], before[..]);
 }
+
+#[path = "tests/alpha.rs"]
+mod alpha;
