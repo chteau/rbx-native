@@ -1,5 +1,5 @@
 //! Studio Settings (`File › Studio Settings…`, `Alt+S`): every preference
-//! the editor keeps, on eleven pages behind a nav, the way real Studio's own
+//! the editor keeps, on twelve pages behind a nav, the way real Studio's own
 //! `File > Studio Settings` gathers its preferences into one dialog.
 //! Keyboard shortcuts stay a window of their own, as real Studio's
 //! `File > Customize Shortcuts` is.
@@ -21,6 +21,7 @@ use crate::tokens;
 use super::toolbar::snap::NumberField;
 use super::Shell;
 
+mod about;
 mod ai;
 mod appearance;
 mod argon;
@@ -211,8 +212,15 @@ impl SettingsWindow {
         ));
         // Anything that changes a setting elsewhere, the dock, a menu,
         // notifies the shell; this window has nothing of its own to redraw
-        // from.
-        subscriptions.push(cx.observe(&shell, |_, _, cx| cx.notify()));
+        // from. A menu item naming a page (Help › About RbxNative) while
+        // the window is open switches it there.
+        subscriptions.push(cx.observe(&shell, |this, shell, cx| {
+            let requested = shell.update(cx, |shell, _| shell.settings_open_on.take());
+            if let Some(page) = requested.and_then(Page::from_key) {
+                this.page = page;
+            }
+            cx.notify();
+        }));
         subscriptions.push(cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
             if matches!(event, InputEvent::Change) {
                 cx.notify();
@@ -285,7 +293,8 @@ impl SettingsWindow {
             Page::Appearance => self.appearance_page(window, cx),
             Page::Account => self.account_page(cx),
             Page::Ai => self.ai_page(cx),
-            _ => Vec::new(),
+            Page::About => self.about_page(),
+            Page::Beta => Vec::new(),
         }
     }
 }
