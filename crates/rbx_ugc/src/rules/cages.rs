@@ -72,9 +72,12 @@ fn find<'a>(
     cage
 }
 
-/// The vertices of `cage` whose UV is not the one `base` has at the same
-/// index (every vertex when only one of the two has UVs); none when the
-/// vertex counts differ, since then indices do not pair up.
+/// The vertices of `cage` with a UV `base` doesn't have (every vertex when
+/// only one of the two has UVs); none when the vertex counts differ. UVs
+/// are looked up, not compared index by index: Roblox's own cages list
+/// their vertices in another order than the cage they were made from
+/// (4720 of the leather jacket's 4949 outer-cage vertices sit at another
+/// index than in its inner cage), and Studio counts UVs not found.
 pub fn cage_uv_mismatches(cage: &Geometry, base: &Geometry) -> Vec<usize> {
     if cage.positions.len() != base.positions.len() {
         return Vec::new();
@@ -83,12 +86,11 @@ pub fn cage_uv_mismatches(cage: &Geometry, base: &Geometry) -> Vec<usize> {
     if a.is_empty() != b.is_empty() {
         return (0..cage.positions.len()).collect();
     }
+    let key = |uv: &[f32; 2]| uv.map(|c| (c / UV_TOLERANCE).round() as i64);
+    let known: std::collections::HashSet<[i64; 2]> = b.iter().map(key).collect();
     a.iter()
-        .zip(b)
         .enumerate()
-        .filter(|(_, (p, q))| {
-            (p[0] - q[0]).abs() > UV_TOLERANCE || (p[1] - q[1]).abs() > UV_TOLERANCE
-        })
+        .filter(|(_, uv)| !known.contains(&key(uv)))
         .map(|(i, _)| i)
         .collect()
 }
@@ -147,6 +149,7 @@ mod tests {
             name: name.into(),
             geometry: g,
             template: None,
+            to_mesh: crate::IDENTITY,
         }
     }
 
@@ -255,6 +258,18 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(cage_uv_mismatches(&bare, &base), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn reordered_uvs_are_not_moved_ones() {
+        let base = Geometry {
+            positions: vec![[0.0; 3]; 3],
+            uvs: vec![[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
+            ..Default::default()
+        };
+        let mut cage = base.clone();
+        cage.uvs.reverse();
+        assert!(cage_uv_mismatches(&cage, &base).is_empty());
     }
 
     #[test]

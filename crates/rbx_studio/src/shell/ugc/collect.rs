@@ -57,6 +57,8 @@ struct CagePlan {
     /// a `WrapLayer`'s `CageOrigin` or `ReferenceOrigin` on its handle.
     node: Ref,
     origin: CFrame,
+    /// `node`'s own `CFrame`, to measure the cage against the handle.
+    cframe: CFrame,
     /// A cage that is a `MeshPart` of its own is stretched to its `Size`.
     fit: Option<[f32; 3]>,
 }
@@ -74,8 +76,13 @@ pub(super) struct Plan {
     notes: Vec<Finding>,
 }
 
+/// `key`'s asset URI. A file Studio saves now holds a `FooId` property as
+/// the `FooContent` that replaced it (`ReferenceMeshContent`,
+/// `CageMeshContent`), so that is read when `key` is missing.
 fn uri<'a>(props: &'a BTreeMap<String, Variant>, key: &str) -> Option<&'a str> {
-    let text = match props.get(key)? {
+    let renamed = key.strip_suffix("Id").map(|stem| format!("{stem}Content"));
+    let value = props.get(key).or_else(|| props.get(renamed.as_deref()?))?;
+    let text = match value {
         Variant::String(text) => text.as_str(),
         Variant::Content(Content::Uri(uri)) => uri.as_str(),
         _ => return None,
@@ -209,6 +216,7 @@ fn collect_textures(dom: &WeakDom, part: Ref, plan: &mut Plan) {
 
 fn wrap_cages(dom: &WeakDom, part: Ref, item: &str, plan: &mut Plan) {
     let Some(inst) = dom.get(part) else { return };
+    let cframe = cframe_of(inst.properties());
     for &child in inst.children() {
         let Some(wrap) = dom.get(child).filter(|c| c.class() == "WrapLayer") else {
             continue;
@@ -230,6 +238,7 @@ fn wrap_cages(dom: &WeakDom, part: Ref, item: &str, plan: &mut Plan) {
                     mesh,
                     node: part,
                     origin: cframe_at(props, origin),
+                    cframe,
                     fit: None,
                 });
             }
@@ -315,14 +324,14 @@ pub(super) fn plan(dom: &WeakDom, root: Ref, kind: ItemKind) -> Result<Plan, Str
                 continue;
             }
         } else if let Some((kind, mesh)) = cage_of(name, child.properties()) {
-            let fit = part_plan(dom, r).map(|p| p.size);
             plan.cages.push(CagePlan {
                 kind,
                 name: name.to_string(),
                 mesh,
                 node: r,
                 origin: IDENTITY,
-                fit,
+                cframe: cframe_of(child.properties()),
+                fit: part_plan(dom, r).map(|p| p.size),
             });
             continue;
         }

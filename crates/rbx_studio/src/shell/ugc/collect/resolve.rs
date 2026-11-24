@@ -101,6 +101,14 @@ fn stretch_to(geometry: &Geometry, size: [f32; 3]) -> Vec3 {
     )
 }
 
+/// `m` as translation, then its 3 x 3 part row by row.
+fn affine(m: Mat4) -> rbx_ugc::Affine {
+    let t = m.w_axis;
+    let r = |i| m.row(i);
+    let (a, b, c) = (r(0), r(1), r(2));
+    [t.x, t.y, t.z, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z]
+}
+
 /// Blocking. `fetch` downloads an asset's bytes by id.
 pub(in crate::shell::ugc) fn resolve(
     plan: &Plan,
@@ -109,6 +117,9 @@ pub(in crate::shell::ugc) fn resolve(
     let mut notes = plan.notes.clone();
     let mut places: Vec<Place> = Vec::new();
     let mut stretches: Vec<(Ref, Vec3)> = Vec::new();
+    // The first read mesh's part and where its centred geometry sits on
+    // it, which the cages are measured against.
+    let mut handle: Option<(Mat4, Vec3)> = None;
     let parts = plan
         .parts
         .iter()
@@ -118,6 +129,7 @@ pub(in crate::shell::ugc) fn resolve(
                     .and_then(|b| placed_geometry(&b, Some(p.size)).map_err(|e| e.to_string()))
                 {
                     Ok((g, stretch)) => {
+                        handle.get_or_insert((cframe_matrix(&p.cframe), stretch.centre));
                         places.push(Place {
                             name: p.name.clone(),
                             node: p.node,
@@ -181,10 +193,19 @@ pub(in crate::shell::ugc) fn resolve(
                         .find(|(node, _)| *node == c.node)
                         .map_or(Vec3::ONE, |(_, f)| *f),
                 };
+                let local = Mat4::from_scale(stretch) * cframe_matrix(&c.origin);
                 places.push(Place {
                     name: c.name.clone(),
                     node: c.node,
-                    local: Mat4::from_scale(stretch) * cframe_matrix(&c.origin),
+                    local,
+                });
+                let to_mesh = handle.map_or(rbx_ugc::IDENTITY, |(part, centre)| {
+                    affine(
+                        Mat4::from_translation(-centre)
+                            * part.inverse()
+                            * cframe_matrix(&c.cframe)
+                            * local,
+                    )
                 });
                 let template = match c.kind {
                     CageKind::Inner => {
@@ -198,6 +219,7 @@ pub(in crate::shell::ugc) fn resolve(
                     name: c.name.clone(),
                     geometry: g,
                     template,
+                    to_mesh,
                 });
             }
             Err(e) => notes.push(note(
