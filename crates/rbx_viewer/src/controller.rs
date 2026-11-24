@@ -15,6 +15,10 @@ use crate::camera::{self, Camera, Pose, Viewpoint, MAX_ORTHO_SCALE, MIN_ORTHO_SC
 use crate::input::{CameraInput, Input};
 use crate::scene::Bounds;
 
+mod studio;
+use studio::StudioCamera;
+pub use studio::{focus_distance, CameraMode, CameraStyle};
+
 const MIN_SPEED: f32 = 1.0;
 const MAX_SPEED: f32 = 10_000.0;
 // Studio's own wheel-to-speed feel: a handful of notches roughly doubles or halves it.
@@ -67,6 +71,8 @@ pub struct CameraFeel {
     /// How much moves ease in and out: 0 is none, `DEFAULT_SMOOTHING` is
     /// `MOVEMENT_TIME_CONSTANT`, and the ease time grows in step with it.
     pub smoothing: f32,
+    /// Which camera flies: this renderer's own, or Studio's beta one.
+    pub style: CameraStyle,
 }
 
 impl Default for CameraFeel {
@@ -75,6 +81,7 @@ impl Default for CameraFeel {
             sensitivity: 1.0,
             speed: 1.0,
             smoothing: DEFAULT_SMOOTHING,
+            style: CameraStyle::Classic,
         }
     }
 }
@@ -135,6 +142,19 @@ pub(crate) struct Room {
     pub(crate) ahead: Option<f32>,
     /// The scene's centre and how far from it the eye may dolly out.
     pub(crate) home: Option<(Vec3, f32)>,
+    /// The ray under the cursor and the surface it meets, for the beta
+    /// camera's zoom to cursor and orbit point.
+    pub(crate) cursor: Option<Cursor>,
+    /// The view's height in pixels, for the beta camera's pan at the focus.
+    pub(crate) height: Option<f32>,
+}
+
+/// Where the cursor points, seen from the eye.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Cursor {
+    pub(crate) direction: Vec3,
+    /// The first surface along it, in world space.
+    pub(crate) hit: Option<Vec3>,
 }
 
 /// Owns which of the two controllers is live and the free camera's current speed.
@@ -144,6 +164,9 @@ pub(crate) struct Controller {
     speed: f32,
     feel: Feel,
     motion: Motion,
+    studio: Option<StudioCamera>,
+    /// The cursor and view height for the next `update`, see `set_view`.
+    room: Room,
 }
 
 impl Controller {
@@ -165,15 +188,64 @@ impl Controller {
                 tau: MOVEMENT_TIME_CONSTANT,
             },
             motion: Motion::default(),
+            studio: None,
+            room: Room::default(),
         }
     }
 
+    /// The cursor's ray and the view's height for the next `update` only,
+    /// which the beta camera's wheel and pan need.
+    pub(crate) fn set_view(&mut self, cursor: Option<Cursor>, height: Option<f32>) {
+        self.room = Room {
+            cursor,
+            height,
+            ..Room::default()
+        };
+    }
+
     pub(crate) fn speed(&self) -> f32 {
-        self.speed
+        self.studio.map_or(self.speed, |studio| studio.speed())
+    }
+
+    /// The beta camera's speed multiplier, while it flies in a mode that
+    /// shows one.
+    pub(crate) fn multiplier(&self) -> Option<f32> {
+        self.studio.and_then(|studio| studio.multiplier())
     }
 
     pub(crate) fn set_feel(&mut self, feel: CameraFeel) {
         self.feel = Feel::of(feel);
+        self.studio = match (feel.style, self.studio) {
+            (CameraStyle::Classic, _) => None,
+            (CameraStyle::Studio(mode), Some(mut studio)) => {
+                studio.set_mode(mode);
+                Some(studio)
+            }
+            (CameraStyle::Studio(mode), None) => Some(StudioCamera::new(mode)),
+        };
+    }
+
+    /// The beta camera's own state, carried over a host replacing the
+    /// controller: as it was for a rebuilt scene (`None`), or aiming at a
+    /// point `depth` ahead for a place camera or a script moving the view.
+    pub(crate) fn adopt(&mut self, from: &Controller, depth: Option<f32>) {
+        if let (Some(mut studio), Some(_)) = (from.studio, self.studio) {
+            if let Some(depth) = depth {
+                studio.place(depth);
+            }
+            self.studio = Some(studio);
+        }
+    }
+
+    /// Focus or a view jump with the beta camera: glides to `pose` and
+    /// orbits the point `depth` ahead. `false` when the classic camera
+    /// flies, which the host snaps instead.
+    pub(crate) fn frame(&mut self, pose: Pose, depth: f32) -> bool {
+        let (Some(studio), Mode::Free(_)) = (&mut self.studio, &self.mode) else {
+            return false;
+        };
+        studio.frame(pose, depth);
+        true
     }
 
     /// `F`/`Home`: snaps back to the spawn view (or, for `--orbit`, the initial
@@ -229,6 +301,7 @@ impl Controller {
         orthographic: bool,
         ahead: Option<f32>,
     ) -> Viewpoint {
+        let room = std::mem::take(&mut self.room);
         if matches!(self.mode, Mode::Orbit) && input.requests_free_flight() {
             let yaw = Camera::orbit_yaw(elapsed);
             self.mode = Mode::Free(Camera::orbit_pose(bounds, yaw));
@@ -245,10 +318,19 @@ impl Controller {
                 bounds.center(),
                 bounds.radius() * ZOOM_OUT_RADII + ZOOM_OUT_SLACK,
             )),
+            ..room
         };
 
         match &mut self.mode {
             Mode::Orbit => Viewpoint::Orbit(Camera::orbit_yaw(elapsed)),
+            // The orthographic view keeps the classic camera: its wheel zooms
+            // the view volume, which the beta's zoom has no notion of.
+            Mode::Free(pose) if self.studio.is_some() && !orthographic => {
+                if let Some(studio) = &mut self.studio {
+                    self.speed = studio.step(pose, input, dt, self.feel, room);
+                }
+                Viewpoint::Free(*pose)
+            }
             Mode::Free(pose) => {
                 self.speed = free_update(
                     pose,

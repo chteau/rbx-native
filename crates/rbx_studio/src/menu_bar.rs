@@ -93,6 +93,7 @@ actions!(
         MenuInsertMesh,
         MenuInsertRig,
         MenuImportImage,
+        MenuImportVideo,
         MenuInsertScript,
         MenuInsertLocalScript,
         MenuInsertModuleScript,
@@ -212,6 +213,11 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         MenuItem::action("Insert Rig…", MenuInsertRig),
         MenuItem::action("Import 3D Model…", MenuImportModel),
         MenuItem::action("Import Image…", MenuImportImage),
+    ];
+    if crate::shell::video_upload_enabled() {
+        model.push(MenuItem::action("Import Video…", MenuImportVideo));
+    }
+    model.extend([
         MenuItem::separator(),
         // The id Sync Shared matches across a game's places.
         MenuItem::action("Mark as Shared", MenuMarkShared),
@@ -219,7 +225,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         MenuItem::separator(),
         MenuItem::action("Group", MenuGroup),
         MenuItem::action("Ungroup", MenuUngroup),
-    ];
+    ]);
     if !templates.is_empty() {
         model.push(MenuItem::separator());
     }

@@ -36,11 +36,11 @@ use super::freeze::{authorize, describe, fetch_asset, read_model};
 use super::{clipboard, Shell};
 
 const SOURCE: &str = "Import";
-const MOCK_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK";
+pub(super) const MOCK_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK";
 /// With the mock, the asset id the "upload" answers with.
-const MOCK_ID_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK_ID";
+pub(super) const MOCK_ID_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK_ID";
 /// Fails the upload with this message, for a scripted capture of the error.
-const MOCK_ERROR_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK_ERROR";
+pub(super) const MOCK_ERROR_VARIABLE: &str = "RBX_STUDIO_IMPORT_MOCK_ERROR";
 const KEEP_VARIABLE: &str = "RBX_STUDIO_IMPORT_KEEP";
 const IMAGE_EXTENSIONS: [&str; 4] = ["png", "jpg", "jpeg", "bmp"];
 
@@ -56,6 +56,8 @@ pub(crate) enum ImportKind {
     Model,
     Mesh,
     Image,
+    /// An `.mp4` or `.mov`, behind the Video Uploads beta.
+    Video,
     /// A model checked as this avatar item before it is uploaded.
     Avatar(super::ugc::ItemKind),
 }
@@ -72,16 +74,15 @@ pub(crate) struct Imported {
 impl Shell {
     /// The file picker behind both Import menu items.
     pub(crate) fn choose_import(&mut self, kind: ImportKind, cx: &mut Context<Self>) {
-        let images = kind == ImportKind::Image;
         let prompt = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
             multiple: true,
             prompt: Some(
-                if images {
-                    "Import Image"
-                } else {
-                    "Import 3D Model"
+                match kind {
+                    ImportKind::Image => "Import Image",
+                    ImportKind::Video => "Import Video",
+                    _ => "Import 3D Model",
                 }
                 .into(),
             ),
@@ -110,6 +111,8 @@ impl Shell {
         for path in paths {
             if is_image(&path) {
                 self.import_image(path, cx);
+            } else if super::video_upload::is_video(&path) && super::video_upload::enabled() {
+                self.import_video(path, cx);
             } else if Format::of(&path).is_some() {
                 let avatar = match kind {
                     ImportKind::Avatar(item) => Some(item),
@@ -118,7 +121,7 @@ impl Shell {
                 self.import_model(path, kind == ImportKind::Mesh, avatar, cx);
             } else {
                 self.import_report(
-                    Err(format!("{}: not a 3D or image file", path.display())),
+                    Err(format!("{}: not a file Import takes", path.display())),
                     cx,
                 );
             }
@@ -137,11 +140,12 @@ impl Shell {
             .set_feedback(Feedback::Output(format!("Importing {name}\u{2026}")));
         cx.notify();
         cx.spawn(async move |this, cx| {
+            let file = path.clone();
             let result = cx
-                .background_spawn(async move { upload_model(&path, &stem(&path), avatar) })
+                .background_spawn(async move { upload_model(&file, &stem(&file), avatar) })
                 .await;
             let _ = this.update(cx, |shell, cx| {
-                shell.finish_model(name, mesh, avatar, result, cx)
+                shell.finish_model(&path, name, mesh, avatar, result, cx)
             });
         })
         .detach();
@@ -149,6 +153,7 @@ impl Shell {
 
     fn finish_model(
         &mut self,
+        path: &Path,
         name: String,
         mesh: bool,
         avatar: Option<super::ugc::ItemKind>,
@@ -168,6 +173,9 @@ impl Shell {
         } else {
             place_model(&mut self.dom, &imported.dom, &name, workspace)
         };
+        if let Some(root) = root.filter(|_| !mesh && super::reimport::enabled()) {
+            self.stamp_import(root, path);
+        }
         let changes = self.dom.take_changes();
         self.rebuild_explorer(cx);
         if let Some(root) = root {
@@ -404,7 +412,12 @@ fn place_meshes(dom: &mut WeakDom, imported: &WeakDom, name: &str, parent: Ref) 
 
 /// The imported model under `parent`, named `name`: Roblox's `Model` as it
 /// came, or a new one holding whatever else the import's top level held.
-fn place_model(dom: &mut WeakDom, imported: &WeakDom, name: &str, parent: Ref) -> Option<Ref> {
+pub(super) fn place_model(
+    dom: &mut WeakDom,
+    imported: &WeakDom,
+    name: &str,
+    parent: Ref,
+) -> Option<Ref> {
     let roots = imported.root_refs();
     let single_model = match roots {
         [only] => imported
