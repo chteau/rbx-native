@@ -102,6 +102,7 @@ pub(crate) use settings_window::open::{
     open_loading as open_loading_settings,
 };
 pub(crate) use team_presence::key_arrived;
+pub(crate) use video_upload::{enabled as video_upload_enabled, BETA_ID as VIDEO_UPLOADS_BETA_ID};
 pub(crate) use view_snap::PresetView;
 mod toolbox;
 mod tree_keys;
@@ -141,6 +142,7 @@ pub(crate) mod tooltip;
 mod ugc;
 mod ui_editor;
 mod update_planning;
+mod video_upload;
 mod view_snap;
 mod viewport_dock;
 mod wally_dock;
@@ -254,6 +256,8 @@ pub(crate) struct Shell {
     /// (see `shell::theme_live`).
     theme: crate::theme::ThemePack,
     theme_watch: crate::theme::Watch,
+    /// A checked video waiting on its price (see `shell::video_upload`).
+    pending_video: Option<video_upload::PendingVideo>,
     /// Auto-Reimport's watched instances and reimports in flight (see
     /// `shell::reimport`).
     reimports: reimport::Reimports,
@@ -946,6 +950,7 @@ impl Shell {
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
             theme_watch: crate::theme::Watch::new(user.theme.dir.clone()),
+            pending_video: None,
             reimports: reimport::Reimports::default(),
             theme: user.theme,
             unfocused_fps,
@@ -2285,6 +2290,7 @@ impl Render for Shell {
             self.close_place_dialog(cx),
             self.playtests_export_dialog(cx),
             self.toolbox_notice_dialog(cx),
+            self.video_upload_dialog(cx),
             self.rig_dialog_overlay(cx),
             self.animation_publish_overlay(cx),
             self.animation_id_prompt_overlay(cx),

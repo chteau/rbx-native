@@ -42,6 +42,7 @@ mod thumbnails;
 mod toolbox;
 mod universes;
 mod version_history;
+pub mod video;
 mod web;
 
 pub use api_key::ApiKey;
