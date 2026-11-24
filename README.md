@@ -324,11 +324,17 @@ include, how to report a bug, and the rules about Roblox assets.
   features.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to propose a change.
 - [CHANGELOG.md](CHANGELOG.md): a log of what landed and why.
+- [CREDITS.md](CREDITS.md): who made the third-party assets and ideas
+  RbxNative uses, and their licences.
 - [BENCHMARKS.md](BENCHMARKS.md): load, reload and frame timings, the
   machine they were measured on, and how `./scripts/bench.sh` reproduces
   them.
 
 ## Thanks
+
+[CREDITS.md](CREDITS.md) has the full list of fonts, icons, models, data and
+programs RbxNative uses, with their owners and licences. The app shows it
+under Help › About RbxNative.
 
 - **MaximumADHD** for [Roblox-Client-Tracker](https://github.com/MaximumADHD/Roblox-Client-Tracker)
   (Roblox's shader sources, which I studied to reproduce its lighting),
