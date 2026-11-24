@@ -7,14 +7,19 @@
 //! vertex, `#7F2020` for the edges that meet one and `#404040` for the rest,
 //! two pixels wide and hidden behind the model, and a `#FF4040` dot on each
 //! flagged vertex, drawn over everything. (On the Traffic Cone, 1082802,
-//! the red runs up the side from every dot on the open base ring.) A cage check draws the whole cage
-//! that way. Checks without per-vertex data (bounds, attachments, schema,
-//! properties, HSR, textures) draw nothing, and neither does hovering.
+//! the red runs up the side from every dot on the open base ring.) A cage
+//! check draws the whole cage that way, and so do degenerate triangles and
+//! the mesh outside its cage, over the whole render mesh. Checks without
+//! per-vertex data (bounds, attachments, schema, properties, HSR, textures)
+//! draw nothing, and neither does hovering.
 //!
-//! Of the checks Studio draws, this validator has two: the open edges of
+//! Of the checks Studio draws, this validator has five: the open edges of
 //! `Watertight` (Studio's `Measure_Mesh_Watertight` and
-//! `Measure_Mesh_Manifold`) and the vertices of `CageUvs` (its
-//! `Measure_Cage_UV`).
+//! `Measure_Mesh_Manifold`), the vertices of `CageUvs` (its
+//! `Measure_Cage_UV`), the corners of `DegenerateTriangles`
+//! (`Measure_Degen_Triangles`), the render-mesh vertices `MeshOutsideCage`
+//! finds outside the outer cage (`Measure_Mesh_Outside_OuterCage`), and the
+//! outer-cage vertices `CageDistance` fails (`Measure_Cage_Mesh_Distance`).
 
 use std::collections::{BTreeSet, HashSet};
 
@@ -54,7 +59,14 @@ pub(in crate::shell::ugc) fn cframe_matrix(c: &CFrame) -> Mat4 {
 
 /// Whether a finding of `rule` has somewhere on the model to draw.
 pub(super) fn drawable(rule: Rule) -> bool {
-    matches!(rule, Rule::Watertight | Rule::CageUvs)
+    matches!(
+        rule,
+        Rule::Watertight
+            | Rule::CageUvs
+            | Rule::DegenerateTriangles
+            | Rule::MeshOutsideCage
+            | Rule::CageDistance
+    )
 }
 
 /// Where `finding`'s vertices sit in the place now; none when its part is
@@ -78,14 +90,22 @@ fn segments(dom: &WeakDom, collected: &Collected, finding: &Finding) -> Vec<Segm
 /// The lines and dots that show `finding` with its vertices at `to_world`.
 pub(super) fn drawing(collected: &Collected, finding: &Finding, to_world: Mat4) -> Vec<Segment> {
     let item = &collected.item;
+    let part = || {
+        item.parts
+            .iter()
+            .find(|p| p.name == finding.subject)
+            .and_then(|p| p.geometry.as_ref())
+    };
+    let welded_ids = |geometry: &Geometry, vertices: Vec<usize>| -> HashSet<u32> {
+        let welded = rbx_ugc::weld(&geometry.positions);
+        vertices
+            .into_iter()
+            .filter_map(|i| welded.get(i).copied())
+            .collect()
+    };
     match finding.rule {
         Rule::Watertight => {
-            let Some(geometry) = item
-                .parts
-                .iter()
-                .find(|p| p.name == finding.subject)
-                .and_then(|p| p.geometry.as_ref())
-            else {
+            let Some(geometry) = part() else {
                 return Vec::new();
             };
             let flagged: HashSet<u32> = rbx_ugc::open_edges(geometry)
@@ -93,6 +113,35 @@ pub(super) fn drawing(collected: &Collected, finding: &Finding, to_world: Mat4) 
                 .flatten()
                 .collect();
             draw(geometry, &flagged, false, to_world)
+        }
+        Rule::DegenerateTriangles => {
+            let Some(geometry) = part() else {
+                return Vec::new();
+            };
+            let corners = rbx_ugc::degenerate_triangles(geometry)
+                .into_iter()
+                .flat_map(|t| geometry.triangles[t].map(|i| i as usize))
+                .collect();
+            draw(geometry, &welded_ids(geometry, corners), true, to_world)
+        }
+        Rule::MeshOutsideCage => {
+            let Some(geometry) = part() else {
+                return Vec::new();
+            };
+            let outside = rbx_ugc::mesh_outside_cage(item);
+            draw(geometry, &welded_ids(geometry, outside), true, to_world)
+        }
+        Rule::CageDistance => {
+            let Some(cage) = item.cages.iter().find(|c| c.name == finding.subject) else {
+                return Vec::new();
+            };
+            let failed = rbx_ugc::cage_distance_failures(&rbx_ugc::cage_mesh_distances(item));
+            draw(
+                &cage.geometry,
+                &welded_ids(&cage.geometry, failed),
+                true,
+                to_world,
+            )
         }
         Rule::CageUvs => {
             let Some(cage) = item.cages.iter().find(|c| c.name == finding.subject) else {
@@ -103,15 +152,18 @@ pub(super) fn drawing(collected: &Collected, finding: &Finding, to_world: Mat4) 
                 .iter()
                 .find(|c| c.kind == CageKind::Inner && cage.kind == CageKind::Outer)
                 .map(|c| &c.geometry);
-            let welded = rbx_ugc::weld(&cage.geometry.positions);
-            let flagged: HashSet<u32> = cage
+            let moved = cage
                 .template
                 .iter()
                 .chain(inner)
                 .flat_map(|base| rbx_ugc::cage_uv_mismatches(&cage.geometry, base))
-                .filter_map(|i| welded.get(i).copied())
                 .collect();
-            draw(&cage.geometry, &flagged, true, to_world)
+            draw(
+                &cage.geometry,
+                &welded_ids(&cage.geometry, moved),
+                true,
+                to_world,
+            )
         }
         _ => Vec::new(),
     }
