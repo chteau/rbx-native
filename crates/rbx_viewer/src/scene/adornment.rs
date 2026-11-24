@@ -18,13 +18,11 @@
 //! outlines itself with, is carried as a [`Ring`] for the renderer to face
 //! at the eye.
 //!
-//! Two things creator-docs describes are deliberately not read, because the
-//! API dump this project syncs daily does not carry them: the newer
-//! `AdornShading` enum (a `Shading` property on the shape adornments, which
-//! would let one be lit or drawn through geometry) and
-//! `ConeHandleAdornment.Hollow`. Both are documented but absent from the
-//! dump, so no file can carry one yet, and their enum ordinals are not
-//! published anywhere this project can read. The legacy
+//! `HandleAdornment.Shading` (`AdornShading`: Default, Shaded, XRay,
+//! XRayShaded, AlwaysOnTop) is in the dump now but not read yet: every
+//! shape is drawn flat, as its Default draws in Studio 0.748.
+//! `ConeHandleAdornment.Hollow` is documented but absent from the dump, so
+//! no file can carry one. The legacy
 //! `HandleAdornment.AlwaysOnTop`/`ZIndex` pair, which the dump does carry,
 //! is read in full.
 
@@ -116,6 +114,12 @@ pub(crate) enum Mesh {
     Sphere { radius: f32 },
     /// Base on the frame's origin, apex `height` studs along -Z.
     Cone { radius: f32, height: f32 },
+    /// A `PyramidHandleAdornment`: a regular `sides`-gon on the frame's
+    /// origin, flat edge down (-Y) and `size` studs from that edge to the
+    /// top, apex `height` studs along -Z. Either may be negative, as in
+    /// Studio: a negative `height` points the apex along +Z, a negative
+    /// `size` turns the base half a turn.
+    Pyramid { sides: u32, size: f32, height: f32 },
     /// From the frame's origin, `height` studs along -Z. `inner` hollows it
     /// out and `sweep` (degrees) cuts it to a pie slice, both documented on
     /// `CylinderHandleAdornment`.

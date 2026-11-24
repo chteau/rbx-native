@@ -309,3 +309,94 @@ fn a_picture_faces_along_its_look_vector() {
         assert!(corners.iter().all(|vertex| vertex.single_sided == 1.0));
     }
 }
+
+fn pyramid(sides: u32, size: f32, height: f32) -> Vec<Vec3> {
+    let mut out = Vec::new();
+    solid(
+        AdornMesh::Pyramid {
+            sides,
+            size,
+            height,
+        },
+        Mat4::IDENTITY,
+        WHITE,
+        &mut out,
+    );
+    positions(&out)
+}
+
+/// What Studio 0.748 drew at `Size = 4`: a square with half-side 2, a
+/// hexagon and an octagon with inradius 2, a triangle and a pentagon `Size`
+/// tall from their flat bottom edge to the top corner.
+#[test]
+fn a_pyramid_base_is_size_tall_with_a_flat_bottom_edge() {
+    for sides in [3, 4, 5, 6, 8, 32] {
+        let points = pyramid(sides, 4.0, 3.0);
+        let base: Vec<Vec3> = points.into_iter().filter(|p| p.z.abs() < 1e-4).collect();
+        let low = base.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+        let high = base.iter().map(|p| p.y).fold(f32::MIN, f32::max);
+        assert!(
+            (high - low - 4.0).abs() < 1e-4,
+            "{sides} sides span {}",
+            high - low
+        );
+        let bottom = base.iter().filter(|p| (p.y - low).abs() < 1e-4);
+        assert!(
+            bottom.map(|p| p.x).fold(f32::MIN, f32::max) > 0.1,
+            "{sides}: no flat edge"
+        );
+    }
+    let square = pyramid(4, 4.0, 3.0);
+    assert!(square
+        .iter()
+        .any(|p| (*p - Vec3::new(2.0, -2.0, 0.0)).length() < 1e-4));
+    let hexagon = pyramid(6, 4.0, 3.0);
+    assert!(hexagon
+        .iter()
+        .all(|p| p.y >= -2.0 - 1e-4 && p.y <= 2.0 + 1e-4));
+}
+
+#[test]
+fn a_pyramid_points_along_negative_z_unless_its_height_is_negative() {
+    let up = pyramid(5, 3.0, 3.0);
+    assert!(up
+        .iter()
+        .any(|p| (*p - Vec3::new(0.0, 0.0, -3.0)).length() < 1e-4));
+    assert!(up.iter().all(|p| p.z <= 1e-4));
+    let down = pyramid(5, 3.0, -3.0);
+    assert!(down
+        .iter()
+        .any(|p| (*p - Vec3::new(0.0, 0.0, 3.0)).length() < 1e-4));
+    assert_eq!(
+        pyramid(5, 3.0, 3.0).len(),
+        5 * 6,
+        "a side and a base slice per edge"
+    );
+}
+
+#[test]
+fn a_pyramid_winds_outward_whichever_way_it_points() {
+    for (size, height) in [(4.0, 3.0), (4.0, -3.0), (-4.0, 3.0)] {
+        let inside = Vec3::new(0.0, 0.0, -height * 0.25);
+        for corners in pyramid(5, size, height).chunks(3) {
+            let [a, b, c] = [corners[0], corners[1], corners[2]];
+            assert!(
+                (b - a).cross(c - a).dot((a + b + c) / 3.0 - inside) > 0.0,
+                "size {size} height {height}"
+            );
+        }
+    }
+}
+
+/// Flat, a pyramid is its base twice over, facing both ways, as Studio
+/// shows it from either side.
+#[test]
+fn a_flat_pyramid_faces_both_ways() {
+    let points = pyramid(4, 2.0, 0.0);
+    let normals: Vec<f32> = points
+        .chunks(3)
+        .map(|t| (t[1] - t[0]).cross(t[2] - t[0]).z)
+        .filter(|z| z.abs() > 1e-6)
+        .collect();
+    assert!(normals.iter().any(|z| *z > 0.0) && normals.iter().any(|z| *z < 0.0));
+}

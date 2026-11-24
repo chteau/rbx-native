@@ -65,6 +65,24 @@ pub(super) fn pieces(
             height: float_or(properties, "Height", 1.0).max(0.0),
         })]);
     }
+    if is("PyramidHandleAdornment") {
+        // Studio 0.748 clamps `Sides` to 3..=32 and takes `Size` and
+        // `Height` as given, zero and negative included; a zero `Size` draws
+        // nothing there.
+        let size = float_or(properties, "Size", 1.0);
+        if size == 0.0 {
+            return Some(Vec::new());
+        }
+        let sides = match properties.get("Sides") {
+            Some(Variant::Int32(sides)) => *sides,
+            _ => 4,
+        };
+        return Some(vec![solid(Mesh::Pyramid {
+            sides: sides.clamp(3, 32) as u32,
+            size,
+            height: float_or(properties, "Height", 2.0),
+        })]);
+    }
     if is("LineHandleAdornment") {
         // Documented in studs along the handle's own length, and in pixels
         // across it.

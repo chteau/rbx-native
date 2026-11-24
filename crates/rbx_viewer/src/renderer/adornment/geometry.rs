@@ -31,6 +31,11 @@ pub(super) fn solid(mesh: AdornMesh, frame: Mat4, color: [f32; 4], out: &mut Vec
         AdornMesh::Box { size } => cuboid(frame, size, color, out),
         AdornMesh::Sphere { radius } => sphere(frame, radius, color, out),
         AdornMesh::Cone { radius, height } => cone(frame, radius, height, color, out),
+        AdornMesh::Pyramid {
+            sides,
+            size,
+            height,
+        } => pyramid(frame, sides, size, height, color, out),
         AdornMesh::Cylinder {
             radius,
             inner,
@@ -207,6 +212,62 @@ fn cone(frame: Mat4, radius: f32, height: f32, color: [f32; 4], out: &mut Vec<Ve
         let (a, b) = (rim(segment), rim(segment + 1));
         triangle(out, color, a, b, apex, (a + b + apex) / 3.0 - inside);
         triangle(out, color, b, a, base, base - inside);
+    }
+}
+
+/// A `PyramidHandleAdornment`, laid out as Studio 0.748 draws one: the base
+/// is a regular polygon centred on the frame's origin with one edge flat
+/// along the bottom (-Y), sized so its height up the frame's Y is `size`
+/// (an even polygon's inradius is half of it; an odd one's circumradius
+/// and inradius add up to it), and the apex sits `height` along -Z.
+fn pyramid(
+    frame: Mat4,
+    sides: u32,
+    size: f32,
+    height: f32,
+    color: [f32; 4],
+    out: &mut Vec<Vertex>,
+) {
+    let n = sides.max(3) as f32;
+    let half_step = std::f32::consts::PI / n;
+    let circumradius = if sides % 2 == 0 {
+        size * 0.5 / half_step.cos()
+    } else {
+        size / (1.0 + half_step.cos())
+    };
+    let corner = |k: u32| {
+        let angle = -std::f32::consts::FRAC_PI_2 + half_step + 2.0 * half_step * k as f32;
+        Vec3::new(angle.cos(), angle.sin(), 0.0) * circumradius
+    };
+    let apex = Vec3::new(0.0, 0.0, -height);
+    // The base faces away from the apex. With no height at all, base and
+    // sides lie in one plane facing opposite ways, so Studio's flat
+    // pyramid shows from both sides even single-sided.
+    let away = if height < 0.0 { -1.0 } else { 1.0 };
+    let world = |local: Vec3| frame.transform_point3(local);
+    let outward = |local: Vec3| frame.transform_vector3(local);
+    for k in 0..sides {
+        let (a, b) = (corner(k), corner(k + 1));
+        let middle = (a + b) * 0.5;
+        let inradius = middle.length();
+        let side_out =
+            middle / inradius.max(f32::EPSILON) * height.abs() - Vec3::Z * inradius * away;
+        triangle(
+            out,
+            color,
+            world(a),
+            world(b),
+            world(apex),
+            outward(side_out),
+        );
+        triangle(
+            out,
+            color,
+            world(b),
+            world(a),
+            world(Vec3::ZERO),
+            outward(Vec3::Z * away),
+        );
     }
 }
 
