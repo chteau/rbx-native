@@ -3824,8 +3824,8 @@ there. What each does live, and where it stands here:
 | New Video API | `VideoPlayer` (Looping, PlaybackSpeed, Volume, TimeLength, IsPlaying, Resolution) and a `VideoDisplay` GuiObject (VideoColor3, VideoTransparency, ScaleType, ResampleMode, TileSize) | Not built: no video decoding here |
 | AvatarAbilities Character Controller Library | No new creatable class beyond `ControllerManager` | Not built: nothing to mirror yet |
 | Animation Graph State Machines | `AnimationGraphDefinition` creatable | Already here (Animation) |
-| New Studio Camera Controls (Updated) | Time-based flight with a ramp, speed from the focus distance, log zoom to the cursor, Alt + right dolly, F glides and frames at 70%, Adaptive/FPS/Orbit modes | Built behind a beta of the same name (PR #PRNUM) |
-| Next-Gen Draggers | New colours, smaller handles, positive Move arrows plus plane squares, near-half rings in a view ring with a trackball | Built behind a beta of the same name (PR #PRNUM) |
+| New Studio Camera Controls (Updated) | Time-based flight with a ramp, speed from the focus distance, log zoom to the cursor, Alt + right dolly, F glides and frames at 70%, Adaptive/FPS/Orbit modes | Built behind a beta of the same name (PR #410) |
+| Next-Gen Draggers | New colours, smaller handles, positive Move arrows plus plane squares, near-half rings in a view ring with a trackball | Built behind a beta of the same name (PR #410) |
 | Face Capture, Live Animation Creator, Animation Generation, Prompt-to-Avatar, Scene Generation, Playtest Agent | Assistant/camera/AI tools in Studio | Not built: Roblox's cloud AI services |
 | Party Simulator, Remote Breakpoints, Server Inspection | Team Test and server tooling | Not built: needs real Roblox servers |
 | Package Overrides, Auto-Reimport, Video Uploads, Visualizing UGC Validation, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
