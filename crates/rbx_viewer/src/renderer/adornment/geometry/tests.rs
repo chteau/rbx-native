@@ -162,30 +162,49 @@ fn a_hairline_still_covers_a_pixel() {
     assert_eq!(out[0].half_width, 0.5);
 }
 
+/// Where `point` lands on screen, as the tangent of its angle off the line
+/// from an eye straight up +Z from `centre`.
+fn spread(eye: Vec3, centre: Vec3, point: Vec3) -> f32 {
+    (point - centre).truncate().length() / (eye.z - point.z)
+}
+
 #[test]
-fn a_ring_faces_the_eye_at_its_own_radius() {
+fn a_ring_spans_the_two_silhouettes_in_front_of_its_sphere() {
     let mut out = Vec::new();
     let centre = Vec3::new(1.0, 2.0, 3.0);
     let eye = centre + Vec3::new(0.0, 0.0, 20.0);
-    ring(centre, 4.0, 2.0, WHITE, eye, &mut out);
-    assert!(!out.is_empty());
+    ring(centre, 1.0, 2.0, WHITE, eye, &mut out);
+    assert_eq!(out.len(), RING_SEGMENTS * 6);
+    // A sphere `r` across seen from 20 studs spans tan(asin(r / 20)).
+    let silhouette = |r: f32| (r / 20.0).asin().tan();
+    let mut seen = (f32::MAX, 0.0f32);
     for vertex in &out {
-        let offset = Vec3::from(vertex.position) - centre;
-        assert!((offset.length() - 4.0).abs() < 1e-3, "on the circle");
-        assert!(offset.z.abs() < 1e-3, "in the plane facing the eye");
+        let point = Vec3::from(vertex.position);
+        assert!(
+            (point.z - (centre.z + 2.0)).abs() < 1e-4,
+            "on the outer sphere's near plane"
+        );
+        let angle = spread(eye, centre, point);
+        seen = (seen.0.min(angle), seen.1.max(angle));
     }
+    assert!((seen.0 - silhouette(1.0)).abs() < 1e-4);
+    assert!((seen.1 - silhouette(2.0)).abs() < 1e-4);
 }
 
-/// An eye exactly at the centre has no direction to face; the ring still
-/// has to be geometry rather than a pile of zero-length lines.
+/// Studio draws no outline at all once the camera is inside its sphere.
 #[test]
-fn a_ring_seen_from_its_own_centre_still_draws() {
+fn a_ring_seen_from_inside_draws_nothing() {
     let mut out = Vec::new();
-    ring(Vec3::ZERO, 2.0, 1.0, WHITE, Vec3::ZERO, &mut out);
-    assert!(!out.is_empty());
-    for vertex in &out {
-        assert!((Vec3::from(vertex.position).length() - 2.0).abs() < 1e-3);
-    }
+    ring(
+        Vec3::ZERO,
+        1.0,
+        2.0,
+        WHITE,
+        Vec3::new(0.0, 0.0, 1.9),
+        &mut out,
+    );
+    ring(Vec3::ZERO, 1.0, 2.0, WHITE, Vec3::ZERO, &mut out);
+    assert!(out.is_empty());
 }
 
 #[test]

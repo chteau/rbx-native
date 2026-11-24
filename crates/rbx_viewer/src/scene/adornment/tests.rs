@@ -393,8 +393,10 @@ fn a_selection_sphere_is_a_ring_until_its_surface_shows() {
     let Piece::Ring(ring) = planned[0].pieces[0] else {
         panic!("a ring");
     };
-    // As wide as the part's smallest side, as in Studio 0.748.
-    assert_eq!(ring.radius, PART_SIZE.min_element() * 0.5);
+    // Round a sphere as wide as the part's smallest side, from 0.8 stud
+    // inside it to 0.2 outside, as in Studio 0.748.
+    let radius = PART_SIZE.min_element() * 0.5;
+    assert_eq!((ring.inner, ring.outer), (radius - 0.8, radius + 0.2));
 
     let filled = plan_of(
         "SelectionSphere",
@@ -624,4 +626,13 @@ fn an_adornment_stands_at_the_mean_of_its_pieces() {
         ],
     );
     assert!((adornments[0].centre() - Vec3::new(1.0, 2.0, 1.0)).length() < 1e-5);
+}
+
+// Measured in Studio 0.748: a sphere under 0.8 stud of radius has no hole.
+#[test]
+fn a_small_selection_sphere_outline_closes_into_a_disc() {
+    let close =
+        |(a, b): (f32, f32), (c, d): (f32, f32)| (a - c).abs() < 1e-6 && (b - d).abs() < 1e-6;
+    assert!(close(selection::ring_band(0.25), (0.0, 0.45)));
+    assert!(close(selection::ring_band(4.0), (3.2, 4.2)));
 }

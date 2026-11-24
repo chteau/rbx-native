@@ -22,7 +22,7 @@ const BANDS: usize = 12;
 /// Segments per full turn of an arc's ring, and round its tube.
 const ARC_SEGMENTS: usize = 64;
 const TUBE_SEGMENTS: usize = 8;
-/// Segments in a camera-facing outline circle.
+/// Segments round a camera-facing outline band.
 const RING_SEGMENTS: usize = 64;
 
 /// Appends one [`AdornMesh`], placed by `frame`, as triangles.
@@ -114,36 +114,53 @@ pub(in crate::renderer) fn line(
     ]);
 }
 
-/// A circle of `radius` around `centre`, drawn in the plane facing `eye`,
-/// the silhouette a `SelectionSphere` outlines itself with.
+/// A `SelectionSphere`'s outline facing `eye`: the band between the
+/// silhouettes of the spheres `inner` and `outer` studs round `centre`, laid
+/// on the plane touching the outer sphere's near side, so the adornment's
+/// own surface never covers it, with every radius scaled to project where
+/// that sphere's silhouette does. From inside the outer sphere Studio draws
+/// none of it.
 pub(super) fn ring(
     centre: Vec3,
-    radius: f32,
-    pixels: f32,
+    inner: f32,
+    outer: f32,
     color: [f32; 4],
     eye: Vec3,
-    out: &mut Vec<LineVertex>,
+    out: &mut Vec<Vertex>,
 ) {
-    let normal = (eye - centre).normalize_or_zero();
-    let normal = if normal.length_squared() < 0.5 {
-        Vec3::Z
-    } else {
-        normal
-    };
+    let to_eye = eye - centre;
+    let distance = to_eye.length();
+    if distance <= outer {
+        return;
+    }
+    let normal = to_eye / distance;
     let aside = if normal.y.abs() < 0.99 {
         Vec3::Y
     } else {
         Vec3::X
     };
-    let u = aside.cross(normal).normalize_or_zero() * radius;
-    let v = normal.cross(u.normalize_or_zero()) * radius;
-
-    let point = |segment: usize| {
+    let u = aside.cross(normal).normalize();
+    let v = normal.cross(u);
+    let plane = centre + normal * outer;
+    // A sphere `radius` across fills the cone of half-angle
+    // asin(radius / distance) round the line to its centre.
+    let reach =
+        |radius: f32| (distance - outer) * radius / (distance * distance - radius * radius).sqrt();
+    let (near, far) = (reach(inner), reach(outer));
+    let point = |segment: usize, radius: f32| {
         let angle = std::f32::consts::TAU * segment as f32 / RING_SEGMENTS as f32;
-        centre + u * angle.cos() + v * angle.sin()
+        plane + (u * angle.cos() + v * angle.sin()) * radius
     };
     for segment in 0..RING_SEGMENTS {
-        line(point(segment), point(segment + 1), pixels, color, out);
+        quad(
+            out,
+            color,
+            point(segment, near),
+            point(segment, far),
+            point(segment + 1, far),
+            point(segment + 1, near),
+            normal,
+        );
     }
 }
 

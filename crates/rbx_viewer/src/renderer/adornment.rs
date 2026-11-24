@@ -165,8 +165,8 @@ struct Entry {
 /// faces the eye, so its vertices are rebuilt whenever the camera moves.
 struct RingSource {
     centre: Vec3,
-    radius: f32,
-    pixels: f32,
+    inner: f32,
+    outer: f32,
     color: [f32; 4],
     range: Range<u32>,
 }
@@ -295,9 +295,9 @@ impl Adornments {
                         draws.push(Draw::Ring(self.rings.len()));
                         self.rings.push(RingSource {
                             centre: ring.centre,
-                            radius: ring.radius,
-                            pixels: ring.pixels,
-                            color: encoded(ring.color, ring.alpha),
+                            inner: ring.inner,
+                            outer: ring.outer,
+                            color: ring_color(ring.color, ring.alpha),
                             range: 0..0,
                         });
                     }
@@ -368,13 +368,13 @@ impl Adornments {
         }
         self.camera = Some((eye, view_projection));
         if !self.rings.is_empty() {
-            let mut vertices: Vec<LineVertex> = Vec::new();
+            let mut vertices: Vec<Vertex> = Vec::new();
             for ring in &mut self.rings {
                 let start = vertices.len() as u32;
                 geometry::ring(
                     ring.centre,
-                    ring.radius,
-                    ring.pixels,
+                    ring.inner,
+                    ring.outer,
                     ring.color,
                     eye,
                     &mut vertices,
@@ -406,6 +406,16 @@ fn vertex_buffer<T: Pod>(
 fn encoded(color: [f32; 3], alpha: f32) -> [f32; 4] {
     let [r, g, b] = color.map(linear_to_srgb);
     [r, g, b, alpha.clamp(0.0, 1.0)]
+}
+
+/// A `SelectionSphere` outline's colour: twice its `Color3` in sRGB values,
+/// through the same curve and blending as every depth-tested adornment.
+/// Measured in Studio 0.748: an opaque (0.5, 0.25, 0.1) outline lands on
+/// (223, 130, 31), exactly where a surface of (1, 0.5, 0.2) does, and half
+/// see-through over black and grey it lands within 3 of the same sum.
+fn ring_color(color: [f32; 3], alpha: f32) -> [f32; 4] {
+    let [r, g, b, a] = encoded(color, alpha);
+    [r * 2.0, g * 2.0, b * 2.0, a]
 }
 
 /// A `LineHandleAdornment`'s colour: an `AlwaysOnTop` one draws at half

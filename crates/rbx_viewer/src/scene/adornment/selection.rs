@@ -19,8 +19,14 @@ const DEFAULT_LINE_THICKNESS: f32 = 0.05;
 /// give it no thickness, so this is a slab thin enough to read as the
 /// surface itself.
 const FACE_THICKNESS: f32 = 0.05;
-/// How far a `SelectionSphere`'s outline ring sits, on screen, across.
-const RING_PIXELS: f32 = 2.0;
+/// How far a `SelectionSphere`'s outline reaches past its sphere, and in
+/// from it, in studs. Measured in Studio 0.748 on cubes 0.5 to 8 studs
+/// across, seen from 12 to 84 studs: the band runs between the silhouettes
+/// of spheres 0.2 stud bigger and 0.8 smaller than the adornment's, within
+/// 0.01 stud, the same whatever the distance, so it's a band in the world
+/// and not a line on screen. Below 0.8 studs of radius it closes into a disc.
+const RING_OUTSIDE: f32 = 0.2;
+const RING_INSIDE: f32 = 0.8;
 
 pub(super) fn pieces(
     database: &ReflectionDatabase,
@@ -108,8 +114,8 @@ fn edges(adornee: &Adornee, thickness: f32) -> impl Iterator<Item = (Mesh, Mat4)
 /// The documented sphere: "the sphere's geometry consists of a ring/outline
 /// in addition to a surface". The surface is `SurfaceColor3` at
 /// `SurfaceTransparency` (invisible by default, so the ring is usually the
-/// whole of what shows); the ring is the sphere's own silhouette, which only
-/// the renderer can face at the camera.
+/// whole of what shows); the ring is a band round the sphere's silhouette
+/// (see [`RING_OUTSIDE`]), which only the renderer can face at the camera.
 ///
 /// How large the sphere is isn't published. Studio 0.748 draws it as wide as
 /// the adornee's smallest side (a 3-stud cube gets a 3-stud sphere, a thin
@@ -134,15 +140,21 @@ fn selection_sphere(context: &Context<'_>) -> Vec<Piece> {
         }));
     }
     if context.alpha > 0.0 {
+        let (inner, outer) = ring_band(radius);
         pieces.push(Piece::Ring(Ring {
             centre,
-            radius,
-            pixels: RING_PIXELS,
+            inner,
+            outer,
             color: context.color,
             alpha: context.alpha,
         }));
     }
     pieces
+}
+
+/// The inner and outer radii of the outline round a sphere of `radius`.
+pub(super) fn ring_band(radius: f32) -> (f32, f32) {
+    ((radius - RING_INSIDE).max(0.0), radius + RING_OUTSIDE)
 }
 
 /// One face of the adornee, highlighted in `Color3`: a slab laid on the

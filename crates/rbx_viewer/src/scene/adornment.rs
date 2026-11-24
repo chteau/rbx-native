@@ -14,7 +14,7 @@
 //! Pure data, like every other module beside [`Scene`](super::Scene):
 //! everything below resolves to world-space primitives with no GPU handle
 //! and no camera, which is what lets the whole family be tested without a
-//! device. The one camera-dependent piece, the circle a `SelectionSphere`
+//! device. The one camera-dependent piece, the band a `SelectionSphere`
 //! outlines itself with, is carried as a [`Ring`] for the renderer to face
 //! at the eye.
 //!
@@ -146,8 +146,10 @@ pub(crate) struct Line {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct Ring {
     pub(crate) centre: Vec3,
-    pub(crate) radius: f32,
-    pub(crate) pixels: f32,
+    /// The radii, in studs, of the two spheres whose silhouettes bound the
+    /// band; `inner` is 0 for a band that closes into a disc.
+    pub(crate) inner: f32,
+    pub(crate) outer: f32,
     pub(crate) color: [f32; 3],
     pub(crate) alpha: f32,
 }

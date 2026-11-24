@@ -88,3 +88,14 @@ fn only_an_always_on_top_line_is_drawn_at_half_its_colour() {
         [1.0, 1.0, 1.0, 0.5]
     ));
 }
+
+// Measured in Studio 0.748: a `SelectionSphere` outline lands where a
+// surface twice its colour does.
+#[test]
+fn a_sphere_outline_is_drawn_at_twice_its_colour() {
+    let [r, g, b, a] = encoded([0.5, 0.25, 0.1], 0.5);
+    assert!(close(
+        ring_color([0.5, 0.25, 0.1], 0.5),
+        [r * 2.0, g * 2.0, b * 2.0, a]
+    ));
+}
