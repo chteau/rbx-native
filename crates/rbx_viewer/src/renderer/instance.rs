@@ -3,7 +3,7 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
-use crate::scene::{Part, Slot};
+use crate::scene::{Part, ShapeKind, Slot};
 
 const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 9] = wgpu::vertex_attr_array![
     2 => Float32x4,
@@ -53,6 +53,10 @@ const INSTANCE_ATTRIBUTES_AFTER_TANGENT: [wgpu::VertexAttribute; 9] = wgpu::vert
 /// the stride still matches WGSL's default layout for `InstanceInput`.
 /// Where `material_kind` keeps the variant alpha mode, past the kind's byte.
 const VARIANT_ALPHA_SHIFT: u32 = 8;
+/// Set in `material_kind` for a block or a wedge, whose material tiles from
+/// a corner of each face rather than from the part's centre (see
+/// `material.wgsl`'s `anchored_face`).
+const FACE_ANCHORED: u32 = 1 << 16;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
@@ -64,21 +68,27 @@ pub(super) struct InstanceRaw {
     /// Layer of every material texture array (see `renderer::material`).
     material_layer: u32,
     studs_per_tile: f32,
-    /// `scene::Kind` as its discriminant in the low byte and
-    /// `scene::VariantAlpha` in the next; `material.wgsl` names the same
-    /// values and splits them apart again (`KIND_MASK`, `VARIANT_ALPHA_SHIFT`).
+    /// `scene::Kind` as its discriminant in the low byte,
+    /// `scene::VariantAlpha` in the next and [`FACE_ANCHORED`] above them;
+    /// `material.wgsl` names the same values and splits them apart again
+    /// (`KIND_MASK`, `VARIANT_ALPHA_SHIFT`, `VARIANT_ALPHA_MASK`,
+    /// `FACE_ANCHORED`).
     material_kind: u32,
 }
 
 impl InstanceRaw {
     pub(super) fn from_part(part: &Part) -> Self {
-        Self::new(
+        let mut instance = Self::new(
             part.transform.to_cols_array_2d(),
             part.color,
             part.alpha,
             part.reflectance,
             part.material,
-        )
+        );
+        if matches!(part.kind, ShapeKind::Box | ShapeKind::Wedge) {
+            instance.material_kind |= FACE_ANCHORED;
+        }
+        instance
     }
 
     /// Used directly by `renderer::filemesh`, which has no `Part`: its model
@@ -182,7 +192,10 @@ mod tests {
         for shader in [BOX_SHADER, FILEMESH_SHADER] {
             assert!(shader.contains("const KIND_MASK: u32 = 0xffu;"));
             assert!(shader.contains("const VARIANT_ALPHA_SHIFT: u32 = 8u;"));
+            assert!(shader.contains("const VARIANT_ALPHA_MASK: u32 = 0xffu;"));
+            assert!(shader.contains("const FACE_ANCHORED: u32 = 0x10000u;"));
         }
+        assert_eq!(FACE_ANCHORED, 0x10000);
     }
 
     /// The `@location(n)` list of the `InstanceInput` struct one shader

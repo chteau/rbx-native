@@ -195,13 +195,14 @@ fn a_picture_is_one_quad_the_size_it_asks_for() {
         frame: Mat4::IDENTITY,
         size: Vec2::new(4.0, 2.0),
         texture: rbx_assets::AssetRef::Id(1),
+        color: [1.0; 3],
         alpha: 0.5,
         double_sided: true,
     };
-    picture_quad(&picture, 0.5, &mut out);
+    picture_quad(&picture, [0.2, 0.4, 0.6, 0.5], &mut out);
     assert_eq!(out.len(), 6);
     for vertex in &out {
-        assert_eq!(vertex.alpha, 0.5);
+        assert_eq!(vertex.color, [0.2, 0.4, 0.6, 0.5]);
         assert!(vertex.position[0].abs() <= 2.0 + 1e-5);
         assert!(vertex.position[1].abs() <= 1.0 + 1e-5);
         assert_eq!(vertex.position[2], 0.0);
@@ -299,10 +300,11 @@ fn a_picture_faces_along_its_look_vector() {
         frame: Mat4::IDENTITY,
         size: Vec2::new(4.0, 2.0),
         texture: rbx_assets::AssetRef::Id(1),
+        color: [1.0; 3],
         alpha: 1.0,
         double_sided: false,
     };
-    picture_quad(&picture, 1.0, &mut out);
+    picture_quad(&picture, [1.0; 4], &mut out);
     for corners in out.chunks(3) {
         let [a, b, c] = [0, 1, 2].map(|i| Vec3::from(corners[i].position));
         assert!((b - a).cross(c - a).z < 0.0);

@@ -47,7 +47,23 @@ fn vs_main(input: VertexInput) -> VertexOutput {
     return out;
 }
 
-@fragment
-fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
+fn shade(input: VertexOutput, front: bool) -> vec4<f32> {
     return input.color;
+}
+
+// Into the depth-tested layer: hidden by the scene's own depth (reversed-Z,
+// so nearer is greater), and premultiplied for the layer's "over".
+@fragment
+fn fs_layer(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    let color = shade(input, front);
+    if input.clip_position.z < scene_depth(vec2<i32>(input.clip_position.xy)) {
+        discard;
+    }
+    return vec4<f32>(color.rgb * color.a, color.a);
+}
+
+// Onto the finished frame, blended by the pipeline in sRGB values.
+@fragment
+fn fs_top(input: VertexOutput, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
+    return shade(input, front);
 }

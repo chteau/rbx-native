@@ -93,7 +93,7 @@ pub(super) fn pieces(
             to: from - frame.z_axis.truncate().normalize_or_zero() * length,
             pixels: float_or(properties, "Thickness", 1.0).max(0.0),
             color: context.color,
-            alpha: context.alpha,
+            alpha: line_alpha(context.alpha),
         })]);
     }
     if is("ImageHandleAdornment") {
@@ -106,6 +106,7 @@ pub(super) fn pieces(
             frame,
             size,
             texture,
+            color: context.color,
             alpha: context.alpha,
             double_sided,
         })]);
@@ -119,6 +120,33 @@ pub(super) fn pieces(
         return Some(Vec::new());
     }
     None
+}
+
+/// `Transparency` against the opacity a `LineHandleAdornment` actually
+/// draws with, measured in Studio 2026-11-24 over flat white, grey and
+/// black (both `AlwaysOnTop` and depth-tested agree to 0.006): a line fades
+/// much faster than every other shape, which draws at exactly
+/// `1 - Transparency`. Piecewise linear between the measured points.
+const LINE_OPACITY: [(f32, f32); 6] = [
+    (0.0, 1.0),
+    (0.25, 0.469),
+    (0.5, 0.27),
+    (0.75, 0.123),
+    (0.9, 0.047),
+    (1.0, 0.0),
+];
+
+/// What a line with opacity `alpha` (`1 - Transparency`) really draws at,
+/// see [`LINE_OPACITY`].
+pub(super) fn line_alpha(alpha: f32) -> f32 {
+    let transparency = 1.0 - alpha.clamp(0.0, 1.0);
+    LINE_OPACITY
+        .windows(2)
+        .find(|pair| transparency <= pair[1].0)
+        .map_or(0.0, |pair| {
+            let ((t0, a0), (t1, a1)) = (pair[0], pair[1]);
+            a0 + (a1 - a0) * (transparency - t0) / (t1 - t0)
+        })
 }
 
 /// `ImageContent` (the `Content` property Roblox moved to) or the older

@@ -402,7 +402,7 @@ impl Renderer {
                 images,
                 quality,
             ),
-            adornments: Adornments::new(device, queue, target, scene.adornments(), images, quality),
+            adornments: Adornments::new(device, queue, scene.adornments(), images, quality),
             highlights: highlight::Highlights::new(
                 device,
                 queue,
@@ -929,8 +929,11 @@ impl Renderer {
         }
         // A `SelectionSphere`'s outline faces the eye, so its vertices are
         // the camera's to decide, and a buffer written here cannot be
-        // written inside the pass that reads it.
-        self.adornments.prepare(device, eye);
+        // written inside the pass that reads it. The adornments' draw order
+        // is the eye's too (see `renderer::adornment`).
+        self.adornments.prepare(device, eye, view_projection);
+        // Not over an isolated view, where an adornee may well be hidden.
+        let adorned = self.surroundings().adornments;
 
         // Every frame rather than when the switch flips: a `Lighting` edit
         // writes the place's effects into the chain while isolated too.
@@ -1055,6 +1058,17 @@ impl Renderer {
             size,
         );
 
+        // Place content over every scene pass, editor cues included: the
+        // resolve lays the depth-tested adornments over the frame through
+        // Studio's tone curve (see `renderer::adornment`).
+        self.adornments.draw_layer(
+            device,
+            &mut encoder,
+            targets,
+            &self.frame.bind_group,
+            adorned,
+        );
+
         // The scene is HDR and unclamped until here: the bloom, the grade and
         // the tone map all live in the resolve.
         let view = target.create_view(&wgpu::TextureViewDescriptor {
@@ -1062,6 +1076,15 @@ impl Renderer {
             ..Default::default()
         });
         self.post.resolve(&mut encoder, &view);
+        // After the curve, the way Studio draws an `AlwaysOnTop` one.
+        self.adornments.draw_on_top(
+            device,
+            &mut encoder,
+            target,
+            targets,
+            &self.frame.bind_group,
+            adorned,
+        );
         // Onto the finished frame, so a one-pixel guide keeps its colour
         // (see `renderer::lines`), and under the `ScreenGui` like the rest
         // of the 3D view.
