@@ -230,7 +230,7 @@ fn pyramid(
 ) {
     let n = sides.max(3) as f32;
     let half_step = std::f32::consts::PI / n;
-    let circumradius = if sides % 2 == 0 {
+    let circumradius = if sides.is_multiple_of(2) {
         size * 0.5 / half_step.cos()
     } else {
         size / (1.0 + half_step.cos())
