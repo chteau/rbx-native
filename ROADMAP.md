@@ -703,10 +703,7 @@ and, on a model, each part's own face middles and centre, as the
   Transparency colours like TintMask and cuts the surface out (no
   blending) below half alpha. Both ramps are linear in sRGB, as Studio
   draws them. The Properties row shows only with the beta on; the value
-  round-trips either way. Still off from Studio: a variant's tiling starts
-  at the part's centre here and at each face's corner there, so a ramp
-  that starts at a plate's edge in Studio starts mid-plate here (true of
-  every variant, not just alpha modes).
+  round-trips either way.
 - [x] **`PyramidHandleAdornment`** (PR #407): live in Studio 0.748 and
   drawn here like the other shape adornments, flat colour, single-sided
   unless `DoubleSided`. Measured there: the base is a regular polygon on
@@ -718,6 +715,32 @@ and, on a model, each part's own face middles and centre, as the
   `SizeRelativeOffset`, `CFrame`, `AlwaysOnTop`, `ZIndex`, `Transparency`
   and `Color3` work as on the other handle adornments. `Shading` is not
   read for any adornment yet.
+- [x] **Adornment blending and draw order, variant tiling start**
+  (measured in Studio 0.748, 2026-11-24, side by side):
+  - Blending: a depth-tested adornment is blended in sRGB values at exactly
+    `1 - Transparency` *before* Studio's tone curve (an opaque white one
+    shows 223), an `AlwaysOnTop` one after it (white stays 255). Here the
+    depth-tested ones go into a layer the resolve lays over the frame
+    through the measured curve, the on-top ones onto the finished frame.
+    `LineHandleAdornment` fades faster (0.469, 0.27, 0.123, 0.047 at 0.25,
+    0.5, 0.75, 0.9) and an on-top one draws at half its colour.
+    `ImageHandleAdornment` is tinted by `Color3`. Every probe over flat
+    white, grey and black is within 2 levels of Studio (was 36 on average,
+    255 at worst).
+  - Draw order: depth-tested adornments hide each other by depth (`ZIndex`
+    ignored, crossing boxes cut along their intersection); on-top ones
+    never test each other and are painted by `ZIndex`, then far to near
+    along the view, then creation order; an opaque depth-tested one nearer
+    than an on-top one hides it, parts never do; blended ones are painted
+    far to near and write no depth; every tie goes to the later adornment.
+  - Tiling: on a block or wedge the variant grid starts at each face's
+    corner, the top and bottom face half a turn from the decal frame, a
+    wedge's slope laid flat in its own plane. All 45 measured faces (blocks
+    of uneven size, turned, and a wedge) match Studio's U/V directions with
+    the origin within 0.31 stud. Other shapes keep the centred, triplanar
+    mapping; they weren't measured. `SelectionBox`, `SelectionSphere` and
+    `Handles` follow the same blending and order as the handle shapes, also
+    unmeasured.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
