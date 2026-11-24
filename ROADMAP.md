@@ -3931,7 +3931,7 @@ there. What each does live, and where it stands here:
 | Beta | What it does in Studio, switched on | Here |
 |---|---|---|
 | UI Particles | `ParticleEmitter2D` emits, animates in edit, `Emit`/`Clear` work from Luau | Built behind a beta of the same name (PR #397) |
-| Orthographic Camera | `ProjectionType` Orthographic flattens the edit view over black; `OrthographicSize` spans the axis `OrthographicMode` names; a new Camera's size is 35 | Built behind a beta of the same name (PR #398) |
+| Orthographic Camera | `ProjectionType` Orthographic flattens the edit view and Play over black; `OrthographicSize` spans the axis `OrthographicMode` names; a new Camera's size is 35; a `ViewportFrame`'s camera stays perspective | Built behind a beta of the same name (PR #398) |
 | Luau Exports and Cyclic Requires | `export local`/`const`/`function` make a module return a table of them; modules that export may require each other; `export` plus a top-level `return` is a compile error | Built behind a beta of the same name (PR #399) |
 | If Local/Const Bindings | `const x = 1` and `if local y = f() then` both run | Not built: `if local` needs Luau 740, newer than the 736 mlua ships |
 | InputActionLabel | A `GuiObject` (TextColor3 0.105, 0.164, 0.207, ImageColor3 white, TextSize 8); in edit it draws a white box with a placeholder cube glyph | Not built: the keybinding glyph set is Roblox's art, and what it shows in Play is unmeasured |
@@ -3996,7 +3996,18 @@ there. What each does live, and where it stands here:
   size, changing the mode keeps the picture and rewrites the size, and the
   view draws over black with no sky. Built behind an "Orthographic Camera"
   beta here (PR #398): the 3D view follows the place camera, the wheel
-  writes the size back. Play and `ViewportFrame` cameras are still open.
+  writes the size back. Checked again with the beta on (2026-11-24): a
+  `ViewportFrame` never draws orthographically, whether its camera sits
+  under the frame or in `Workspace`. It stays perspective at the camera's
+  `FieldOfView` over the frame's own background, whatever the size or mode,
+  and our frames (screen GUI, UI Editor canvas, `BillboardGui`,
+  `SurfaceGui`) already draw it that way. With the beta off Studio ignores
+  the writes and reads back Perspective. In Play the client's camera does
+  go flat over black. Nothing on `dev` draws a Play camera itself (Play is
+  the real client, live views only swap the Explorer's tree, replays draw
+  the recorded camera as a dot and a line over the edit view, and the
+  Device Simulator shows the edit camera or the embedded client), so what
+  is left is the Play camera in Local Run, 0.3.0.
 - [ ] 📋 **Material layering and finer PBR response** (Mid 2027): PBR
   textures layered under custom masks, plus controls for specular response
   and more accurate scattering and reflection. This lands in the material
