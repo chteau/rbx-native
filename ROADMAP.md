@@ -2652,6 +2652,18 @@ both the plain fetch failure and the silent fall back to a default
   Hub fees, uploads the item as a Model through Open Cloud (free) and opens
   it on the Creator Hub. Import can check a file as an avatar item first.
   The crate has no UI, so the fitting tool can call it.
+- [x] **Visualizing UGC Validation** (`shell::ugc::visual`), behind a
+  beta of the same name: clicking a finding in Check Avatar Item draws it
+  on the item in the 3D view the way Studio 0.748's UGC Validation window
+  does, measured side by side. Studio draws only checks that come back
+  with per-vertex data: the triangles around each flagged vertex in gray
+  `#404040`, the edges meeting it in `#7F2020`, a `#FF4040` dot on top at
+  each one, a cage check drawing the whole cage. Of those, the validator here
+  has open edges (Studio's watertight and manifold measures) and cage UVs
+  off the template. Studio's cage relevancy, cage distance, mesh outside
+  cage, degenerate and intersecting triangle measures run on Roblox's
+  servers and have no check here yet; bounds, attachments, schema and
+  texture checks draw nothing there either.
 - [x] **The Animation Editor writes `CurveAnimation`s and fits the stage's
   shadow to the rig**:
   - `ValuesAndTimes` was decoded from catalog emotes. The writer
@@ -3901,7 +3913,8 @@ there. What each does live, and where it stands here:
 | Party Simulator, Remote Breakpoints, Server Inspection | Team Test and server tooling | Not built: needs real Roblox servers |
 | Video Uploads | Asset Manager › Import's file picker gains "Video Files (*.mp4 *.mov)"; a picked video joins the Import Queue as "Ready to Import" with no length check (a 5:30 clip was queued) | Built behind a beta of the same name, through Import |
 | Auto-Reimport | Explorer › Reimport › Auto-Reimport, shown once the model has saved reimport settings (an `RBX_ReimportId` attribute plus a file path kept on the device); on, it reimports at once and again on every save, for the session | Built behind a beta of the same name |
-| Package Overrides, Visualizing UGC Validation, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
+| Visualizing UGC Validation | Clicking a check's row draws it on the item: edges and dots on the flagged vertices, nothing for checks without per-vertex data; hovering draws nothing | Built behind a beta of the same name for the checks the validator here has (open edges, cage UVs) |
+| Package Overrides, SLIM Debug Tints | Package and engine-debug tooling | Not built: see their items |
 
 #### Renderer
 - [ ] 📋 **New primitive shapes: Capsule, Cone, Disc and rounded
@@ -4121,9 +4134,6 @@ on in real Studio and measuring it there, the same as everything above.
   server half, through the probe that sandbox Play already talks to.
 - [ ] 📋 **SLIM Debug Tints**: a visualization mode tinting what SLIM
   merged. SLIM runs in Roblox's engine; the tint has nothing to show here.
-- [ ] 📋 **Visualizing UGC Validation**: the validator's failures drawn on
-  the body, clothing or accessory. The UGC validator here already knows
-  which check failed; this is drawing where.
 - [ ] 📋 **Animation Generation in Assistant**, **CreateAssetAsync Lua
   API** and **Mixed Content for CreateSurfaceAppearance**: an Assistant
   feature (AI content generation below) and two in-game APIs. Nothing in

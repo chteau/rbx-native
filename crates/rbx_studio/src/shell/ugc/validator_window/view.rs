@@ -1,5 +1,7 @@
 //! The validator window's layout: controls card, footer and report.
 
+use std::rc::Rc;
+
 use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -68,7 +70,7 @@ impl ValidatorWindow {
             })
     }
 
-    fn body(&self) -> AnyElement {
+    fn body(&self, cx: &mut Context<Self>) -> AnyElement {
         match &self.check.run {
             Run::Done(done) => {
                 let subject = self
@@ -76,7 +78,16 @@ impl ValidatorWindow {
                     .source
                     .as_ref()
                     .map_or_else(|| "The item".to_string(), ItemSource::label);
-                report::findings_view("ugc-check-report", &done.findings, &subject)
+                let pick = self.picking().then(|| {
+                    let view = cx.entity().downgrade();
+                    report::Pick {
+                        shown: self.shown,
+                        on_pick: Rc::new(move |index, _, cx| {
+                            let _ = view.update(cx, |view, cx| view.show(index, cx));
+                        }),
+                    }
+                });
+                report::findings_view("ugc-check-report", &done.findings, &subject, pick)
             }
             Run::Failed(msg) => h_flex()
                 .items_start()
@@ -180,7 +191,7 @@ impl Render for ValidatorWindow {
                             .min_h_0()
                             .overflow_y_scroll()
                             .track_scroll(&self.scroll)
-                            .child(self.body()),
+                            .child(self.body(cx)),
                     ),
             )
     }

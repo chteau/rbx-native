@@ -102,6 +102,7 @@ pub(crate) use settings_window::open::{
     open_loading as open_loading_settings,
 };
 pub(crate) use team_presence::key_arrived;
+pub(crate) use ugc::VISUAL_BETA_ID as UGC_VISUAL_BETA_ID;
 pub(crate) use video_upload::{enabled as video_upload_enabled, BETA_ID as VIDEO_UPLOADS_BETA_ID};
 pub(crate) use view_snap::PresetView;
 mod toolbox;

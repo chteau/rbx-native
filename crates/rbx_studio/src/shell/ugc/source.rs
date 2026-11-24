@@ -94,6 +94,7 @@ pub(super) fn item_from_file(path: &Path, kind: ItemKind) -> Result<Collected, S
         notes,
         from_file: true,
         head: None,
+        places: Vec::new(),
     })
 }
 

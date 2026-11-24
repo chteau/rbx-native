@@ -6,6 +6,8 @@ mod size;
 mod watertight;
 
 pub(crate) use basic::{attachment, influences, joints, textures, triangles, unreadable};
+pub use cages::cage_uv_mismatches;
 pub(crate) use cages::cages;
 pub(crate) use size::size;
 pub(crate) use watertight::watertight;
+pub use watertight::{open_edges, weld, welded_triangles};

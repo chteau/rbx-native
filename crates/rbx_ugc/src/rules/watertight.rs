@@ -1,44 +1,63 @@
 use std::collections::HashMap;
 
-use crate::{Finding, Item, Rule, Severity, Value};
+use crate::{Finding, Geometry, Item, Rule, Severity, Value};
 
 const WELD: f32 = 1e-4;
+
+/// Each vertex's welded id: corners at the same spot (a UV or normal seam
+/// splits one corner into several vertices) share one.
+pub fn weld(positions: &[[f32; 3]]) -> Vec<u32> {
+    let mut ids: HashMap<[i64; 3], u32> = HashMap::new();
+    positions
+        .iter()
+        .map(|p| {
+            let key = p.map(|c| (c / WELD).round() as i64);
+            let next = ids.len() as u32;
+            *ids.entry(key).or_insert(next)
+        })
+        .collect()
+}
+
+/// The welded corners of each triangle (see [`weld`]), skipping
+/// out-of-range and collapsed ones.
+pub fn welded_triangles<'a>(
+    geometry: &'a Geometry,
+    welded: &'a [u32],
+) -> impl Iterator<Item = [u32; 3]> + 'a {
+    geometry.triangles.iter().filter_map(|tri| {
+        let corners = tri.map(|i| welded.get(i as usize).copied());
+        let [Some(a), Some(b), Some(c)] = corners else {
+            return None;
+        };
+        (a != b && b != c && a != c).then_some([a, b, c])
+    })
+}
+
+/// The edges not shared by exactly two triangles, holes and non-manifold
+/// seams alike, as welded id pairs (see [`weld`]), lower id first.
+pub fn open_edges(geometry: &Geometry) -> Vec<[u32; 2]> {
+    let welded = weld(&geometry.positions);
+    let mut edges: HashMap<[u32; 2], usize> = HashMap::new();
+    for [a, b, c] in welded_triangles(geometry, &welded) {
+        for (x, y) in [(a, b), (b, c), (c, a)] {
+            *edges.entry([x.min(y), x.max(y)]).or_insert(0) += 1;
+        }
+    }
+    let mut open: Vec<[u32; 2]> = edges
+        .into_iter()
+        .filter(|&(_, n)| n != 2)
+        .map(|(e, _)| e)
+        .collect();
+    open.sort_unstable();
+    open
+}
 
 pub(crate) fn watertight(item: &Item, out: &mut Vec<Finding>) {
     for part in &item.parts {
         let Some(geometry) = &part.geometry else {
             continue;
         };
-        let mut ids: HashMap<[i64; 3], u32> = HashMap::new();
-        let welded: Vec<u32> = geometry
-            .positions
-            .iter()
-            .map(|p| {
-                let key = p.map(|c| (c / WELD).round() as i64);
-                let next = ids.len() as u32;
-                *ids.entry(key).or_insert(next)
-            })
-            .collect();
-
-        let mut edges: HashMap<(u32, u32), usize> = HashMap::new();
-        for tri in &geometry.triangles {
-            let Some(corners) = tri
-                .iter()
-                .map(|&i| welded.get(i as usize).copied())
-                .collect::<Option<Vec<u32>>>()
-            else {
-                continue;
-            };
-            let (a, b, c) = (corners[0], corners[1], corners[2]);
-            if a == b || b == c || a == c {
-                continue;
-            }
-            for (x, y) in [(a, b), (b, c), (c, a)] {
-                *edges.entry((x.min(y), x.max(y))).or_insert(0) += 1;
-            }
-        }
-
-        let bad = edges.values().filter(|&&n| n != 2).count();
+        let bad = open_edges(geometry).len();
         if bad > 0 {
             out.push(Finding {
                 rule: Rule::Watertight,
@@ -122,6 +141,32 @@ mod tests {
         let out = run(cube_positions(), tris);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].measured, Some(Value::Count(3)));
+    }
+
+    #[test]
+    fn open_edges_name_the_hole_by_welded_corners() {
+        let mut tris = CUBE.to_vec();
+        tris.pop();
+        let geometry = Geometry {
+            positions: cube_positions(),
+            triangles: tris,
+            ..Default::default()
+        };
+        assert_eq!(open_edges(&geometry), vec![[3, 4], [3, 7], [4, 7]]);
+    }
+
+    #[test]
+    fn a_fin_on_an_edge_makes_it_non_manifold() {
+        let mut positions = cube_positions();
+        positions.push([0.5, 2.0, 0.0]);
+        let mut tris = CUBE.to_vec();
+        tris.push([2, 3, 8]);
+        let geometry = Geometry {
+            positions,
+            triangles: tris,
+            ..Default::default()
+        };
+        assert_eq!(open_edges(&geometry), vec![[2, 3], [2, 8], [3, 8]]);
     }
 
     #[test]

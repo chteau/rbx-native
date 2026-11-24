@@ -202,6 +202,7 @@ impl UploadWindow {
                     "ugc-upload",
                     &done.findings,
                     &subject,
+                    None,
                 ))
                 .into_any_element(),
         }

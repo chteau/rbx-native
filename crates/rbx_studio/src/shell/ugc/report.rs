@@ -1,5 +1,6 @@
 //! The findings list both windows show, grouped by severity.
 
+use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -67,7 +68,23 @@ fn chip(text: String, fg: Rgba, fill: Rgba) -> Div {
         )
 }
 
-fn row(id: &'static str, index: usize, finding: &Finding) -> AnyElement {
+/// What picking a finding does, given its index in the findings.
+pub(super) type OnPick = Rc<dyn Fn(usize, &mut Window, &mut App)>;
+
+/// Findings that can be picked to show them on the model, and the one
+/// shown.
+pub(super) struct Pick {
+    pub(super) shown: Option<usize>,
+    pub(super) on_pick: OnPick,
+}
+
+fn row(
+    id: &'static str,
+    index: usize,
+    order: usize,
+    finding: &Finding,
+    pick: Option<&Pick>,
+) -> AnyElement {
     let (glyph, fg, fill) = look(finding.severity);
     let source = finding.rule.source();
     let measure = match (&finding.measured, &finding.limit) {
@@ -83,14 +100,25 @@ fn row(id: &'static str, index: usize, finding: &Finding) -> AnyElement {
             Some(parts.join(" \u{b7} "))
         }
     };
+    let shown = pick.is_some_and(|p| p.shown == Some(index));
     let card = h_flex()
+        .id(SharedString::from(format!("{id}-card-{index}")))
         .items_start()
         .gap(px(12.))
         .p(px(12.))
         .rounded(px(8.))
         .bg(ui::panel())
         .border_1()
-        .border_color(tokens::border())
+        .border_color(if shown {
+            tokens::accent_line()
+        } else {
+            tokens::border()
+        })
+        .when_some(pick.map(|p| p.on_pick.clone()), |el, on_pick| {
+            el.cursor_pointer()
+                .hover(|s| s.bg(tokens::hover_faint()))
+                .on_click(move |_, window, cx| on_pick(index, window, cx))
+        })
         .child(
             div()
                 .flex_none()
@@ -145,7 +173,7 @@ fn row(id: &'static str, index: usize, finding: &Finding) -> AnyElement {
     if tokens::reduced_motion() {
         return card.into_any_element();
     }
-    let delay = 30 * index as u64;
+    let delay = 30 * order as u64;
     let total = 220 + delay;
     let start = delay as f32 / total as f32;
     card.with_animation(
@@ -198,7 +226,13 @@ fn all_clear(subject: &str) -> AnyElement {
 /// Findings grouped Errors / Warnings / Notes, each row saying what is wrong,
 /// the measured value against the limit, and a link to the spec page.
 /// `subject` names the checked item in the all-clear state.
-pub(super) fn findings_view(id: &'static str, findings: &[Finding], subject: &str) -> AnyElement {
+/// With `pick`, a row is clicked to show that finding on the model.
+pub(super) fn findings_view(
+    id: &'static str,
+    findings: &[Finding],
+    subject: &str,
+    pick: Option<Pick>,
+) -> AnyElement {
     if findings.is_empty() {
         return all_clear(subject);
     }
@@ -231,9 +265,13 @@ pub(super) fn findings_view(id: &'static str, findings: &[Finding], subject: &st
                 ))
             }),
     );
-    let mut index = 0;
+    let mut order = 0;
     for severity in [Severity::Error, Severity::Warning, Severity::Note] {
-        let group: Vec<&Finding> = findings.iter().filter(|f| f.severity == severity).collect();
+        let group: Vec<(usize, &Finding)> = findings
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.severity == severity)
+            .collect();
         if group.is_empty() {
             continue;
         }
@@ -243,9 +281,9 @@ pub(super) fn findings_view(id: &'static str, findings: &[Finding], subject: &st
                 .text_color(tokens::text3())
                 .child(caption(severity)),
         );
-        for finding in group {
-            section = section.child(row(id, index, finding));
-            index += 1;
+        for (index, finding) in group {
+            section = section.child(row(id, index, order, finding, pick.as_ref()));
+            order += 1;
         }
         root = root.child(section);
     }

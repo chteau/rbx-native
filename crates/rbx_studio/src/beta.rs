@@ -89,6 +89,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",
     },
     Feature {
+        id: crate::shell::UGC_VISUAL_BETA_ID,
+        name: "Visualizing UGC Validation",
+        description: "Click a finding in Check Avatar Item and the 3D view draws where it failed on the item, in Studio's colours: open edges of a mesh that isn't watertight, and the vertices of a cage whose UVs moved off the template. Other checks have no spot to point at and draw nothing, as in Studio.",
+    },
+    Feature {
         id: crate::properties::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID,
         name: "MaterialVariant Alpha Mode",
         description: "Lists AlphaMode on a MaterialVariant and draws each mode the way Studio's beta of the same name does: Overlay shows the part colour where the colour map is clear, TintMask tints only where it is opaque, and Transparency cuts the surface out below half alpha. Off, the alpha is ignored, as in Studio, but the property still saves.",
