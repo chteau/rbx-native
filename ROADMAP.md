@@ -2356,6 +2356,17 @@ both the plain fetch failure and the silent fall back to a default
   a `Decal`. A mesh over the 20,000-triangle budget is refused before
   anything is uploaded, naming the mesh (the new `rbx_import` crate); an FBX
   whose triangles can't be counted is uploaded with a warning.
+- [x] **Video uploads** (`rbx_cloud::video`, `shell/video_upload.rs`),
+  behind a "Video Uploads" beta like Studio's. With no Asset Manager here,
+  video goes through Import instead: Import › Video… on the ribbon, Model
+  › Import Video…, or a `.mp4`/`.mov` dropped on the window. Roblox's
+  documented limits (5 minutes, 4096×2160, under 3.75 GB) are read off the
+  file's `mvhd` and video `tkhd` boxes and checked before anything is sent,
+  the 2,000 Robux price is asked first and sent as `expectedPrice`, and the
+  video lands as a `VideoFrame` in the selected GUI or a new `ScreenGui`.
+  Refusals (not ID-verified, too long, the daily limit, the price) and a
+  pending review are said in plain words. Studio's own Asset Manager
+  checks none of the limits before it queues a video.
 - [x] **`AnimationConstraint` rigs, the Avatar Joint Upgrade: rig
   insertion.** Insert Rig emits `AnimationConstraint` joints (with
   `RigAttachment`s) for R15 when `StarterPlayer.AvatarJointUpgrade` is on
@@ -3792,7 +3803,8 @@ there. What each does live, and where it stands here:
 | Next-Gen Draggers, New Studio Camera Controls (Updated) | Studio's own draggers and edit camera | Not built: Studio UI feel, a re-measure job each |
 | Face Capture, Live Animation Creator, Animation Generation, Prompt-to-Avatar, Scene Generation, Playtest Agent | Assistant/camera/AI tools in Studio | Not built: Roblox's cloud AI services |
 | Party Simulator, Remote Breakpoints, Server Inspection | Team Test and server tooling | Not built: needs real Roblox servers |
-| Package Overrides, Auto-Reimport, Video Uploads, Visualizing UGC Validation, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
+| Video Uploads | Asset Manager › Import's file picker gains "Video Files (*.mp4 *.mov)"; a picked video joins the Import Queue as "Ready to Import" with no length check (a 5:30 clip was queued) | Built behind a beta of the same name, through Import |
+| Package Overrides, Auto-Reimport, Visualizing UGC Validation, SLIM Debug Tints | Package, import, upload and engine-debug tooling | Not built: see their items |
 
 #### Renderer
 - [ ] 📋 **New primitive shapes: Capsule, Cone, Disc and rounded
@@ -4031,9 +4043,6 @@ on in real Studio and measuring it there, the same as everything above.
   server half, through the probe that sandbox Play already talks to.
 - [ ] 📋 **SLIM Debug Tints**: a visualization mode tinting what SLIM
   merged. SLIM runs in Roblox's engine; the tint has nothing to show here.
-- [ ] 📋 **Video Uploads**: video through the Asset Manager. The upload
-  half is the same Open Cloud Assets call the importer uses, with the
-  video asset type.
 - [ ] 📋 **Visualizing UGC Validation**: the validator's failures drawn on
   the body, clothing or accessory. The UGC validator here already knows
   which check failed; this is drawing where.

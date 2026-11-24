@@ -2,6 +2,7 @@
 
 ## 2026-11-24
 
+- **Video uploads (beta).** Turn on "Video Uploads" in Beta Features and Import takes `.mp4` and `.mov` too (ribbon Import › Video, Model › Import Video…, or drop the file on the window). Before anything goes up I check what Roblox says it refuses (over 5 minutes, bigger than 4096×2160, 3.75 GB or more) and tell you the upload costs 2,000 Robux, which Studio doesn't. The video lands as a VideoFrame in the GUI you have selected, or in a new ScreenGui. If Roblox says no (account not ID-verified, too long, daily limit) you get that in plain words. (@chteau)
 - **Union, Negate, Intersect and Separate.** The Model tab has Studio's solid modeling tools now, with the same shortcuts (Ctrl+Shift+G / N / I / U, Ungroup moved to Ctrl+U like Studio). What we save is what current Studio saves, collision data included, so Studio opens our unions, can Separate them, and we Separate theirs.
 - **AI assistants can cut holes now.** `SubtractAsync`, `UnionAsync` and `IntersectAsync` work in edit scripts and through MCP, same as in Studio: you get a new union back and your parts stay put. The modeling guide teaches doorways, windows and arches with them, and when framing with parts is still the cheaper call.
 
