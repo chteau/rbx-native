@@ -153,7 +153,7 @@ fn a_whole_gizmo_is_wound_outwards() {
 /// catches an inside-out arrow catches an inside-out ring.
 #[test]
 fn the_rotation_rings_are_wound_outwards() {
-    let volume = signed_volume(&rings(&handles(), Vec3::splat(40.0)));
+    let volume = signed_volume(&rings(&handles(), Vec3::splat(40.0), None));
     assert!(volume > 0.0, "inside-out rings enclose {volume}");
 }
 
@@ -259,7 +259,7 @@ fn the_arms_are_painted_back_to_front() {
 fn the_ring_slices_are_painted_back_to_front() {
     let handles = Handles::new(Vec3::ZERO, basis(None), 1.0);
     let eye = Vec3::new(0.0, 0.0, 100.0);
-    let vertices = rings(&handles, eye);
+    let vertices = rings(&handles, eye, None);
 
     let depth = |slice: &[Vertex]| {
         slice
@@ -284,7 +284,7 @@ fn each_ring_lies_in_the_plane_of_its_own_axis() {
     let handles = Handles::new(Vec3::ZERO, basis(None), 2.0);
     let tube = RING_THICKNESS * handles.arm();
 
-    for vertex in rings(&handles, Vec3::splat(40.0)) {
+    for vertex in rings(&handles, Vec3::splat(40.0), None) {
         let point = Vec3::from(vertex.position);
         // Whichever axis's colour it carries is the axis it turns about, so
         // that component is the one the tube's thickness has to account for.
@@ -355,7 +355,7 @@ fn a_local_rotation_ring_stands_in_the_parts_own_plane() {
     let tube = RING_THICKNESS * handles.arm();
     let red = Axis::X.color().map(f32::to_bits);
 
-    for vertex in rings(&handles, Vec3::splat(40.0)) {
+    for vertex in rings(&handles, Vec3::splat(40.0), None) {
         if vertex.color.map(f32::to_bits) != red {
             continue;
         }
@@ -545,7 +545,7 @@ fn a_many_part_model_draws_its_parts_hotspots_up_to_the_cap() {
 
 #[test]
 fn a_hovered_ring_is_drawn_brighter_and_alone() {
-    let mut vertices = rings(&handles(), Vec3::splat(40.0));
+    let mut vertices = rings(&handles(), Vec3::splat(40.0), None);
     light(&mut vertices, Axis::Y, crate::gizmo::Skin::Classic);
     let lit = vertices
         .iter()
@@ -632,12 +632,14 @@ fn a_hovered_next_gen_arrow_thickens() {
     let eye = Vec3::splat(40.0);
     let handles = next_gen_handles(eye);
     let widest = |hover| {
-        hovered_mesh(&Shape::Move(handles), None, hover, eye)
+        hovered_mesh(&Shape::Move(handles), None, None, hover, eye)
             .iter()
             // The X arrow's own shaft: the squares share its colour.
             .filter(|vertex| vertex.color == Axis::X.color())
             .map(|vertex| Vec3::from(vertex.position))
-            .filter(|point| point.y.abs() < 0.5 && point.z.abs() < 0.5)
+            // Along the shaft, clear of the square in the YZ plane and the
+            // head past the neck.
+            .filter(|point| point.x > 0.01 && point.x < 0.8 * handles.arm())
             .map(|point| point.y.hypot(point.z))
             .fold(0.0, f32::max)
     };
@@ -665,4 +667,33 @@ fn the_next_gen_skin_repaints_the_axis_colours() {
     assert!(vertices
         .iter()
         .all(|vertex| Axis::ALL.iter().all(|axis| vertex.color != axis.color())));
+}
+
+#[test]
+fn a_held_next_gen_square_or_ring_is_drawn_alone() {
+    let eye = Vec3::splat(40.0);
+    let handles = next_gen_handles(eye);
+    let square = hovered_mesh(
+        &Shape::Move(handles),
+        None,
+        Some(Grip::Plane(Axis::Y)),
+        None,
+        eye,
+    );
+    assert_eq!(square.len(), 12);
+    assert!(square.iter().all(|vertex| vertex.color == Axis::Y.color()));
+
+    let rotate = |grip| hovered_mesh(&Shape::Rotate(handles), None, Some(grip), None, eye);
+    // The held ring whole, not its near half.
+    let ring = rotate(Grip::Ring(Axis::X));
+    assert_eq!(ring.len(), RING_SEGMENTS * VERTICES_PER_SLICE);
+    assert!(ring.iter().all(|vertex| vertex.color == Axis::X.color()));
+    let view = rotate(Grip::View);
+    assert!(
+        !view.is_empty()
+            && view
+                .iter()
+                .all(|vertex| vertex.color == crate::gizmo::VIEW_COLOR)
+    );
+    assert!(rotate(Grip::Ball).is_empty());
 }

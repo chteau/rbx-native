@@ -28,7 +28,7 @@ mod skin;
 pub use bounds::{bounds_along, bounds_of, box_along, centre_of, scale_box};
 pub use faces::{Faces, Hotspots, HOTSPOTS, HOTSPOT_PARTS, PART_HOTSPOTS};
 pub(crate) use origin::ORIGIN_RADIUS;
-pub use skin::{trackball_point, Skin};
+pub use skin::{trackball_point, Grip, Skin};
 pub(crate) use skin::{Profile, HOVER_THICKNESS, PLANE_HALF, VIEW_COLOR, VIEW_RING_RADIUS};
 
 /// The arm length of one dragger as a fraction of the viewport's half-height,
@@ -144,6 +144,10 @@ pub struct Gizmo {
     /// `ExtrudeHandles:_renderDraggingHandles` each build just the one
     /// handle being dragged. `None` draws them all.
     pub held: Option<End>,
+    /// The next-gen plane square, ring, view ring or trackball a drag
+    /// holds, drawn alone (or, the trackball, with no handle at all) while
+    /// it does.
+    pub grip: Option<Grip>,
     /// Where `Tab` has summoned the handles to (Studio's "handle summoning",
     /// see [`Faces::summoned`] for Scale's own reading of it), or `None` to
     /// draw them at the selection's own pivot.
@@ -258,7 +262,7 @@ impl Handles {
                     return None;
                 }
                 // `max`/`min`, not `clamp`: a NaN arm (a NaN pivot) must not panic.
-                let clamped = along.abs().max(SHAFT_START * self.arm).min(self.arm) * sign;
+                let clamped = along.abs().max(self.shaft_start()).min(self.arm) * sign;
                 let (distance, offset) = ray.nearest(self.origin + direction * clamped);
                 (offset <= reach && distance > 0.0).then_some((axis, sign, distance))
             })

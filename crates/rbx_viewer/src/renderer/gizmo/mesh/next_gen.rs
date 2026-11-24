@@ -7,15 +7,17 @@ use glam::Vec3;
 use super::{push, tube_slice, Vertex, RING_SEGMENTS};
 use crate::gizmo::{Axis, Handles, Skin, PLANE_HALF, RING_THICKNESS, VIEW_COLOR, VIEW_RING_RADIUS};
 
-/// Move's three plane squares, furthest first, each drawn from both sides
-/// (a flat square has no outside to cull by). `shown` is false while a drag
-/// holds one arrow, which Studio draws alone.
-pub(in crate::renderer::gizmo) fn planes(handles: &Handles, eye: Vec3, shown: bool) -> Vec<Vertex> {
-    if !shown {
-        return Vec::new();
-    }
+/// Move's plane squares, the `shown` ones (all but the one a drag holds go
+/// while it does, as do all of them under an arrow drag), furthest first,
+/// each drawn from both sides (a flat square has no outside to cull by).
+pub(in crate::renderer::gizmo) fn planes(
+    handles: &Handles,
+    eye: Vec3,
+    shown: impl Fn(Axis) -> bool,
+) -> Vec<Vertex> {
     let mut order: Vec<(f32, Axis)> = Axis::ALL
         .into_iter()
+        .filter(|&axis| shown(axis))
         .map(|axis| ((handles.plane(axis).2 - eye).length(), axis))
         .collect();
     order.sort_by(|(a, _), (b, _)| b.total_cmp(a));
