@@ -737,10 +737,18 @@ and, on a model, each part's own face middles and centre, as the
     corner, the top and bottom face half a turn from the decal frame, a
     wedge's slope laid flat in its own plane. All 45 measured faces (blocks
     of uneven size, turned, and a wedge) match Studio's U/V directions with
-    the origin within 0.31 stud. Other shapes keep the centred, triplanar
-    mapping; they weren't measured. `SelectionBox`, `SelectionSphere` and
-    `Handles` follow the same blending and order as the handle shapes, also
-    unmeasured.
+    the origin within 0.31 stud. Balls, cylinders and corner wedges were
+    measured the same way (5-stud ball, 7x5x5 cylinder, 5x4.5x6.5 corner
+    wedge, 3 studs a tile, upright and turned): a round side takes the face
+    of its box the normal leans towards, that face's grid pushed out onto
+    it from the axis or the centre (two grids meet mirrored at each seam),
+    a cylinder's ends and a corner wedge's flat sides are block faces, and
+    the corner wedge's back slope runs U along +X and V up from its low
+    edge, its left slope U along +Z and V down from the apex. Rendered
+    against Studio's shots they now correlate 0.31 to 0.59 per view, 0.51
+    on average like the blocks (0.54, 0.58), up from 0 to 0.21. Still off: the left
+    slope's U start sits about 0.25 stud from Studio's, and only one view
+    shows that slope.
   - Editor cues among them (measured in Studio 0.748, 2026-11-24): the
     selection and hover outlines are drawn over depth-tested adornments and
     under `AlwaysOnTop` ones, at their own colour where the part's edge is
@@ -752,6 +760,18 @@ and, on a model, each part's own face middles and centre, as the
     also show a faint (about 15%) ghost where an opaque depth-tested
     adornment covers them, which isn't drawn here; a selected Model is
     still a box here where Studio outlines its silhouette.
+  - Selection classes: `SelectionBox` (lines and surface),
+    `SelectionSphere`, `Handles` and `ArcHandles` are one-sided like
+    Studio's, so a see-through surface fades as one layer (box lines show
+    two where the near and far bars overlap, as there). Effective alpha
+    over Studio's at Transparency 0.25 to 0.9 is off by 0.039 on average
+    (was 0.18), 0.15 at worst. `SelectionSphere` is as wide as the
+    adornee's smallest side, not its bounding sphere. They stack with the
+    handle shapes by depth, under on-top ones, as measured. Not matched:
+    with `Transparency` below 1 Studio fills the sphere's outline as a
+    yellow disc instead of a ring, and a `SelectionBox` surface sharing
+    its adornee with `Handles` shows darker there; neither is understood
+    yet.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
