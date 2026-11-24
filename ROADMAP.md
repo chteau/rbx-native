@@ -741,6 +741,17 @@ and, on a model, each part's own face middles and centre, as the
     mapping; they weren't measured. `SelectionBox`, `SelectionSphere` and
     `Handles` follow the same blending and order as the handle shapes, also
     unmeasured.
+  - Editor cues among them (measured in Studio 0.748, 2026-11-24): the
+    selection and hover outlines are drawn over depth-tested adornments and
+    under `AlwaysOnTop` ones, at their own colour where the part's edge is
+    the nearest thing there and at 0.20 where a part or an opaque
+    depth-tested adornment stands in front, blended in sRGB values. The
+    transform handles are adornments in Studio's dragger, so they stand in
+    the adornment depth: an adornment behind a handle leaves it showing, an
+    `AlwaysOnTop` one behind it is hidden by it. Open: Studio's handles
+    also show a faint (about 15%) ghost where an opaque depth-tested
+    adornment covers them, which isn't drawn here; a selected Model is
+    still a box here where Studio outlines its silhouette.
 
 ### Editor (`rbx_studio`, binary `rbxstudio`)
 - [x] Explorer: this project's own flat, from-scratch class icon kit
