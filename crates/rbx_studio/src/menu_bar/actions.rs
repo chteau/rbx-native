@@ -363,6 +363,11 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         }
     });
     cx.on_action({
+        move |_: &MenuImportVideo, cx| {
+            let _ = shell.update(cx, |shell, cx| shell.choose_import(ImportKind::Video, cx));
+        }
+    });
+    cx.on_action({
         move |_: &MenuInsertScript, cx| {
             let _ = shell.update(cx, |shell, cx| shell.insert_instance("Script", cx));
         }

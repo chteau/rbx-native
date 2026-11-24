@@ -79,6 +79,11 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",
     },
     Feature {
+        id: crate::shell::VIDEO_UPLOADS_BETA_ID,
+        name: "Video Uploads",
+        description: "Import takes .mp4 and .mov, like Studio's beta of the same name: Roblox's limits (5 minutes, 4096x2160, 3.75 GB) are checked first, the 2,000 Robux price is asked before anything goes up, and the video lands as a VideoFrame. Roblox takes videos only from 13+ ID-verified accounts.",
+    },
+    Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,
         name: "Module require graph",
         description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",
