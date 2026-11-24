@@ -51,6 +51,9 @@ pub enum CameraInput {
     Wheel {
         notches: f32,
     },
+    /// Alt held on the look button: the beta camera dollies towards its
+    /// focus instead of turning (Studio's Alt + right drag).
+    Dolly(bool),
     /// The host lost focus of the view: nothing may stay logically held, since
     /// the matching release event may never arrive.
     Release,
@@ -75,6 +78,7 @@ pub(crate) struct Input {
     pan: Option<f32>,
     mouse_delta: (f32, f32),
     wheel_notches: f32,
+    dolly: bool,
 }
 
 impl Input {
@@ -88,6 +92,7 @@ impl Input {
                 self.mouse_delta.1 += dy;
             }
             CameraInput::Wheel { notches } => self.wheel_notches += notches,
+            CameraInput::Dolly(held) => self.dolly = held,
             CameraInput::Release => *self = Input::default(),
         }
     }
@@ -105,6 +110,16 @@ impl Input {
 
     pub(crate) fn pan_studs_per_pixel(&self) -> Option<f32> {
         self.pan
+    }
+
+    pub(crate) fn dolly_held(&self) -> bool {
+        self.dolly
+    }
+
+    /// Whether the controller needs the cursor's ray this frame: a zoom
+    /// waiting.
+    pub(crate) fn wants_cursor(&self) -> bool {
+        self.wheel_notches != 0.0 && !self.look_button
     }
 
     pub(crate) fn wheel_notches(&self) -> f32 {

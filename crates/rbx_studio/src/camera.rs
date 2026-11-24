@@ -50,13 +50,44 @@ impl PlaceCamera {
             return None;
         }
         let look = look_vector(&cframe.rotation)?;
+        // Studio's new camera orbits the camera's `Focus` when the view looks
+        // at it: aiming at the point keeps that distance for the orbit.
+        let reach = match camera.properties().get("Focus") {
+            Some(Variant::CFrame(focus))
+                if crate::beta::enabled(crate::workspace_view::camera_row::BETA_ID) =>
+            {
+                focus_depth(
+                    eye,
+                    look,
+                    [focus.position.x, focus.position.y, focus.position.z],
+                )
+            }
+            _ => 1.0,
+        };
 
         Some(PlaceCamera {
             eye,
-            look_at: [eye[0] + look[0], eye[1] + look[1], eye[2] + look[2]],
+            look_at: [
+                eye[0] + look[0] * reach,
+                eye[1] + look[1] * reach,
+                eye[2] + look[2] * reach,
+            ],
             fov_degrees: field_of_view(camera),
             ortho: orthographic(camera),
         })
+    }
+}
+
+/// How far ahead `focus` stands when the view from `eye` along `look` is
+/// aimed at it, or 1 when it is off to one side or behind.
+fn focus_depth(eye: [f32; 3], look: [f32; 3], focus: [f32; 3]) -> f32 {
+    let to = glam::Vec3::from(focus) - glam::Vec3::from(eye);
+    let depth = to.dot(glam::Vec3::from(look));
+    let aimed = depth > 0.0 && (to - glam::Vec3::from(look) * depth).length() <= depth * 0.01;
+    if aimed && depth.is_finite() {
+        depth
+    } else {
+        1.0
     }
 }
 

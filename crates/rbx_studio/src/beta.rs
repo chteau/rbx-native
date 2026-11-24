@@ -74,6 +74,16 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "The 3D view follows the place camera's ProjectionType, OrthographicSize and OrthographicMode, like Studio's beta of the same name: set workspace.CurrentCamera.ProjectionType to Orthographic and the view goes flat at that size, and zooming writes the size back.",
     },
     Feature {
+        id: crate::workspace_view::camera_row::BETA_ID,
+        name: "New Studio Camera Controls",
+        description: "The edit camera flies like Studio's beta of the same name: Adaptive, FPS and Orbit modes under the View Selector, fly speed that follows the focus distance, wheel zoom towards the cursor, Alt + right drag to dolly, and Focus that glides in and frames the selection at 70% of the view.",
+    },
+    Feature {
+        id: crate::transform::NEXT_GEN_DRAGGERS_BETA_ID,
+        name: "Next-Gen Draggers",
+        description: "Move and Rotate handles in the look of Studio's beta of the same name: its colours, smaller and thinner handles, positive arrows only with a square to drag along each plane, and rings drawn on their near half inside a white view ring, with a trackball inside them for a free turn.",
+    },
+    Feature {
         id: crate::explorer::insert::UI_PARTICLES_BETA_ID,
         name: "UI Particles",
         description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",
@@ -82,6 +92,16 @@ pub(crate) const FEATURES: &[Feature] = &[
         id: crate::properties::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID,
         name: "MaterialVariant Alpha Mode",
         description: "Lists AlphaMode on a MaterialVariant and draws each mode the way Studio's beta of the same name does: Overlay shows the part colour where the colour map is clear, TintMask tints only where it is opaque, and Transparency cuts the surface out below half alpha. Off, the alpha is ignored, as in Studio, but the property still saves.",
+    },
+    Feature {
+        id: crate::shell::VIDEO_UPLOADS_BETA_ID,
+        name: "Video Uploads",
+        description: "Import takes .mp4 and .mov, like Studio's beta of the same name: Roblox's limits (5 minutes, 4096x2160, 3.75 GB) are checked first, the 2,000 Robux price is asked before anything goes up, and the video lands as a VideoFrame. Roblox takes videos only from 13+ ID-verified accounts.",
+    },
+    Feature {
+        id: crate::shell::AUTO_REIMPORT_BETA_ID,
+        name: "Auto-Reimport",
+        description: "Reimport for imported 3D models, like Studio's beta of the same name: the Explorer's menu can reimport a model from its file, pick the file, and turn on Auto-Reimport, which reimports whenever the file is saved, for this session. Each reimport uploads the file again, so the meshes get new asset ids.",
     },
     Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,

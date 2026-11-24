@@ -691,8 +691,11 @@ impl Renderer {
         let axes = handle_axes(editing, gizmo.local, gizmo.pivot, rotation);
         let arm = handle_length(origin, pose, orthographic, height);
         let handles = Handles::new(origin, basis(axes), arm);
+        // Only Move and Rotate take the next-gen geometry; Transform's and
+        // Edit Pivot's combined gizmos keep the classic one in its colours.
+        let skinned = handles.skinned(gizmo.skin, pose, orthographic, gizmo.kind == Kind::Rotate);
         Some(match gizmo.kind {
-            Kind::Rotate => Shape::Rotate(handles),
+            Kind::Rotate => Shape::Rotate(skinned),
             Kind::Pivot => {
                 // Squared to the pivot, so the hotspots turn with it.
                 let axes = Mat3::from_mat4(gizmo.pivot?);
@@ -713,7 +716,7 @@ impl Renderer {
                 Shape::Transform(handles, faces)
             }
             // `Kind::Scale` never reaches here, it returned above.
-            _ => Shape::Move(handles),
+            _ => Shape::Move(skinned),
         })
     }
 
@@ -836,8 +839,15 @@ impl Renderer {
         // shadow inside the frame.
         let held = self.gizmo.and_then(|gizmo| gizmo.held);
         let hover = self.gizmo.and_then(|gizmo| gizmo.hover);
-        self.draggers
-            .update(queue, self.handles(from, size.1 as f32), held, hover, eye);
+        let skin = self.gizmo.map_or_else(Default::default, |gizmo| gizmo.skin);
+        self.draggers.update(
+            queue,
+            self.handles(from, size.1 as f32),
+            held,
+            hover,
+            eye,
+            skin,
+        );
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let drawn = self.surroundings();

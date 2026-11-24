@@ -247,7 +247,18 @@ pub(super) fn row(
                         .flex_none()
                         .rounded_full()
                         .bg(rgb(u32::from(r) << 16 | u32::from(g) << 8 | u32::from(b)))
-                })),
+                }))
+                .when(widgets.watched, |this| {
+                    this.child(
+                        div()
+                            .id("auto-reimport")
+                            .flex_none()
+                            .child(Icon::new(IconName::RefreshCw).with_size(px(12.)))
+                            .tooltip(|window, cx| {
+                                super::tooltip::text("Auto-Reimport is on", window, cx)
+                            }),
+                    )
+                }),
         )
         .children(widgets.presence)
         .children(widgets.trailing)

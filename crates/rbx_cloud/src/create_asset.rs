@@ -117,15 +117,26 @@ impl Client {
         creator: Owner,
         file: &ModelFile,
     ) -> Result<u64, CloudError> {
+        let response =
+            self.create_asset_priced(asset_type, display_name, description, creator, file, None)?;
+        asset_id(&response)
+    }
+
+    /// [`Client::create_asset`]'s upload and wait, answering the finished
+    /// operation's `response`; `price` is the `expectedPrice` Roblox may not
+    /// exceed for a paid asset type.
+    pub(crate) fn create_asset_priced(
+        &self,
+        asset_type: &str,
+        display_name: &str,
+        description: &str,
+        creator: Owner,
+        file: &ModelFile,
+        price: Option<u64>,
+    ) -> Result<Value, CloudError> {
         let boundary = boundary(file.bytes);
-        let body = multipart(
-            asset_type,
-            display_name,
-            description,
-            creator,
-            file,
-            &boundary,
-        );
+        let request = request(asset_type, display_name, description, creator, price);
+        let body = multipart(&request, file, &boundary);
         let content_type = format!("multipart/form-data; boundary={boundary}");
         let create_url = self.apis_url(CREATE_PATH);
         let response = self.post_bytes_raw(&create_url, &content_type, &body)?;
@@ -175,8 +186,8 @@ pub(crate) fn answer(url: &str, response: crate::client::RawResponse) -> Result<
     }
 }
 
-/// `None` while the operation runs; the asset id once it is done.
-fn finished(operation: &Value) -> Result<Option<u64>, CloudError> {
+/// `None` while the operation runs; its `response` once it is done.
+fn finished(operation: &Value) -> Result<Option<Value>, CloudError> {
     if !operation
         .get("done")
         .and_then(Value::as_bool)
@@ -204,14 +215,18 @@ fn finished(operation: &Value) -> Result<Option<u64>, CloudError> {
             message: "Roblox moderation rejected the upload".to_string(),
         });
     }
+    Ok(Some(response.clone()))
+}
+
+/// The new asset's id in a finished operation's `response`.
+pub(crate) fn asset_id(response: &Value) -> Result<u64, CloudError> {
     // The schema says int64, the guide's sample a string: take either.
     let id = match response.get("assetId") {
         Some(Value::Number(n)) => n.as_u64(),
         Some(Value::String(s)) => s.parse().ok(),
         _ => None,
     };
-    id.map(Some)
-        .ok_or_else(|| CloudError::UnexpectedShape("finished upload names no assetId".to_string()))
+    id.ok_or_else(|| CloudError::UnexpectedShape("finished upload names no assetId".to_string()))
 }
 
 fn operation_path(operation: &Value) -> Result<String, CloudError> {
@@ -229,26 +244,33 @@ fn operation_path(operation: &Value) -> Result<String, CloudError> {
     Ok(format!("/assets/v1/operations/{id}"))
 }
 
-/// The `request` and `fileContent` fields the endpoint takes, as
-/// `multipart/form-data`.
-fn multipart(
+/// The `request` field's JSON.
+fn request(
     asset_type: &str,
     display_name: &str,
     description: &str,
     creator: Owner,
-    file: &ModelFile,
-    boundary: &str,
-) -> Vec<u8> {
+    price: Option<u64>,
+) -> Value {
     let creator = match creator {
         Owner::User(id) => json!({ "userId": id.to_string() }),
         Owner::Group(id) => json!({ "groupId": id.to_string() }),
     };
-    let request = json!({
+    let mut context = json!({ "creator": creator });
+    if let Some(price) = price {
+        context["expectedPrice"] = json!(price);
+    }
+    json!({
         "assetType": asset_type,
         "displayName": display_name,
         "description": description,
-        "creationContext": { "creator": creator },
-    });
+        "creationContext": context,
+    })
+}
+
+/// The `request` and `fileContent` fields the endpoint takes, as
+/// `multipart/form-data`.
+fn multipart(request: &Value, file: &ModelFile, boundary: &str) -> Vec<u8> {
     // A header value cannot hold a quote or a line break.
     let name: String = file
         .name
@@ -294,7 +316,11 @@ mod tests {
             content_type: "model/gltf+json",
             bytes: b"{}",
         };
-        let body = multipart("Model", "Name", "Desc", Owner::User(42), &file, "B");
+        let body = multipart(
+            &request("Model", "Name", "Desc", Owner::User(42), None),
+            &file,
+            "B",
+        );
         let text = String::from_utf8(body).unwrap();
         assert!(text.starts_with("--B\r\nContent-Disposition: form-data; name=\"request\""));
         assert!(text.contains("\"assetType\":\"Model\""));
@@ -311,7 +337,11 @@ mod tests {
             content_type: "model/x-rbxm",
             bytes: b"<roblox!",
         };
-        let body = multipart("Animation", "Walk", "", Owner::Group(7), &file, "B");
+        let body = multipart(
+            &request("Animation", "Walk", "", Owner::Group(7), None),
+            &file,
+            "B",
+        );
         let text = String::from_utf8(body).unwrap();
         assert!(text.contains("\"assetType\":\"Animation\""));
         assert!(text.contains("\"creator\":{\"groupId\":\"7\"}"));
@@ -333,7 +363,11 @@ mod tests {
             content_type: "image/png",
             bytes: b"png",
         };
-        let body = multipart("Decal", "Icon", "", Owner::User(7), &file, "B");
+        let body = multipart(
+            &request("Decal", "Icon", "", Owner::User(7), None),
+            &file,
+            "B",
+        );
         let text = String::from_utf8(body).unwrap();
         assert!(text.contains("\"assetType\":\"Decal\""));
         assert!(text.contains("filename=\"image.png\"\r\nContent-Type: image/png\r\n\r\npng\r\n"));
@@ -479,9 +513,12 @@ mod tests {
                 "moderationResult": { "moderationState": "MODERATION_STATE_APPROVED" }
             }
         });
-        assert_eq!(finished(&done).unwrap(), Some(2205400862));
+        assert_eq!(
+            asset_id(&finished(&done).unwrap().unwrap()).unwrap(),
+            2205400862
+        );
         let numeric = json!({ "done": true, "response": { "assetId": 7 } });
-        assert_eq!(finished(&numeric).unwrap(), Some(7));
+        assert_eq!(asset_id(&finished(&numeric).unwrap().unwrap()).unwrap(), 7);
     }
 
     #[test]
