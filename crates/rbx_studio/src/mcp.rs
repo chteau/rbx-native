@@ -73,6 +73,9 @@ pub(crate) struct Session<'a> {
     /// The Explorer selection in the edited place, which a tool whose
     /// `instance_path` is left out works on, as Studio's do.
     pub(crate) selection: Vec<rbx_dom::Ref>,
+    /// What MCP clients may do (Settings › Permissions). The shell always
+    /// sets it; `None` (a unit test of one tool) checks nothing.
+    pub(crate) permissions: Option<&'a rbx_permissions::Policy>,
 }
 
 /// A running playtest as the input tools reach it, from any thread.
@@ -156,6 +159,7 @@ impl<'a> Session<'a> {
             play: None,
             inserting: None,
             selection: Vec::new(),
+            permissions: None,
         }
     }
 }

@@ -7,6 +7,7 @@ mod docs;
 mod edit;
 mod input;
 mod luau;
+mod permissions;
 mod scripts;
 mod skills;
 mod studio;
@@ -101,6 +102,9 @@ pub(super) fn finished(outcome: Outcome) -> Value {
 }
 
 fn run(name: &str, arguments: &Value, session: &mut Session) -> Result<Outcome, Failure> {
+    if let Err(refused) = permissions::check(name, arguments, session) {
+        return Ok(Err(refused));
+    }
     Ok(match name {
         "search_game_tree" => tree::search(arguments, session),
         "inspect_instance" => tree::inspect(arguments, session),
