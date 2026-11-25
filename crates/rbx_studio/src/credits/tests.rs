@@ -82,7 +82,10 @@ fn credits_md_matches_the_data_file() {
     if std::env::var_os("RBX_WRITE_CREDITS").is_some() {
         std::fs::write(&path, &expected).unwrap();
     }
-    let actual = std::fs::read_to_string(&path).unwrap_or_default();
+    // A Windows checkout has CRLF line ends.
+    let actual = std::fs::read_to_string(&path)
+        .unwrap_or_default()
+        .replace("\r\n", "\n");
     assert!(
         actual == expected,
         "CREDITS.md is out of date: run RBX_WRITE_CREDITS=1 cargo test -p rbx_studio credits"
