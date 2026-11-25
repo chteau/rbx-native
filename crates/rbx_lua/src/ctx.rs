@@ -46,8 +46,10 @@ pub(crate) trait HandleBridge {
     fn value(&self, lua: &mlua::Lua, referent: Ref) -> Option<mlua::Result<mlua::Value>>;
 }
 
-/// Decides whether a script may write to an instance; `Err` carries the reason.
-pub(crate) type WriteGuard = Rc<dyn Fn(&WeakDom, Ref) -> Result<(), String>>;
+/// Decides whether a script may write to an instance; `Err` carries the
+/// reason. The third argument is the instance being parented under it,
+/// when that is the write.
+pub(crate) type WriteGuard = Rc<dyn Fn(&WeakDom, Ref, Option<Ref>) -> Result<(), String>>;
 
 /// Sees the DOM as it stands just before a write to an instance (the
 /// plugin host's undo point copies the place here, see `plugin::undo`).
@@ -87,8 +89,20 @@ impl Ctx {
         if let Some(hook) = &self.on_write {
             hook(&self.dom.borrow(), referent);
         }
+        self.guarded(referent, None)
+    }
+
+    /// [`Ctx::check_write`] for parenting `child` under `parent`.
+    pub(crate) fn check_adopt(&self, parent: Ref, child: Ref) -> mlua::Result<()> {
+        if let Some(hook) = &self.on_write {
+            hook(&self.dom.borrow(), parent);
+        }
+        self.guarded(parent, Some(child))
+    }
+
+    fn guarded(&self, referent: Ref, child: Option<Ref>) -> mlua::Result<()> {
         match &self.guard {
-            Some(guard) => guard(&self.dom.borrow(), referent).map_err(mlua::Error::runtime),
+            Some(guard) => guard(&self.dom.borrow(), referent, child).map_err(mlua::Error::runtime),
             None => Ok(()),
         }
     }

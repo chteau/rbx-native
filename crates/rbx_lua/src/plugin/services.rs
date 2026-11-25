@@ -15,7 +15,7 @@ use mlua::{
 };
 use rbx_dom::Ref;
 
-use super::api::{Answer, Request, UiId};
+use super::api::{Answer, Capability, Request, UiId};
 use super::env::env;
 use super::http::HttpRequest;
 use crate::engine::scheduler::AwaitId;
@@ -105,7 +105,7 @@ pub(crate) fn marketplace_member(lua: &Lua, key: &str) -> Result<Option<Value>> 
 /// - `ChangeHistoryService`: waypoints and undo/redo as [`Request`]s;
 ///   recordings are tracked per VM.
 /// - `HttpService`: see `http_service`. A Roblox plugin's first request to a
-///   host waits on a prompt; a native plugin needs `Permission::Http`.
+///   host waits on a prompt (an rbx-native plugin's manifest lists its hosts).
 /// - `RunService`: edit-mode flags and the frame signals the host fires.
 /// - `StudioService`, `CollectionService` (over the `Tags` property) and the
 ///   plugin's own `CoreGui` / `PluginGuiService` folders.
@@ -268,6 +268,13 @@ fn instances_table(lua: &Lua, refs: &[Ref]) -> Result<Table> {
 }
 
 fn selection(lua: &Lua, key: &str) -> Result<Value> {
+    if matches!(key, "Get" | "Set" | "Add" | "Remove")
+        && !super::native::allowed(lua, Capability::Selection)
+    {
+        return Err(mlua::Error::runtime(
+            "this plugin lacks the 'Selection' permission (Settings \u{203a} Permissions)",
+        ));
+    }
     match key {
         "Get" => func(lua, |lua, _: Value| {
             instances_table(lua, &current_selection(lua))
@@ -622,13 +629,11 @@ mod tests {
     #[test]
     fn http_to_refused_host_errors() {
         let (lua, env) = vm(WeakDom::new());
-        env.shared.borrow_mut().settings.insert(
-            "Test".into(),
-            serde_json::json!({ "__rbxnative_http": { "127.0.0.1": true } })
-                .as_object()
-                .cloned()
-                .unwrap(),
-        );
+        let store = env.shared.borrow().permissions.clone();
+        store
+            .borrow_mut()
+            .change(|p| p.set_host("Test", "127.0.0.1", Some(true)))
+            .unwrap();
         run(
             &lua,
             "ok, err = pcall(HttpService.GetAsync, HttpService, 'http://127.0.0.1:1/')",
@@ -669,10 +674,10 @@ mod tests {
             .get::<String>("err")
             .unwrap()
             .contains("example.com"));
-        let shared = env.shared.borrow();
+        let store = env.shared.borrow().permissions.clone();
         assert_eq!(
-            shared.settings["Test"]["__rbxnative_http"]["example.com"],
-            false
+            store.borrow().policy().stored_host("Test", "example.com"),
+            Some(false)
         );
     }
 

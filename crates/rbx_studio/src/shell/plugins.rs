@@ -100,6 +100,7 @@ impl Shell {
         let settings_dir =
             crate::settings::default_config_dir().map(|dir| dir.join("plugin-settings"));
         let mut host = PluginHost::new(self.database.clone(), settings_dir);
+        host.set_permissions(self.permissions.clone());
         let mut wasm = Vec::new();
         self.plugins.built_in.clear();
         for plugin in &found {

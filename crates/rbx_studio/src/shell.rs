@@ -58,6 +58,7 @@ mod palette;
 mod panel_window;
 mod panels;
 mod perf_view;
+mod permissions;
 mod pivot;
 mod place_merge;
 mod play;
@@ -502,6 +503,8 @@ pub(crate) struct Shell {
     optimize_graph_on_open: bool,
     /// Whether the MCP server should listen; see `Settings::mcp_server`.
     mcp_enabled: bool,
+    /// What MCP clients and plugins may do; see `permissions`.
+    permissions: rbx_permissions::Shared,
     /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
     script_font_size: f32,
     output_scroll: ScrollHandle,
@@ -1100,6 +1103,7 @@ impl Shell {
             output_context: output::ContextFilter::default(),
             optimize_graph_on_open,
             mcp_enabled: mcp_server,
+            permissions: permissions::open(),
             script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),

@@ -7176,6 +7176,7 @@ dependencies = [
  "rbx_materials",
  "rbx_mesh",
  "rbx_net",
+ "rbx_permissions",
  "rbx_reflection",
  "rbx_xml",
  "serde",
@@ -7226,6 +7227,14 @@ dependencies = [
  "rbx_xml",
  "serde_json",
  "tempfile",
+]
+
+[[package]]
+name = "rbx_permissions"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -7362,6 +7371,7 @@ dependencies = [
  "rbx_materials",
  "rbx_mesh",
  "rbx_net",
+ "rbx_permissions",
  "rbx_play",
  "rbx_presence",
  "rbx_reflection",

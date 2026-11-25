@@ -2,6 +2,8 @@
 
 use mlua::{Function, Lua, Result};
 
+use rbx_permissions::{manifest_text, parse_manifest, Capability, Decision};
+
 use super::api::{Permission, Request};
 use super::env::env;
 use super::plugin_object;
@@ -26,7 +28,7 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
     info.set("description", manifest.description.as_str())?;
     let perms = lua.create_table()?;
     for (i, p) in manifest.permissions.iter().enumerate() {
-        perms.set(i + 1, permission_text(p))?;
+        perms.set(i + 1, manifest_text(p).unwrap_or_default())?;
     }
     info.set("permissions", perms)?;
     table.set("manifest", info)?;
@@ -34,7 +36,11 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
     table.set(
         "hasPermission",
         lua.create_function(|lua, text: String| {
-            Ok(parse_permission(&text).is_some_and(|p| allowed(lua, &p)))
+            Ok(match parse_manifest(&text) {
+                Some(Permission::Capability(capability)) => allowed(lua, capability),
+                Some(Permission::Host(host)) => host_decision(lua, &host) == Decision::Allow,
+                None => false,
+            })
         })?,
     )?;
 
@@ -85,42 +91,19 @@ pub(crate) fn install(lua: &Lua) -> Result<()> {
     lua.globals().set("rbxnative", table)
 }
 
-/// `dom.read`, `dom.write`, `selection`, `debugger`, `http:<host>`.
-pub(crate) fn parse_permission(text: &str) -> Option<Permission> {
-    match text {
-        "dom.read" => Some(Permission::DomRead),
-        "dom.write" => Some(Permission::DomWrite),
-        "selection" => Some(Permission::Selection),
-        "debugger" => Some(Permission::Debugger),
-        _ => text
-            .strip_prefix("http:")
-            .filter(|h| !h.is_empty())
-            .map(|h| Permission::Http(h.to_string())),
-    }
-}
-
-/// The inverse of [`parse_permission`].
-pub(crate) fn permission_text(permission: &Permission) -> String {
-    match permission {
-        Permission::DomRead => "dom.read".to_string(),
-        Permission::DomWrite => "dom.write".to_string(),
-        Permission::Selection => "selection".to_string(),
-        Permission::Debugger => "debugger".to_string(),
-        Permission::Http(host) => format!("http:{host}"),
-    }
-}
-
-/// Whether the running plugin may use `permission`: always for a Roblox
-/// plugin; for a native one, when its manifest lists it (`Http("*")`
-/// covering every host).
-pub(crate) fn allowed(lua: &Lua, permission: &Permission) -> bool {
+/// Whether the running plugin may use `capability`, as the permission
+/// store says right now.
+pub(crate) fn allowed(lua: &Lua, capability: Capability) -> bool {
     let env = env(lua);
-    let Some(manifest) = &env.manifest else {
-        return true;
-    };
-    manifest.permissions.iter().any(|p| {
-        p == permission
-            || (matches!(permission, Permission::Http(_))
-                && *p == Permission::Http("*".to_string()))
-    })
+    let store = env.shared.borrow().permissions.clone();
+    let allowed = store.borrow().policy().allows(&env.profile, capability);
+    allowed
+}
+
+/// What the store says about HTTP from the running plugin to `host`.
+pub(crate) fn host_decision(lua: &Lua, host: &str) -> Decision {
+    let env = env(lua);
+    let store = env.shared.borrow().permissions.clone();
+    let decision = store.borrow().policy().host(&env.profile, host);
+    decision
 }

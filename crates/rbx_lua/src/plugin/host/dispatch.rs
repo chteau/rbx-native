@@ -15,7 +15,7 @@ use crate::engine::signal::{self, Owner, SignalKey};
 use crate::engine::{changes, scheduler};
 use crate::plugin::api::{
     Arg, Context, DebuggerView, GuiEvent, GuiEventKind, Input, LayoutBox, MouseInput, Origin,
-    Outcome, OutputKind, Permission, SourceBody, WidgetKind,
+    Outcome, OutputKind, SourceBody, WidgetKind,
 };
 use crate::plugin::env::{engine_for, Env};
 use crate::plugin::{debugger_api, events, loader, plugin_object, script_document, services, vm};
@@ -190,6 +190,11 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
             for (lua, env) in vms(host) {
                 match plugin_object::answer(&lua, id, &answer) {
                     Ok(true) => break,
+                    Ok(false)
+                        if crate::plugin::guard::script_prompt_answered(&lua, id, &answer) =>
+                    {
+                        break
+                    }
                     Ok(false) => {
                         report(&env, services::http_permission_answered(&lua, id, &answer))
                     }
@@ -356,17 +361,16 @@ fn start(host: &mut PluginHost, index: usize) {
         Origin::Native { manifest, .. } => Some(manifest.clone()),
         Origin::Roblox { .. } => None,
     };
-    let mut ctx = Ctx::new(host.dom.clone(), host.database.clone(), Rc::default())
-        .with_write_hook(crate::plugin::undo::hook(host.undo.clone()));
-    if let Some(manifest) = &manifest {
-        if !manifest.permissions.contains(&Permission::DomWrite) {
-            ctx = ctx.with_guard(Rc::new(crate::plugin::guard::place_writes_denied(
-                source.name.clone(),
-            )));
-        }
-    }
-    host.shared.borrow_mut().load_settings(&source.name);
+    let profile = source.origin.profile(&source.name);
     let roots = Rc::new(RefCell::new(vec![folder, core_gui, plugin_gui_service]));
+    let ctx = Ctx::new(host.dom.clone(), host.database.clone(), Rc::default())
+        .with_write_hook(crate::plugin::undo::hook(host.undo.clone()))
+        .with_guard(Rc::new(crate::plugin::guard::writes(
+            id,
+            profile.clone(),
+            host.shared.clone(),
+        )));
+    host.shared.borrow_mut().load_settings(&source.name);
     let env = Rc::new(Env {
         plugin: id,
         name: source.name.clone(),
@@ -374,6 +378,7 @@ fn start(host: &mut PluginHost, index: usize) {
         ctx,
         shared: host.shared.clone(),
         manifest,
+        profile,
         roots,
         core_gui,
         plugin_gui_service,

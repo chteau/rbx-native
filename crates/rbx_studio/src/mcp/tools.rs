@@ -7,6 +7,7 @@ mod docs;
 mod edit;
 mod input;
 mod luau;
+mod permissions;
 mod scripts;
 mod skills;
 mod studio;
@@ -101,6 +102,9 @@ pub(super) fn finished(outcome: Outcome) -> Value {
 }
 
 fn run(name: &str, arguments: &Value, session: &mut Session) -> Result<Outcome, Failure> {
+    if let Err(refused) = permissions::check(name, arguments, session) {
+        return Ok(Err(refused));
+    }
     if crate::offline::blocked() && needs_roblox(name, arguments) {
         return Ok(Err(crate::offline::mcp_refusal(name)));
     }

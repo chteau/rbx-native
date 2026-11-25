@@ -83,6 +83,8 @@ rbx_viewer = { path = "../rbx_viewer" }
 # files with this crate's already-tested `is_xml`/`serialize`.
 rbx_xml = { path = "../rbx_xml" }
 rbx_wasm = { path = "../rbx_wasm" }
+# One permission model for MCP clients and plugins.
+rbx_permissions = { path = "../rbx_permissions" }
 # Lossless Luau parser the script graph is built from.
 full_moon = { version = "3", features = ["luau"] }
 # Format Document in the script editor and the Command Bar. Built on the same

@@ -119,8 +119,11 @@ impl Shell {
         }
         let studio = self.mcp_studio();
         let play = self.play_input();
+        // A copy, so nothing a tool sets off can find the store borrowed.
+        let policy = self.permissions.borrow().policy().clone();
         for request in requests {
             let mut session = Session::new(self.edit_dom(), &self.properties, &studio);
+            session.permissions = Some(&policy);
             session.client = self.live_dom(View::Client);
             session.server = self.live_dom(View::Server);
             session.play = play.clone();
