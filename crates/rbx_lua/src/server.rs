@@ -10,10 +10,8 @@
 mod chat;
 mod csg;
 mod curves;
-pub(crate) mod editable_image;
 mod hooks;
 mod input;
-mod meshes;
 mod pathfinding;
 pub use pathfinding::{PathRequest, Waypoint};
 mod query;
@@ -53,6 +51,7 @@ pub use hooks::CollisionGroups;
 pub use input::VirtualInput;
 pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{decode_all, encode_args, Caller, Outgoing, Packet, To, Wire};
+pub(crate) use services::product_info;
 pub use services::{
     set_text_measure, web_cache_file, Arrival, AssetSource, Device, LiveData, Notice,
     PurchasePrompt, Services, StreamRequest, TeleportRequest, TextMeasure, WebSession,

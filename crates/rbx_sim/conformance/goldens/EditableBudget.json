@@ -1,0 +1,56 @@
+{
+  "passes": 2,
+  "raw": [
+    {
+      "empty_meshes": 7,
+      "empty_meshes_end": "nil",
+      "fixed_300": 226,
+      "fixed_300_end": "nil",
+      "growable_300": 6,
+      "growable_300_end": "nil",
+      "image_after_release": true,
+      "images_1024": 20,
+      "images_1024_end": "nil",
+      "images_64": 4000,
+      "images_64_end": "cap",
+      "mesh_after_release": true
+    },
+    {
+      "empty_meshes": 6,
+      "empty_meshes_end": "nil",
+      "fixed_300": 192,
+      "fixed_300_end": "nil",
+      "growable_300": 5,
+      "growable_300_end": "nil",
+      "image_after_release": true,
+      "images_1024": 17,
+      "images_1024_end": "nil",
+      "images_64": 4000,
+      "images_64_end": "cap",
+      "mesh_after_release": true
+    }
+  ],
+  "result": {
+    "empty_meshes": 7.0,
+    "empty_meshes_end": "nil",
+    "fixed_300": 226.0,
+    "fixed_300_end": "nil",
+    "growable_300": 6.0,
+    "growable_300_end": "nil",
+    "image_after_release": true,
+    "images_1024": 20.0,
+    "images_1024_end": "nil",
+    "images_64": 4000.0,
+    "images_64_end": "cap",
+    "mesh_after_release": true
+  },
+  "source": "real Roblox server, place 3086963177 version 666, joined with Sober",
+  "spread": {
+    "empty_meshes": 1.0,
+    "fixed_300": 34.0,
+    "growable_300": 1.0,
+    "images_1024": 3.0,
+    "images_64": 0.0
+  },
+  "status": "recorded"
+}

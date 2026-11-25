@@ -349,7 +349,6 @@ ASSETS.CreateAssetVersionAsync = noPublishing("AssetService:CreateAssetVersionAs
 ASSETS.CreatePlaceAsync = noPublishing("AssetService:CreatePlaceAsync()")
 ASSETS.CreatePlaceInPlayerInventoryAsync = noPublishing("AssetService:CreatePlaceInPlayerInventoryAsync()")
 ASSETS.SavePlaceAsync = noPublishing("AssetService:SavePlaceAsync()")
-ASSETS.CreateDataModelContentAsync = noPublishing("AssetService:CreateDataModelContentAsync()")
 
 function ASSETS.PromptCreatePlatformContentAsync(_, player)
 	if not isPlayer(player) then

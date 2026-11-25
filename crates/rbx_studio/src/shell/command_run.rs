@@ -232,6 +232,7 @@ impl Shell {
             }
         };
         self.reflect_command_changes(changes, cx);
+        self.reflect_editables(cx);
         if let Some(selection) = selection {
             self.reselect(selection, cx);
         }

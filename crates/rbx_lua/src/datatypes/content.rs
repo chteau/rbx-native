@@ -10,6 +10,9 @@ pub(crate) enum Source {
     None,
     Uri(String),
     Object(Value),
+    /// `AssetService:CreateDataModelContentAsync`'s snapshot: an editable
+    /// published under this referent, which scripts can't reach.
+    Opaque(rbx_dom::Ref),
 }
 
 #[derive(Clone)]
@@ -32,6 +35,7 @@ impl UserData for LuaContent {
                     Source::None => "None",
                     Source::Uri(_) => "Uri",
                     Source::Object(_) => "Object",
+                    Source::Opaque(_) => "Opaque",
                 },
             )
         });
@@ -58,6 +62,12 @@ pub(crate) fn constructors(lua: &Lua) -> Result<Table> {
     table.set(
         "fromUri",
         lua.create_function(|_, uri: String| Ok(LuaContent(Source::Uri(uri))))?,
+    )?;
+    table.set(
+        "fromAssetId",
+        lua.create_function(|_, id: i64| {
+            Ok(LuaContent(Source::Uri(format!("rbxassetid://{id}"))))
+        })?,
     )?;
     table.set(
         "fromObject",

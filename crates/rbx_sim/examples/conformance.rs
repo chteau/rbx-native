@@ -27,6 +27,13 @@ impl AssetFetcher for Anonymous {
                 message: err.to_string(),
             })
     }
+
+    fn fetch_thumb(&self, spec: &str) -> Result<Vec<u8>, FetchError> {
+        self.0.rbxthumb(spec).map_err(|err| FetchError::Other {
+            id: 0,
+            message: err.to_string(),
+        })
+    }
 }
 
 fn main() {

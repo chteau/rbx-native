@@ -22,7 +22,8 @@ rbx_reflection = { path = "../rbx_reflection" }
 # describe themselves in plugin.toml and reach the web through HttpService.
 rbx_binary = { path = "../rbx_binary" }
 rbx_csg = { path = "../rbx_csg" }
-# MeshPart operands carve as their meshes (`csg::mesh`).
+# MeshPart operands carve as their meshes (`csg::mesh`), and
+# `CreateEditableMeshAsync`/`CreateMeshPartAsync` load mesh assets.
 rbx_mesh = { path = "../rbx_mesh" }
 rbx_xml = { path = "../rbx_xml" }
 # What plugins may do: the editor's one permission model.

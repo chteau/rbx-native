@@ -39,9 +39,9 @@ fn a_new_emitter_reads_studios_defaults_and_queues_its_bursts() {
             assert(emitter.Rate == 20 and emitter.ZIndex == 1)
             assert(emitter.EmissionMode == Enum.ParticleEmitter2DEmissionMode.BoundingBox)
             assert(emitter.Size.Keypoints[1].Value == 32 and emitter.Speed.Min == 64)
-            assert(emitter.TextureContent == "rbxasset://textures/particles/sparkles_main.dds")
+            assert(emitter.TextureContent.Uri == "rbxasset://textures/particles/sparkles_main.dds")
             emitter.TextureContent = Content.none
-            assert(emitter.TextureContent == "")
+            assert(emitter.TextureContent.SourceType == Enum.ContentSourceType.None)
             emitter.TextureContent = Content.fromUri("rbxasset://textures/particles/sparkles_main.dds")
             emitter:Emit(30)
             emitter:Emit()

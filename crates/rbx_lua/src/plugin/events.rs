@@ -415,6 +415,20 @@ impl Hooks for PluginHooks {
         if let Some(value) = events::index(lua, ctx, referent, class, key)? {
             return Ok(Some(value));
         }
+        // Editables work in Edit as in Studio, no Local Run needed.
+        match class {
+            "AssetService" | "MeshPart" => {
+                let editables = std::rc::Rc::new(crate::editable::Env::edit(ctx));
+                let found = match class {
+                    "AssetService" => crate::editable::member(lua, &editables, key)?,
+                    _ => crate::editable::mesh_part_member(lua, &editables, referent, key)?,
+                };
+                if found.is_some() {
+                    return Ok(found);
+                }
+            }
+            _ => {}
+        }
         let db = ctx.database();
         if is_plugin_signal(db, class, key) {
             return lua

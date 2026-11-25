@@ -81,6 +81,10 @@ pub struct Services {
     /// Studio's local secrets for `HttpService:GetSecret`: name → (value,
     /// the domain it may be sent to).
     pub secrets: HashMap<String, (String, String)>,
+    /// The creators (user or group ids) whose assets the place may open
+    /// as editables: the experience's owner, the editor's user. Empty
+    /// skips the check.
+    pub asset_owners: Vec<u64>,
 }
 
 /// A model asset's file (binary or XML), by id. Called off the script
@@ -92,6 +96,12 @@ pub trait AssetSource: Send + Sync + std::fmt::Debug {
     /// `ContentProvider:PreloadAsync` asks; the error says why it can't be.
     fn preload(&self, _content: &str) -> std::result::Result<(), String> {
         Ok(())
+    }
+
+    /// An `rbxthumb://` thumbnail's image (`spec` is the part after the
+    /// scheme).
+    fn fetch_thumb(&self, _spec: &str) -> std::result::Result<Vec<u8>, String> {
+        Err("thumbnails aren't available here".to_owned())
     }
 }
 
@@ -244,6 +254,7 @@ impl Default for Services {
             assets: None,
             web_session: None,
             secrets: HashMap::new(),
+            asset_owners: Vec::new(),
         }
     }
 }
@@ -311,7 +322,7 @@ type Finished = Arc<Mutex<Vec<(AwaitId, std::result::Result<serde_json::Value, S
 
 /// One VM's side of the services.
 pub(crate) struct Runtime {
-    config: RefCell<Services>,
+    pub(crate) config: RefCell<Services>,
     universe: RefCell<Arc<Universe>>,
     /// The next message number this VM hasn't delivered.
     cursor: Cell<u64>,
@@ -2048,7 +2059,7 @@ fn failure(error: &str) -> String {
 
 /// `GetProductInfo` from Roblox's public catalog APIs, kept (in memory and
 /// under `cache`) so a later offline run still has it.
-fn product_info(
+pub(crate) fn product_info(
     id: i64,
     kind: &str,
     cache: Option<PathBuf>,

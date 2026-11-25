@@ -13,7 +13,7 @@
 //! into the mirror; edits made to the mirror are copied the other way into
 //! the simulation, logged, so it routes them on its next step.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -251,6 +251,26 @@ impl rbx_assets::AssetFetcher for Fetcher {
     }
 }
 
+/// The editor's own downloads for `AssetService` in the command bar and
+/// plugins, with whatever key is set when the call comes.
+pub(in crate::shell) struct EditFetcher;
+
+impl rbx_assets::AssetFetcher for EditFetcher {
+    fn fetch_id(&self, id: u64) -> Result<Vec<u8>, rbx_assets::FetchError> {
+        Fetcher(rbx_cloud::Client::new(
+            rbx_cloud::ApiKey::from_env_or_config(),
+        ))
+        .fetch_id(id)
+    }
+
+    fn fetch_thumb(&self, spec: &str) -> Result<Vec<u8>, rbx_assets::FetchError> {
+        Fetcher(rbx_cloud::Client::new(
+            rbx_cloud::ApiKey::from_env_or_config(),
+        ))
+        .fetch_thumb(spec)
+    }
+}
+
 impl LocalRun {
     /// A session runs here, or this is one of its test windows.
     pub(in crate::shell) fn active(&self) -> bool {
@@ -402,18 +422,33 @@ fn all_refs(dom: &WeakDom) -> Vec<Ref> {
     out
 }
 
-/// Every property bound to a script's `EditableImage`/`EditableMesh`, as
-/// changes: a script painted, so the viewport has to look again, though
-/// nothing in the DOM moved.
-fn editable_bindings(dom: &WeakDom) -> Vec<Change> {
-    let mut out = Vec::new();
-    for referent in all_refs(dom) {
-        let Some(instance) = dom.get(referent) else {
-            continue;
-        };
-        for (name, value) in instance.properties() {
-            if let Variant::Content(rbx_dom::Content::Object(object)) = value {
-                if rbx_dom::editable::get(*object).is_some() {
+/// Every property bound to a script's `EditableImage`/`EditableMesh` that
+/// changed since `dom`'s last call, as changes: a script painted, so the
+/// viewport has to look again, though nothing in the DOM moved. A mesh
+/// left alone isn't flattened again (OpenArena rebuilds a few of its many
+/// meshes a frame).
+pub(in crate::shell) fn editable_bindings(dom: &WeakDom) -> Vec<Change> {
+    thread_local! {
+        static SHOWN: std::cell::RefCell<HashMap<usize, HashMap<Ref, u64>>> = Default::default();
+    }
+    SHOWN.with_borrow_mut(|shown| {
+        let shown = shown.entry(dom as *const WeakDom as usize).or_default();
+        let mut now = HashMap::new();
+        let mut out = Vec::new();
+        for referent in all_refs(dom) {
+            let Some(instance) = dom.get(referent) else {
+                continue;
+            };
+            for (name, value) in instance.properties() {
+                let Variant::Content(rbx_dom::Content::Object(object)) = value else {
+                    continue;
+                };
+                let Some(editable) = rbx_dom::editable::get(*object) else {
+                    continue;
+                };
+                let version = editable.version();
+                now.insert(*object, version);
+                if shown.get(object) != Some(&version) {
                     out.push(Change::Property {
                         referent,
                         name: name.clone(),
@@ -421,8 +456,9 @@ fn editable_bindings(dom: &WeakDom) -> Vec<Change> {
                 }
             }
         }
-    }
-    out
+        *shown = now;
+        out
+    })
 }
 
 /// The changes that turn `from` into `to`, matched by referent: what the

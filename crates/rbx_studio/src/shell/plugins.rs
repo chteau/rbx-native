@@ -100,6 +100,9 @@ impl Shell {
         let settings_dir =
             crate::settings::default_config_dir().map(|dir| dir.join("plugin-settings"));
         let mut host = PluginHost::new(self.database.clone(), settings_dir);
+        rbx_lua::set_asset_source(rbx_sim::asset_source(std::sync::Arc::new(
+            super::local_run::EditFetcher,
+        )));
         host.set_permissions(self.permissions.clone());
         let mut wasm = Vec::new();
         self.plugins.built_in.clear();
@@ -218,6 +221,7 @@ impl Shell {
             &outcome.changes,
         );
         self.apply_plugin_outcome(outcome, cx);
+        self.reflect_editables(cx);
         if commit_after {
             self.commit_plugin_step();
         }

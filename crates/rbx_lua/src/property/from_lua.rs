@@ -134,8 +134,9 @@ pub(crate) fn lua_to_variant(
                 Ok(Variant::Content(match &data.borrow::<LuaContent>()?.0 {
                     Source::None => Content::None,
                     Source::Uri(uri) => Content::Uri(uri.clone()),
+                    Source::Opaque(referent) => Content::Object(*referent),
                     Source::Object(Value::UserData(object)) => {
-                        match crate::server::editable_image::editable_ref(object) {
+                        match crate::editable::editable_ref(object) {
                             Some(referent) => Content::Object(referent),
                             None => return Err(type_error(name, "Content", value)),
                         }

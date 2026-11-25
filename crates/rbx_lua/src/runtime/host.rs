@@ -101,6 +101,15 @@ impl Hooks for CommandBarHooks {
             "HttpService" => http_member(lua, key),
             "CollectionService" => collection::member(lua, key),
             "Selection" => super::selection::member(lua, ctx, key),
+            "AssetService" => crate::editable::member(
+                lua,
+                &std::rc::Rc::new(crate::editable::Env::edit(ctx)),
+                key,
+            ),
+            "MeshPart" => {
+                let env = std::rc::Rc::new(crate::editable::Env::edit(ctx));
+                crate::editable::mesh_part_member(lua, &env, referent, key)
+            }
             _ => Ok(None),
         }
     }

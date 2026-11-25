@@ -227,6 +227,22 @@ pub(super) struct ServerHooks {
     pub(super) styles: super::styles::Shared,
 }
 
+impl ServerHooks {
+    /// What this VM's editables can reach.
+    fn editables(&self, ctx: &Ctx) -> Rc<crate::editable::Env> {
+        let config = self.services.config.borrow();
+        Rc::new(crate::editable::Env {
+            ctx: ctx.clone(),
+            physics: Some(self.physics.clone()),
+            assets: config.assets.clone(),
+            owners: config.asset_owners.clone(),
+            cache_dir: config.cache_dir.clone(),
+            client: self.client.get(),
+            edit: false,
+        })
+    }
+}
+
 fn method<A, R>(lua: &Lua, f: impl Fn(&Lua, A) -> Result<R> + 'static) -> Result<Option<Value>>
 where
     A: mlua::FromLuaMulti,
@@ -798,10 +814,10 @@ impl Hooks for ServerHooks {
                 self.physics_service(lua, key)
             }
             "HttpService" => json::member(lua, key),
-            "AssetService" => match super::editable_image::member(lua, key)? {
-                Some(value) => Ok(Some(value)),
-                None => super::meshes::member(lua, ctx, &self.physics, key),
-            },
+            "AssetService" => crate::editable::member(lua, &self.editables(ctx), key),
+            "MeshPart" if key == "ApplyMesh" => {
+                crate::editable::mesh_part_member(lua, &self.editables(ctx), referent, key)
+            }
             "Terrain" => match super::terrain::member(lua, ctx, &self.physics, key)? {
                 Some(value) => Ok(Some(value)),
                 None => self.base_part(lua, referent, key),
