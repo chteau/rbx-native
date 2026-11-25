@@ -6965,6 +6965,7 @@ dependencies = [
  "rbx_binary",
  "rbx_csg",
  "rbx_dom",
+ "rbx_mesh",
  "rbx_reflection",
  "rbx_xml",
  "serde_json",
