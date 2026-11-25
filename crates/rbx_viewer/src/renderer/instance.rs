@@ -217,7 +217,7 @@ mod tests {
             (0x400, 0x800, 12)
         );
         // Six faces of three bits each still fit above the flags.
-        assert!(SURFACES_SHIFT + 18 <= 32);
+        const { assert!(SURFACES_SHIFT + 18 <= 32) };
     }
 
     /// The `@location(n)` list of the `InstanceInput` struct one shader
