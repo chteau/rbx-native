@@ -444,6 +444,7 @@ impl Shell {
             rows.extend(reimport_rows(
                 self.reimport_rows(target),
                 self.reimports.is_watched(target),
+                crate::offline::blocked(),
                 target,
             ));
         }
@@ -493,13 +494,15 @@ impl Shell {
 /// Studio's Reimport submenu, flat as the rest of this menu: Reimport,
 /// Configure…, Remove reimport config and Auto-Reimport, each greyed where
 /// its handler would do nothing (see `shell::reimport`).
-fn reimport_rows(live: reimport::Rows, watched: bool, target: Ref) -> [Row; 4] {
+fn reimport_rows(live: reimport::Rows, watched: bool, offline: bool, target: Ref) -> [Row; 4] {
     [
-        row(
+        // An upload of the file again (`shell::reimport`).
+        cloud_row(
             "reimport",
             IconName::RefreshCw,
             "Reimport",
             live.configured,
+            offline,
             move |shell, _, cx| shell.reimport(target, cx),
         ),
         row(
@@ -543,6 +546,8 @@ struct Row {
     icon: IconName,
     label: &'static str,
     enabled: bool,
+    /// Needs Roblox's servers: greyed out offline, saying so.
+    cut_off: bool,
     action: RowAction,
 }
 
@@ -558,7 +563,24 @@ fn row(
         icon,
         label,
         enabled,
+        cut_off: false,
         action: std::rc::Rc::new(action),
+    }
+}
+
+/// [`row`] for a command that uploads: off while offline.
+fn cloud_row(
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    enabled: bool,
+    offline: bool,
+    action: impl Fn(&mut Shell, &mut Window, &mut Context<Shell>) + 'static,
+) -> Row {
+    Row {
+        enabled: enabled && !offline,
+        cut_off: offline,
+        ..row(id, icon, label, enabled, action)
     }
 }
 
@@ -585,9 +607,15 @@ impl Row {
             icon,
             label,
             enabled,
+            cut_off,
             action,
         } = self;
         chrome(id, icon, label, enabled)
+            .when(cut_off, |this| {
+                this.tooltip(|window, cx| {
+                    crate::shell::tooltip::text(crate::offline::TIP, window, cx)
+                })
+            })
             // The keyboard's highlight wears the hover's surface, and the
             // pointer moves it, as in the dropdowns (`shell::menu`).
             .when(highlighted, |this| this.bg(crate::tokens::hover()))
@@ -608,5 +636,33 @@ impl Row {
                 }))
             })
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod offline_tests {
+    use super::{reimport, reimport_rows};
+
+    /// Reimport uploads the file again, so it greys out offline and says
+    /// why; the rest of Reimport's rows are local and stay as they were.
+    #[test]
+    fn offline_greys_out_reimport_only() {
+        let live = reimport::Rows {
+            model: true,
+            configured: true,
+            has_id: true,
+        };
+        let online = reimport_rows(live, false, false, rbx_dom::Ref::new(1));
+        let offline = reimport_rows(live, false, true, rbx_dom::Ref::new(1));
+        assert!(online[0].enabled && !online[0].cut_off);
+        assert!(!offline[0].enabled && offline[0].cut_off);
+        for (on, off) in online.iter().zip(&offline).skip(1) {
+            assert_eq!(
+                (on.enabled, on.cut_off),
+                (off.enabled, off.cut_off),
+                "{}",
+                on.id
+            );
+        }
     }
 }

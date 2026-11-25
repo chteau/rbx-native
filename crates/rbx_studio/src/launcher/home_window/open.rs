@@ -353,7 +353,7 @@ impl HomeWindow {
     /// Add by place ID or URL: parse locally, resolve the universe, then
     /// the same open flow as a card.
     pub(super) fn add_link(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.link_state == LinkState::Resolving {
+        if self.link_state == LinkState::Resolving || crate::offline::blocked() {
             return;
         }
         let text = self.link.read(cx).value().to_string();

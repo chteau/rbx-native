@@ -95,6 +95,11 @@ impl GameWorkspace {
 
     /// File › Publish All: the question first, listing what each place would do.
     pub(crate) fn ask_publish_all(&mut self, cx: &mut Context<Self>) {
+        if let Some(shell) = self.active_shell().cloned() {
+            if shell.update(cx, |shell, cx| shell.offline_refuses("Publish All", cx)) {
+                return;
+            }
+        }
         let rows: Vec<Row> = self
             .slots
             .iter()

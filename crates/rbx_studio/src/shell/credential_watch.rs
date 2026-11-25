@@ -52,11 +52,16 @@ impl Shell {
         let mut net = rbx_net::status();
         self.credential_watch.poll = Some(cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(POLL).await;
-            // The title bar's Offline pill follows the network the same way.
+            // The title bar's Offline pill follows the network the same way,
+            // and so does everything greyed out while offline.
             let now = rbx_net::status();
             if now != net {
                 net = now;
-                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                let followed = this.update(cx, |shell, cx| {
+                    crate::menu_bar::follow_network(shell.script_templates.extras(), cx);
+                    cx.notify();
+                });
+                if followed.is_err() {
                     return;
                 }
             }

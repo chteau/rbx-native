@@ -128,6 +128,12 @@ impl Shell {
         let path = self.path.clone();
         self.write_to(&path, cx)?;
         self.saved();
+        let linked = crate::home::link_of(&path).is_some();
+        if let Some(note) = offline_save_note(crate::offline::blocked(), linked) {
+            let note = Feedback::Output(note.to_owned());
+            self.output.push(SOURCE, note.clone());
+            self.command_bar.set_feedback(note);
+        }
         Ok(())
     }
 
@@ -293,6 +299,16 @@ fn record_outcome(
     feedback
 }
 
+/// What Ctrl+S adds on a place linked to Roblox while offline. It writes
+/// the file on this computer, as it always does here (uploads are File ›
+/// Save to Roblox and Publish to Roblox); Studio's Ctrl+S on a cloud place
+/// saves to Roblox, so this says the upload didn't happen.
+fn offline_save_note(offline: bool, linked: bool) -> Option<&'static str> {
+    (offline && linked).then_some(
+        "Saved on this computer only: you\u{2019}re offline. Save to Roblox once you\u{2019}re back online.",
+    )
+}
+
 /// The `source` a save's row carries, where a Command Bar run's carries the
 /// command that was typed.
 const SOURCE: &str = "Save";
@@ -304,7 +320,14 @@ mod tests {
     use crate::command_bar::Feedback;
     use crate::shell::output::{ContextFilter, OutputFilter, OutputLog};
 
-    use super::record_outcome;
+    use super::{offline_save_note, record_outcome};
+
+    #[test]
+    fn ctrl_s_offline_on_a_linked_place_says_roblox_did_not_get_it() {
+        assert!(offline_save_note(true, true).is_some_and(|n| n.contains("Save to Roblox")));
+        assert_eq!(offline_save_note(true, false), None);
+        assert_eq!(offline_save_note(false, true), None);
+    }
 
     /// The Command Bar hides its own label while the Output dock is open
     /// (`Feedback::shown_inline`), on the premise that every outcome is a row
