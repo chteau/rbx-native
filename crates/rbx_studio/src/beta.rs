@@ -234,6 +234,7 @@ pub(crate) fn init() {
         .unwrap_or_default();
     rbx_lua::set_if_local(choices.is_on(IF_LOCAL_BETA_ID));
     rbx_lua::set_luau_exports(choices.is_on(LUAU_EXPORTS_BETA_ID));
+    rbx_lua::set_orthographic_camera(choices.is_on(crate::camera::ORTHOGRAPHIC_BETA_ID));
     rbx_viewer::set_variant_alpha_modes(
         choices.is_on(crate::properties::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID),
     );

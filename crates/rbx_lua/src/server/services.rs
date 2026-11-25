@@ -780,6 +780,7 @@ pub(crate) fn set(
         ("GuiService", "SelectedObject") => runtime.client.get(),
         ("DragDetector" | "UIDragDetector", _) => true,
         ("InputAction", "Type") => true,
+        ("Camera", "ProjectionType" | "DiagonalFieldOfView" | "MaxAxisFieldOfView") => true,
         _ => false,
     };
     let Some(name) = module_of(class).filter(|_| watched) else {
@@ -1117,6 +1118,12 @@ fn host(lua: &Lua, runtime: &Rc<Runtime>) -> Result<Table> {
         }))
     })?;
     host.set("ds_live", checked(lua, scheduler::yielding(lua, live)?)?)?;
+    host.set(
+        "orthographic",
+        lua.create_function(|_, ()| {
+            Ok(crate::ORTHOGRAPHIC_CAMERA.load(std::sync::atomic::Ordering::Relaxed))
+        })?,
+    )?;
     let r = runtime.clone();
     host.set(
         "server",

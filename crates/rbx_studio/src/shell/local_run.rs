@@ -1150,6 +1150,10 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, _| viewport.apply_changes(snapshots, back));
         self.history = stash.history;
+        if crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID) {
+            let span = crate::camera::current_ortho(&self.dom);
+            self.viewport.read(cx).set_place_ortho(span);
+        }
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);
         self.reselect(stash.selection, cx);
@@ -1531,6 +1535,7 @@ impl Shell {
             };
             let mouse = viewed.mouse_behavior();
             let camera = viewed.camera();
+            let projection = play_projection(&viewed.dom());
             let player_gui = viewed.local_player().and_then(|(player, _)| {
                 let dom = viewed.dom();
                 dom.get(player)?
@@ -1556,7 +1561,11 @@ impl Shell {
                     let (eye, target) = eye_and_target(&cframe);
                     viewport.look_at_with(eye, target, fov);
                 }
+                viewport.set_play_projection(projection);
             });
+        } else {
+            self.viewport
+                .update(cx, |viewport, _| viewport.end_play_projection());
         }
         if !changes.is_empty() {
             let snapshots = self.dom.snapshot(&changes);
@@ -1633,6 +1642,15 @@ impl Shell {
 }
 
 /// The game camera's eye and a point straight ahead of it (its -Z).
+/// What a player's view follows of their camera's projection: its
+/// orthographic span with the Orthographic Camera beta on. Without it the
+/// view stays perspective, as Studio's Play view does.
+fn play_projection(dom: &rbx_dom::WeakDom) -> Option<(f32, rbx_viewer::OrthoAxis)> {
+    crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID)
+        .then(|| crate::camera::current_ortho(dom))
+        .flatten()
+}
+
 fn eye_and_target(camera: &rbx_dom::CFrameData) -> ([f32; 3], [f32; 3]) {
     let p = camera.position;
     let r = camera.rotation;

@@ -55,6 +55,15 @@ pub fn set_luau_exports(on: bool) {
     engine::require::EXPORTS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Studio's "Orthographic Camera" beta for scripts: off, a running game's
+/// `Camera.ProjectionType` writes are ignored, as Studio's own are.
+pub fn set_orthographic_camera(on: bool) {
+    ORTHOGRAPHIC_CAMERA.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) static ORTHOGRAPHIC_CAMERA: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Whether `source` compiles as Luau (nothing runs). `Err` is the
 /// compiler's message, e.g. a syntax error or "too many upvalues".
 pub fn compile_check(source: &str, name: &str) -> Result<(), String> {

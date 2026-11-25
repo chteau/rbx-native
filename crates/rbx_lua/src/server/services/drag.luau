@@ -126,34 +126,99 @@ local function constrained(id, ...)
 end
 
 -- Camera's screen math, which the drags share: a ray through a viewport
--- pixel (from the camera's position, `depth` studs along it) and back.
--- Screen points count from below the top bar, viewport points from the
--- window's top.
+-- pixel (from the near plane, `depth` studs along it) and back. Screen
+-- points count from below the top bar, viewport points from the window's
+-- top. Measured in Studio's Play: rays start on the 0.1 stud near plane,
+-- an orthographic camera's run straight down its look vector from the
+-- pixel, and OrthographicSize spans the axis OrthographicMode names.
 local TOPBAR_INSET = 58
+local NEAR = 0.1
+
+-- Half the view's height in studs when it's orthographic, else nil.
+local function orthoHalfHeight(camera, size)
+	if not host.orthographic() or camera.ProjectionType ~= Enum.ProjectionType.Orthographic then
+		return nil
+	end
+	local w, h = math.max(size.X, 1), math.max(size.Y, 1)
+	local span = camera.OrthographicSize / 2
+	local mode = camera.OrthographicMode
+	if mode == Enum.OrthographicMode.Horizontal then
+		return span * h / w
+	elseif mode == Enum.OrthographicMode.Diagonal then
+		return span * h / math.sqrt(w * w + h * h)
+	elseif mode == Enum.OrthographicMode.MaxAxis then
+		return span * h / math.max(w, h)
+	end
+	return span
+end
 
 viewportRay = function(camera, x, y, depth)
 	local size = camera.ViewportSize
 	local cf = camera.CFrame
-	local tan = math.tan(math.rad(camera.FieldOfView) / 2)
 	local aspect = size.X / math.max(size.Y, 1)
-	local px = (2 * x / math.max(size.X, 1) - 1) * aspect * tan
-	local py = (1 - 2 * y / math.max(size.Y, 1)) * tan
-	local direction = cf:VectorToWorldSpace(Vector3.new(px, py, -1)).Unit
-	return Ray.new(cf.Position + direction * (depth or 0), direction)
+	local nx = 2 * x / math.max(size.X, 1) - 1
+	local ny = 1 - 2 * y / math.max(size.Y, 1)
+	local half = orthoHalfHeight(camera, size)
+	if half then
+		local origin = cf:PointToWorldSpace(Vector3.new(nx * aspect * half, ny * half, -(NEAR + (depth or 0))))
+		return Ray.new(origin, cf.LookVector)
+	end
+	local tan = math.tan(math.rad(camera.FieldOfView) / 2)
+	local local_ = Vector3.new(nx * aspect * tan, ny * tan, -1)
+	local direction = cf:VectorToWorldSpace(local_).Unit
+	local along = NEAR * local_.Magnitude + (depth or 0)
+	return Ray.new(cf.Position + direction * along, direction)
 end
 
 local function toViewport(camera, point)
 	local size = camera.ViewportSize
-	local tan = math.tan(math.rad(camera.FieldOfView) / 2)
 	local aspect = size.X / math.max(size.Y, 1)
 	local p = camera.CFrame:PointToObjectSpace(point)
 	local depth = -p.Z
-	local d = if math.abs(depth) < 1e-6 then 1e-6 else depth
-	local x = (p.X / (d * aspect * tan) + 1) / 2 * size.X
-	local y = (1 - p.Y / (d * tan)) / 2 * size.Y
+	local half = orthoHalfHeight(camera, size)
+	local sx, sy
+	if half then
+		sx, sy = aspect * half, half
+	else
+		local tan = math.tan(math.rad(camera.FieldOfView) / 2)
+		local d = if math.abs(depth) < 1e-6 then 1e-6 else depth
+		sx, sy = d * aspect * tan, d * tan
+	end
+	local x = (p.X / sx + 1) / 2 * size.X
+	local y = (1 - p.Y / sy) / 2 * size.Y
 	local onScreen = depth > 0 and x >= 0 and y >= 0 and x <= size.X and y <= size.Y
 	return Vector3.new(x, y, depth), onScreen
 end
+
+-- The other two ways to say the field of view, worked out from the
+-- vertical one the camera keeps. Studio's diagonal squares the tangent
+-- (measured at two aspect ratios, it isn't the true diagonal angle).
+local function aspectOf(camera)
+	local size = camera.ViewportSize
+	return size.X / math.max(size.Y, 1)
+end
+
+local CAMERA_PROPS = {
+	DiagonalFieldOfView = function(camera)
+		local a = aspectOf(camera)
+		local t = math.tan(math.rad(camera.FieldOfView) / 2)
+		return math.deg(2 * math.atan((1 + a * a) * t * t))
+	end,
+	MaxAxisFieldOfView = function(camera)
+		local t = math.tan(math.rad(camera.FieldOfView) / 2)
+		return math.deg(2 * math.atan(math.max(aspectOf(camera), 1) * t))
+	end,
+}
+
+local CAMERA_FROM = {
+	DiagonalFieldOfView = function(camera, value)
+		local a = aspectOf(camera)
+		return math.sqrt(math.tan(math.rad(value) / 2) / (1 + a * a))
+	end,
+	MaxAxisFieldOfView = function(camera, value)
+		return math.tan(math.rad(value) / 2) / math.max(aspectOf(camera), 1)
+	end,
+}
 
 local CAMERA = {
 	ViewportPointToRay = function(self, x, y, depth)
@@ -358,6 +423,10 @@ function M.member(class, id, key)
 		if key == "InterpolationFinished" then
 			return host.signal(id, key), true
 		end
+		local read = CAMERA_PROPS[key]
+		if read then
+			return read(host.instance(id)), true
+		end
 		local f = CAMERA[key]
 		return f, f ~= nil
 	end
@@ -396,6 +465,18 @@ function M.member(class, id, key)
 end
 
 function M.set(class, id, key, value)
+	if class == "Camera" then
+		if key == "ProjectionType" then
+			return not host.orthographic()
+		end
+		local from = CAMERA_FROM[key]
+		if from and type(value) == "number" then
+			local camera = host.instance(id)
+			camera.FieldOfView = math.clamp(math.deg(2 * math.atan(from(camera, value))), 1, 120)
+			return true
+		end
+		return false
+	end
 	if class ~= "DragDetector" then
 		return false
 	end

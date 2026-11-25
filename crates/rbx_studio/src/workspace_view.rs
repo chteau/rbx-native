@@ -412,6 +412,9 @@ pub(crate) struct WorkspaceView {
     pub(crate) core_gui: core_gui::CoreGuiView,
     /// The free camera from before Play (local), put back on Stop.
     play_return: Option<Pose>,
+    /// The running game's camera projection the view follows, once it does
+    /// (see [`Self::set_play_projection`]).
+    play_ortho: Option<Option<(f32, rbx_viewer::OrthoAxis)>>,
     /// The window's scale factor at the last mouse move, for the mouse
     /// location a game reads.
     play_scale: f32,
@@ -574,6 +577,7 @@ impl WorkspaceView {
             play: None,
             core_gui: core_gui::CoreGuiView::default(),
             play_return: None,
+            play_ortho: None,
             play_scale: 1.0,
             viewport: Rc::new(Cell::new(Viewport::default())),
             sized: (0, 0),
@@ -1247,11 +1251,36 @@ impl WorkspaceView {
         self.play = None;
         self.lock.release();
         self.cursor = None;
+        self.end_play_projection();
         if let Some(pose) = self.play_return.take() {
             let eye = pose.position.to_array();
             let ahead = crate::camera::free_flight_direction(pose.yaw, pose.pitch);
             let target = [0, 1, 2].map(|i| eye[i] + ahead[i]);
             self.pump.look_at(eye, target, pose.fov_degrees);
+        }
+    }
+
+    /// A running game's camera projection: `Some((OrthographicSize,
+    /// OrthographicMode))` while its client camera is Orthographic, which
+    /// Studio's Play view follows with the Orthographic Camera beta, flat
+    /// over black like an orthographic place camera in Edit.
+    pub(crate) fn set_play_projection(&mut self, span: Option<(f32, rbx_viewer::OrthoAxis)>) {
+        if self.play_ortho == Some(span) {
+            return;
+        }
+        self.play_ortho = Some(span);
+        self.pump.orthographic(span.is_some());
+        self.pump.place_ortho(span);
+    }
+
+    /// The edit view's own projection again, after a game's camera: on
+    /// Stop, or when the view leaves a player for the server's free camera.
+    /// The shell puts the place camera's span back once its tree is the
+    /// edit one.
+    pub(crate) fn end_play_projection(&mut self) {
+        if self.play_ortho.take().is_some() {
+            self.pump.orthographic(self.orthographic);
+            self.pump.place_ortho(None);
         }
     }
 

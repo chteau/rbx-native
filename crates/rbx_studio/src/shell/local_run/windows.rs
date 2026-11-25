@@ -32,8 +32,8 @@ use rbx_sim::{MouseBehavior, Peer, Session, Simulation};
 use super::remote;
 use super::tabs::TestWindow;
 use super::{
-    changes_between, dedupe, editable_bindings, eye_and_target, mirror, pad_inputs, push_row,
-    push_rows, structural, Running, MAX_PLAYERS,
+    changes_between, dedupe, editable_bindings, eye_and_target, mirror, pad_inputs,
+    play_projection, push_row, push_rows, structural, Running, MAX_PLAYERS,
 };
 use crate::command_bar::Feedback;
 use crate::properties::Properties;
@@ -841,11 +841,15 @@ impl Shell {
         if client {
             self.show_player_gui(player_gui, cx);
         }
+        let projection = client.then(|| play_projection(&dom.borrow())).flatten();
         let taken = self.viewport.update(cx, |viewport, _| {
             viewport.particle_bursts(bursts);
             if let Some((cframe, fov)) = camera {
                 let (eye, target) = eye_and_target(&cframe);
                 viewport.look_at_with(eye, target, fov);
+            }
+            if client {
+                viewport.set_play_projection(projection);
             }
             if !input {
                 return (Vec::new(), false);

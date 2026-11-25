@@ -1022,3 +1022,54 @@ fn a_tool_given_on_character_added_stays_in_the_backpack() {
         "{lines:#?}"
     );
 }
+
+/// Numbers from Studio's Play with the Orthographic Camera beta on, a
+/// 759x397 viewport and the camera 40 studs back from the pillars.
+#[test]
+fn the_play_camera_projects_like_studio_in_every_orthographic_mode() {
+    rbx_lua::set_orthographic_camera(true);
+    let mut s = session(
+        place(
+            "",
+            "local c = workspace.CurrentCamera task.wait(0.5) \
+             local function r(v) return math.round(v * 100) / 100 end \
+             print('fov', r(c.DiagonalFieldOfView), r(c.MaxAxisFieldOfView)) \
+             c.DiagonalFieldOfView = 90 print('diag', r(c.FieldOfView)) \
+             c.MaxAxisFieldOfView = 90 print('max', r(c.FieldOfView)) c.FieldOfView = 70 \
+             c.CameraType = Enum.CameraType.Scriptable \
+             c.CFrame = CFrame.lookAt(Vector3.new(0, 5, 40), Vector3.new(0, 5, 0)) \
+             local v = c:WorldToViewportPoint(Vector3.new(10, 10, 0)) \
+             local ray = c:ViewportPointToRay(c.ViewportSize.X * 0.75, c.ViewportSize.Y * 0.25, 5) \
+             print('P', r(v.X), r(v.Y), r(v.Z), r(ray.Origin.X), r(ray.Origin.Z)) \
+             c.ProjectionType = Enum.ProjectionType.Orthographic c.OrthographicSize = 20 \
+             for _, mode in { 'Vertical', 'Horizontal', 'Diagonal', 'MaxAxis' } do \
+               c.OrthographicMode = Enum.OrthographicMode[mode] \
+               local v, on = c:WorldToViewportPoint(Vector3.new(10, 10, 0)) \
+               local ray = c:ScreenPointToRay(c.ViewportSize.X * 0.75, c.ViewportSize.Y * 0.25, 5) \
+               print(mode, r(v.X), r(v.Y), r(v.Z), on, r(ray.Origin.X), r(ray.Origin.Y), r(ray.Origin.Z), r(ray.Direction.Z)) \
+             end",
+        ),
+        1,
+    );
+    if let Some(sim) = s.sim_mut(Peer::Client(0)) {
+        sim.set_viewport([759.0, 397.0]);
+    }
+    let mut lines = Vec::new();
+    for _ in 0..60 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    let me = Peer::Client(0);
+    for expected in [
+        "fov 132.68 106.48",
+        "diag 49.73",
+        "max 55.22",
+        "P 450.37 163.06 40 2.74 35.91",
+        "Vertical 578 99.25 40 true 9.56 7.08 34.9 -1",
+        "Horizontal 759 8.75 40 true 5 6.09 34.9 -1",
+        "Diagonal 807.78 -15.64 40 false 4.43 5.96 34.9 -1",
+        "MaxAxis 759 8.75 40 true 5 6.09 34.9 -1",
+    ] {
+        assert!(has(&lines, me, expected), "{expected}: {lines:#?}");
+    }
+}
