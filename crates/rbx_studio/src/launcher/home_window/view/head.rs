@@ -109,7 +109,15 @@ impl HomeWindow {
                 |this| this.child(div().ml_auto().child(self.recent_view_toggle(cx))),
             )
             .when(new_experience, |this| {
-                this.child(if self.session.is_some() {
+                this.child(if crate::offline::blocked() {
+                    ui::disabled_button("games-new-experience", "New experience")
+                        .h(px(32.))
+                        .ml_auto()
+                        .tooltip(|window, cx| {
+                            crate::shell::tooltip::text(crate::offline::TIP, window, cx)
+                        })
+                        .into_any_element()
+                } else if self.session.is_some() {
                     ui::icon_button(
                         "games-new-experience",
                         "plus",
@@ -150,14 +158,20 @@ impl HomeWindow {
                     .absolute()
                     .left(px(search_left + search_width + HEAD_GAP))
                     .top(px(2.))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.link_open = !this.link_open;
-                        let focus = this.link.read(cx).focus_handle(cx);
-                        if this.link_open {
-                            focus.focus(window, cx);
-                        }
-                        cx.notify();
-                    })),
+                    // Resolving a link asks Roblox which game it is.
+                    .map(|button| match crate::offline::blocked() {
+                        true => button.opacity(0.5).cursor_not_allowed().tooltip(
+                            |window, cx| crate::shell::tooltip::text(crate::offline::TIP, window, cx),
+                        ),
+                        false => button.on_click(cx.listener(|this, _, window, cx| {
+                            this.link_open = !this.link_open;
+                            let focus = this.link.read(cx).focus_handle(cx);
+                            if this.link_open {
+                                focus.focus(window, cx);
+                            }
+                            cx.notify();
+                        })),
+                    }),
                 )
             })
     }
