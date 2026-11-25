@@ -4,6 +4,7 @@ use std::path::Path;
 
 use gpui_kit::*;
 use rbx_dom::WeakDom;
+use rbx_permissions::{Capability, PluginKind, PluginProfile};
 use rbx_wasm::{DomHost, Effect, Grants, WasmPlugin};
 
 use crate::command_bar::Feedback;
@@ -11,6 +12,8 @@ use crate::shell::Shell;
 
 pub(crate) struct Entry {
     pub(crate) name: String,
+    /// What its manifest asked for, for the permission store.
+    pub(crate) profile: PluginProfile,
     pub(crate) plugin: WasmPlugin,
     /// Registered commands: id, text, tooltip.
     pub(crate) commands: Vec<(String, String, String)>,
@@ -19,7 +22,8 @@ pub(crate) struct Entry {
 }
 
 /// Reads `plugin.toml` + its entry (`.wasm` bytes or `.wat` text) and
-/// instantiates it with the manifest's grants.
+/// instantiates it; what it may do is read from the permission store before
+/// every call (see `wasm_run`).
 pub(crate) fn load(folder: &Path) -> Result<Entry, String> {
     let manifest_path = folder.join("plugin.toml");
     let text = std::fs::read_to_string(&manifest_path)
@@ -35,20 +39,27 @@ pub(crate) fn load(folder: &Path) -> Result<Entry, String> {
         .get("entry")
         .and_then(|v| v.as_str())
         .ok_or("plugin.toml: missing `entry`")?;
-    let permissions: Vec<String> = table
-        .get("permissions")
-        .and_then(|v| v.as_array())
-        .map(|list| {
-            list.iter()
-                .filter_map(|p| p.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
+    let mut profile = PluginProfile {
+        name: name.clone(),
+        kind: PluginKind::Wasm,
+        ..Default::default()
+    };
+    let listed = table.get("permissions").and_then(|v| v.as_array());
+    for text in listed.into_iter().flatten().filter_map(|p| p.as_str()) {
+        match rbx_permissions::parse_manifest(text) {
+            Some(rbx_permissions::Request::Capability(capability)) => {
+                profile.requested.push(capability)
+            }
+            Some(rbx_permissions::Request::Host(host)) => profile.hosts.push(host),
+            None => return Err(format!("plugin.toml: unknown permission `{text}`")),
+        }
+    }
     let entry_path = folder.join(entry);
     let bytes = std::fs::read(&entry_path).map_err(|e| format!("{}: {e}", entry_path.display()))?;
-    let plugin = WasmPlugin::load(&name, &bytes, Grants::from_permissions(&permissions))?;
+    let plugin = WasmPlugin::load(&name, &bytes, Grants::default())?;
     Ok(Entry {
         name,
+        profile,
         plugin,
         commands: Vec::new(),
         error: None,
@@ -88,12 +99,24 @@ impl Shell {
         let mut selection = self.selected_all().to_vec();
         let mut dom = std::mem::replace(&mut self.dom, WeakDom::new());
         let entry = &mut self.plugins.wasm[index];
+        let scripts = {
+            let store = self.permissions.borrow();
+            let policy = store.policy();
+            let allows = |capability| policy.allows(&entry.profile, capability);
+            entry.plugin.set_grants(Grants {
+                dom_read: allows(Capability::ReadPlace),
+                dom_write: allows(Capability::EditPlace),
+                selection: allows(Capability::Selection),
+            });
+            allows(Capability::EditScripts)
+        };
         let (result, selection_changed) = {
             let mut host = DomHost {
                 dom: &mut dom,
                 database: &self.database,
                 selection: &mut selection,
                 selection_changed: false,
+                scripts,
             };
             let result = match &command {
                 Some(id) => entry.plugin.command(id, &mut host),

@@ -1,4 +1,4 @@
-//! The left column: search, the twelve pages, the two settings that are
+//! The left column: search, the thirteen pages, the two settings that are
 //! windows of their own, and the config folder.
 
 use gpui_kit::component::{h_flex, v_flex};
@@ -21,13 +21,14 @@ pub(super) enum Page {
     Files,
     Argon,
     Ai,
+    Permissions,
     Account,
     Beta,
     About,
 }
 
 impl Page {
-    pub(super) const ALL: [Page; 12] = [
+    pub(super) const ALL: [Page; 13] = [
         Page::Appearance,
         Page::Accessibility,
         Page::Layout,
@@ -37,6 +38,7 @@ impl Page {
         Page::Files,
         Page::Argon,
         Page::Ai,
+        Page::Permissions,
         Page::Account,
         Page::Beta,
         Page::About,
@@ -53,6 +55,7 @@ impl Page {
             Page::Files => "Files & recovery",
             Page::Argon => "Argon",
             Page::Ai => "AI assistants",
+            Page::Permissions => "Permissions",
             Page::Account => "Account",
             Page::Beta => "Beta features",
             Page::About => "About",
@@ -70,6 +73,7 @@ impl Page {
             Page::Files => "save",
             Page::Argon => "refresh-cw",
             Page::Ai => "bot",
+            Page::Permissions => "shield-check",
             Page::Account => "user",
             Page::Beta => "flask-conical",
             Page::About => "info",
@@ -98,6 +102,7 @@ impl Page {
             Page::Files => "Recovery copies of unsaved work, and the copies Play will make, and updates.",
             Page::Argon => "Live sync with an Argon project. The Argon dock shows the same settings.",
             Page::Ai => "Let Claude or another MCP client read, edit and playtest the open place.",
+            Page::Permissions => "What AI assistants and plugins may look at and do. Changes apply to the next request.",
             Page::Account => "Your Roblox access and what RbxNative shares about you.",
             Page::Beta => "Try features before they\u{2019}re finished. Switch one off if it misbehaves.",
             Page::About => "The version you\u{2019}re running, and the people whose work RbxNative is built on.",

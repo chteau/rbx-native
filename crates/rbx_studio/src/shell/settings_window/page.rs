@@ -17,8 +17,12 @@ use super::SettingsWindow;
 
 impl SettingsWindow {
     /// What a page shows that isn't a section of rows.
-    pub(super) fn body(&self) -> Option<AnyElement> {
-        (self.page == Page::Beta).then(|| self.beta_body())
+    pub(super) fn body(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
+        match self.page {
+            Page::Beta => Some(self.beta_body()),
+            Page::Permissions => Some(self.permissions_body(cx)),
+            _ => None,
+        }
     }
 
     pub(super) fn page_view(
@@ -27,7 +31,7 @@ impl SettingsWindow {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let sections = self.sections(window, cx);
-        let body = self.body();
+        let body = self.body(cx);
         let mut resets: Vec<kit::Reset> = sections
             .iter()
             .flat_map(|section| {
@@ -47,6 +51,13 @@ impl SettingsWindow {
                 }
                 cx.notify();
             }));
+        }
+        if self.page == Page::Permissions {
+            let changed = self.shell.read(cx).permissions().borrow().policy()
+                != &rbx_permissions::Policy::default();
+            if changed {
+                resets.push(Rc::new(super::permissions::reset));
+            }
         }
         let shell = self.shell.clone();
         let reset_page = kit::header_button(
