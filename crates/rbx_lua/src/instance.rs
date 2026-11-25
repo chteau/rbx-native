@@ -5,8 +5,8 @@ pub(crate) mod tags;
 pub(crate) mod tree;
 
 use mlua::{
-    FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, MultiValue, Result, Table, UserData,
-    UserDataFields, UserDataMethods, Value,
+    AnyUserData, FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, MultiValue, Result, Table,
+    UserData, UserDataFields, UserDataMethods, Value,
 };
 use rbx_dom::Ref;
 
@@ -325,7 +325,7 @@ impl UserData for LuaInstance {
                         let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
                         if let Some(Value::Function(f)) = member {
                             args.push_front(Value::Nil);
-                            return f.call::<MultiValue>(args);
+                            return f.call::<MultiValue>(args).map_err(untraced);
                         }
                     }
                 }
@@ -357,7 +357,7 @@ impl UserData for LuaInstance {
                     let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
                     if let Some(Value::Function(f)) = member {
                         args.push_front(Value::Nil);
-                        return f.call::<MultiValue>(args);
+                        return f.call::<MultiValue>(args).map_err(untraced);
                     }
                 }
                 lua.create_table()?.into_lua_multi(lua)
@@ -430,23 +430,47 @@ impl UserData for LuaInstance {
                 None => Err(this.not_a_member("PivotTo")),
             }
         });
-        methods.add_method("GetScale", |_, this, ()| {
-            crate::pivot::scale(&this.ctx.dom(), this.ctx.database(), this.referent)
-                .ok_or_else(|| this.not_a_member("GetScale"))
-        });
-        methods.add_method("ScaleTo", |_, this, factor: f32| {
-            this.ctx.check_write(this.referent)?;
-            let scaled = crate::pivot::scale_to(
-                &mut this.ctx.dom_mut(),
-                this.ctx.database(),
-                this.referent,
-                factor,
+        // A run's world service scales the way a live server does (emitters,
+        // fire, ropes, springs and meshes included), so it answers first,
+        // as methods answer before `__index`.
+        for name in ["GetScale", "ScaleTo"] {
+            methods.add_function(
+                name,
+                move |lua, (ud, mut args): (AnyUserData, MultiValue)| {
+                    let this = ud.borrow::<Self>()?;
+                    if let Some(hooks) = crate::hooks::hooks(lua) {
+                        let class = this.class()?;
+                        let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
+                        if let Some(Value::Function(f)) = member {
+                            drop(this);
+                            args.push_front(Value::UserData(ud));
+                            return f.call::<MultiValue>(args).map_err(untraced);
+                        }
+                    }
+                    if name == "GetScale" {
+                        return crate::pivot::scale(
+                            &this.ctx.dom(),
+                            this.ctx.database(),
+                            this.referent,
+                        )
+                        .ok_or_else(|| this.not_a_member(name))?
+                        .into_lua_multi(lua);
+                    }
+                    let factor: f32 = lua.unpack(args.pop_front().unwrap_or(Value::Nil))?;
+                    this.ctx.check_write(this.referent)?;
+                    let scaled = crate::pivot::scale_to(
+                        &mut this.ctx.dom_mut(),
+                        this.ctx.database(),
+                        this.referent,
+                        factor,
+                    );
+                    match scaled {
+                        Some(result) => result.map_err(mlua::Error::runtime)?.into_lua_multi(lua),
+                        None => Err(this.not_a_member(name)),
+                    }
+                },
             );
-            match scaled {
-                Some(result) => result.map_err(mlua::Error::runtime),
-                None => Err(this.not_a_member("ScaleTo")),
-            }
-        });
+        }
         methods.add_method("Destroy", |lua, this, ()| {
             crate::engine::parallel::check_method(lua, "Destroy")?;
             this.ctx.check_write(this.referent)?;
@@ -723,4 +747,19 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
         )?,
     )?;
     Ok(table)
+}
+
+/// A run's hook called from a method: Luau hands the script the hook's own
+/// message, without the traceback mlua adds on the way through Rust.
+fn untraced(error: mlua::Error) -> mlua::Error {
+    match error {
+        mlua::Error::RuntimeError(message) => mlua::Error::RuntimeError(
+            message
+                .split("\nstack traceback:")
+                .next()
+                .unwrap_or_default()
+                .to_owned(),
+        ),
+        other => other,
+    }
 }
