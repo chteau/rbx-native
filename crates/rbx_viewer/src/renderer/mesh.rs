@@ -17,8 +17,8 @@ const FACES: [([f32; 3], [f32; 3], [f32; 3]); 6] = [
     ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]),
 ];
 
-// The colour sits past every instance attribute (decals reach 11, textured
-// meshes 12), so the shaders that never read it can still take this layout.
+// The colour sits past every instance attribute (textured meshes reach 12),
+// so the shaders that never read it can still take this layout.
 const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
     wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 15 => Unorm8x4];
 
@@ -55,6 +55,16 @@ impl Vertex {
             array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &VERTEX_ATTRIBUTES,
+        }
+    }
+
+    /// [`Vertex::layout`] without the colour, for a pass whose instance
+    /// attributes take every location up to 15 (decals).
+    pub(super) const fn layout_without_color() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: VERTEX_ATTRIBUTES.split_at(2).0,
         }
     }
 }

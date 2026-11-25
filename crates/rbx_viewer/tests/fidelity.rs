@@ -28,6 +28,9 @@ fn every_scene_stays_within_its_golden() {
         let (pixels, warnings) = match fidelity::render(&scene) {
             Ok(drawn) => drawn,
             Err(why) => {
+                // A GPU that is there but refuses our shaders is a bug, not
+                // a machine to skip on.
+                assert!(!why.contains("shaders do not build"), "{why}");
                 println!("skipped: no GPU to render with ({why})");
                 return;
             }

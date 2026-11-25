@@ -533,7 +533,10 @@ fn create(
     bind_group_layouts: &[Option<&wgpu::BindGroupLayout>],
     blended: bool,
 ) -> wgpu::RenderPipeline {
-    let buffers = [Some(Vertex::layout()), Some(DecalRaw::layout())];
+    let buffers = [
+        Some(Vertex::layout_without_color()),
+        Some(DecalRaw::layout()),
+    ];
 
     pipeline::surface(
         device,
