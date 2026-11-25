@@ -320,6 +320,10 @@ impl Shell {
                         shell.catalog_save();
                         shell.plugins_swap_file(&path, true, cx);
                     }
+                    Err(message) if rbx_net::is_offline_message(&message) => {
+                        let offline = "You\u{2019}re offline, so it can\u{2019}t download.";
+                        shell.plugins.catalog.failures.insert(id, offline.into());
+                    }
                     Err(message) => {
                         shell.plugins.catalog.failures.insert(id, message);
                     }

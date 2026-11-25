@@ -21,6 +21,7 @@
 mod kits;
 mod kits_view;
 mod view;
+pub(crate) use view::unreachable;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;

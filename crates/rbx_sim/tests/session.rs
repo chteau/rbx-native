@@ -243,6 +243,16 @@ fn has(lines: &[(Peer, String)], peer: Peer, text: &str) -> bool {
 }
 
 #[test]
+fn a_place_without_a_players_service_still_takes_players() {
+    let mut dom = place("", "");
+    let players = service(&dom, "Players");
+    dom.remove(players);
+    let mut s = session(dom, 1);
+    s.step();
+    assert!(s.sim_mut(Peer::Client(0)).is_some());
+}
+
+#[test]
 fn a_place_without_starter_player_plays_with_its_defaults() {
     let mut dom = place("", "");
     let starter_player = service(&dom, "StarterPlayer");

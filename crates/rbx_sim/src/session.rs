@@ -381,6 +381,10 @@ impl Session {
     /// A session over `dom`, the place as the server loads it.
     pub fn new(mut dom: WeakDom) -> Result<Session, String> {
         add_starter_player(&mut dom);
+        // A live game always has one, even when the file saved none.
+        if find_root(&dom, "Players").is_none() {
+            dom.new_instance("Players", "Players", None);
+        }
         let mut server = Simulation::new(dom)?;
         server.make_server();
         // Clients copy the server's `Stats`, so their own items under it
