@@ -355,9 +355,7 @@ impl SettingsWindow {
                 Row::new("Automatic updates", readout("Off")).describe(blocked.reason())
             }
         };
-        let version = updater::current()
-            .map(|v| format!("v{v}"))
-            .unwrap_or_else(|| format!("v{} (development build)", env!("CARGO_PKG_VERSION")));
+        let version = super::about::version();
         let status = updater::status();
         let description: SharedString = match &status {
             Status::Idle => format!("You have {version}.").into(),

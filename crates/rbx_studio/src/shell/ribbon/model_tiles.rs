@@ -245,11 +245,14 @@ impl Shell {
             self,
             MenuId::RibbonImport,
             chrome::Trigger::new(trigger),
-            vec![
+            [
                 item("Model", ImportKind::Model),
                 item("Mesh", ImportKind::Mesh),
                 item("Image", ImportKind::Image),
-            ],
+            ]
+            .into_iter()
+            .chain(super::super::video_upload::enabled().then(|| item("Video", ImportKind::Video)))
+            .collect(),
             cx,
         )
         .into_any_element()]

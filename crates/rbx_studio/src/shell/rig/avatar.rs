@@ -636,8 +636,15 @@ fn asset_id(text: &str) -> Option<u64> {
         .filter(|&id| id != 0)
 }
 
+/// `key`'s asset id. Places Studio saves now hold a `FooId` property as the
+/// `FooContent` that replaced it (`CageMeshContent`), so that is read when
+/// `key` is missing.
 pub(super) fn content_id(dom: &WeakDom, node: Ref, key: &str) -> Option<u64> {
-    asset_id(uri_text(dom.get(node)?.properties().get(key)?)?)
+    let props = dom.get(node)?.properties();
+    let renamed = key.strip_suffix("Id").map(|stem| format!("{stem}Content"));
+    asset_id(uri_text(
+        props.get(key).or_else(|| props.get(renamed.as_deref()?))?,
+    )?)
 }
 
 /// A content property's text. Models saved by older clients (the Headless

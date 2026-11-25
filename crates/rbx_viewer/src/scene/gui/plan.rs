@@ -55,6 +55,7 @@ pub(super) use viewport::each_part as each_viewport_part;
 pub(crate) use viewport::{ViewCamera, Viewport};
 
 use super::space::{billboard_canvas, surface_canvas};
+use crate::scene::particles::flat;
 use crate::scene::Catalog;
 
 const SCREEN_CLASS: &str = "ScreenGui";
@@ -317,6 +318,9 @@ fn element(
         ),
         shadows: shadow::read(dom, database, styles, instance.children()),
         gradient: gradient::read(dom, database, styles, instance.children()),
+        particles: modifiers(dom, database, instance.children(), flat::CLASS)
+            .map(|emitter| flat::read(styles.properties_of(emitter), emitter.referent()))
+            .collect(),
         viewport: viewport::read(dom, database, instance, properties, materials),
         scrolling: database
             .is_subclass_of(class, SCROLLING_CLASS)

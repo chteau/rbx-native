@@ -72,6 +72,29 @@ fn find<'a>(
     cage
 }
 
+/// The vertices of `cage` with a UV `base` doesn't have (every vertex when
+/// only one of the two has UVs); none when the vertex counts differ. UVs
+/// are looked up, not compared index by index: Roblox's own cages list
+/// their vertices in another order than the cage they were made from
+/// (4720 of the leather jacket's 4949 outer-cage vertices sit at another
+/// index than in its inner cage), and Studio counts UVs not found.
+pub fn cage_uv_mismatches(cage: &Geometry, base: &Geometry) -> Vec<usize> {
+    if cage.positions.len() != base.positions.len() {
+        return Vec::new();
+    }
+    let (a, b) = (&cage.uvs, &base.uvs);
+    if a.is_empty() != b.is_empty() {
+        return (0..cage.positions.len()).collect();
+    }
+    let key = |uv: &[f32; 2]| uv.map(|c| (c / UV_TOLERANCE).round() as i64);
+    let known: std::collections::HashSet<[i64; 2]> = b.iter().map(key).collect();
+    a.iter()
+        .enumerate()
+        .filter(|(_, uv)| !known.contains(&key(uv)))
+        .map(|(i, _)| i)
+        .collect()
+}
+
 fn compare(cage: &Cage, base: &Geometry, base_name: &str, lead: &str, out: &mut Vec<Finding>) {
     let count = cage.geometry.positions.len();
     let expected = base.positions.len();
@@ -91,17 +114,7 @@ fn compare(cage: &Cage, base: &Geometry, base_name: &str, lead: &str, out: &mut 
         });
         return;
     }
-    let (a, b) = (&cage.geometry.uvs, &base.uvs);
-    let differing = if a.is_empty() != b.is_empty() {
-        count
-    } else {
-        a.iter()
-            .zip(b)
-            .filter(|(p, q)| {
-                (p[0] - q[0]).abs() > UV_TOLERANCE || (p[1] - q[1]).abs() > UV_TOLERANCE
-            })
-            .count()
-    };
+    let differing = cage_uv_mismatches(&cage.geometry, base).len();
     if differing > 0 {
         out.push(Finding {
             rule: Rule::CageUvs,
@@ -136,6 +149,7 @@ mod tests {
             name: name.into(),
             geometry: g,
             template: None,
+            to_mesh: crate::IDENTITY,
         }
     }
 
@@ -229,6 +243,33 @@ mod tests {
         assert_eq!(f[0].severity, Severity::Warning);
         assert_eq!(f[0].measured, Some(Value::Count(4)));
         assert_eq!(f[0].limit, Some(Value::Count(3)));
+    }
+
+    #[test]
+    fn uv_mismatches_name_the_moved_vertices() {
+        let base = geo(4, 0.5);
+        let mut moved = base.clone();
+        moved.uvs[1] = [0.1, 0.5];
+        moved.uvs[3] = [0.5, 0.9];
+        assert_eq!(cage_uv_mismatches(&moved, &base), vec![1, 3]);
+        assert!(cage_uv_mismatches(&geo(3, 0.1), &base).is_empty());
+        let bare = Geometry {
+            positions: vec![[0.0; 3]; 4],
+            ..Default::default()
+        };
+        assert_eq!(cage_uv_mismatches(&bare, &base), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn reordered_uvs_are_not_moved_ones() {
+        let base = Geometry {
+            positions: vec![[0.0; 3]; 3],
+            uvs: vec![[0.1, 0.2], [0.3, 0.4], [0.5, 0.6]],
+            ..Default::default()
+        };
+        let mut cage = base.clone();
+        cage.uvs.reverse();
+        assert!(cage_uv_mismatches(&cage, &base).is_empty());
     }
 
     #[test]

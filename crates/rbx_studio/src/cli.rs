@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use rbx_viewer::QualityLevel;
 
 pub(crate) const USAGE: &str = "\
-usage: rbxnative [options] [file.rbxl|.rbxm|.rbxlx|.rbxmx]
+usage: rbxnative [options] [file.rbxl|.rbxm|.rbxlx|.rbxmx|.rbxrepro]
        rbxnative loren <command> [options]
 
 Without a file, opens the setup wizard (Roblox sign-in, API key) on first
@@ -46,7 +46,7 @@ options:
         what --run reported back.
   --mcp
         Run as an MCP client's stdio server, forwarding to the editors
-        already open with Settings › Beta features › MCP server on.
+        already open (Settings › AI assistants › MCP server, on by default).
         Takes no other option.
   --help
         Print this and exit.";
@@ -147,6 +147,8 @@ pub(crate) struct Launch {
     /// nothing that acts on a place, announces one, or is scripted from
     /// the environment starts.
     pub(crate) test_peer: bool,
+    /// A shared `.rbxrepro` this window replays, read-only.
+    pub(crate) repro: Option<crate::playtests::repro::Opened>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

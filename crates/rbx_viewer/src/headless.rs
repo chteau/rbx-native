@@ -83,6 +83,13 @@ pub struct Headless {
     /// many frames the host managed to draw.
     start: Instant,
     from: Viewpoint,
+    /// A `Camera.OrthographicSize` waiting for the next frame's aspect, see
+    /// [`Headless::set_ortho_span`].
+    ortho_span: Option<(f32, crate::OrthoAxis)>,
+    /// The cursor over the view, in pixels of the last frame drawn, and that
+    /// frame's size: the beta camera zooms towards what the cursor is over.
+    cursor: Option<[f32; 2]>,
+    size: (u32, u32),
     /// What [`Headless::load`] downloaded with: replayed by [`Headless::reload`]
     /// so a command-bar edit keeps the same textures/materials/lights choice.
     toggles: Toggles,
@@ -349,6 +356,9 @@ impl Headless {
             input: Input::default(),
             start: Instant::now(),
             from: Viewpoint::Orbit(0.0),
+            ortho_span: None,
+            cursor: None,
+            size: (0, 0),
             toggles,
             database,
             loaded,
@@ -441,13 +451,15 @@ impl Headless {
         // the projection mode are not rebuilt from the DOM, and this is the
         // copy of them the rebuild is put back into.
         self.offscreen.reload(loaded.world(), &self.view);
-        self.controller = Controller::new(
+        let mut controller = Controller::new(
             start,
             &bounds,
             Some(self.controller.speed()),
             DEFAULT_SENSITIVITY,
         );
-        self.controller.set_feel(self.feel);
+        controller.set_feel(self.feel);
+        controller.adopt(&self.controller, None);
+        self.controller = controller;
         self.bounds = bounds;
         self.uploaded_material_layers = loaded.scene().materials().layers();
         self.loaded = loaded;
@@ -462,10 +474,43 @@ impl Headless {
     pub fn open_at(&mut self, eye: [f32; 3], look_at: [f32; 3], fov_degrees: f32) {
         let mut pose = camera::look_at_pose(Vec3::from(eye), Vec3::from(look_at));
         pose.fov_degrees = fov_degrees;
-        self.controller =
+        let mut controller =
             Controller::new(Start::Pose(pose), &self.bounds, None, DEFAULT_SENSITIVITY);
-        self.controller.set_feel(self.feel);
+        controller.set_feel(self.feel);
+        controller.adopt(
+            &self.controller,
+            Some(Vec3::from(eye).distance(Vec3::from(look_at))),
+        );
+        self.controller = controller;
         self.from = Viewpoint::Free(pose);
+    }
+
+    /// Focus and the View Selector's jumps: with Studio's beta camera the
+    /// view glides there and then orbits `look_at`; the classic camera snaps,
+    /// as [`Headless::open_at`] does.
+    pub fn focus_on(&mut self, eye: [f32; 3], look_at: [f32; 3]) {
+        let fov = self.view_pose().fov_degrees;
+        let mut pose = camera::look_at_pose(Vec3::from(eye), Vec3::from(look_at));
+        pose.fov_degrees = fov;
+        if let Viewpoint::Free(current) = self.from {
+            pose.ortho_scale = current.ortho_scale;
+        }
+        let depth = Vec3::from(eye).distance(Vec3::from(look_at));
+        if !self.controller.frame(pose, depth) {
+            self.open_at(eye, look_at, fov);
+        }
+    }
+
+    /// Where the cursor is over the view, in pixels of the last frame drawn,
+    /// or `None` once it leaves.
+    pub fn set_cursor(&mut self, cursor: Option<[f32; 2]>) {
+        self.cursor = cursor;
+    }
+
+    /// The beta camera's speed multiplier, Studio's "2.00x", or `None` while
+    /// the classic camera or the beta's FPS mode flies.
+    pub fn speed_multiplier(&self) -> Option<f32> {
+        self.controller.multiplier()
     }
 
     /// Redraws every following frame at `level`, leaving the camera and the place
@@ -579,6 +624,21 @@ impl Headless {
     pub fn set_fullbright(&mut self, fullbright: bool) {
         self.view.fullbright = fullbright;
         self.offscreen.set_fullbright(fullbright);
+    }
+
+    /// Zooms the orthographic view to span `size` studs along `axis`, a
+    /// place's `Camera.OrthographicSize` and `OrthographicMode`. Applied at
+    /// the next frame, the first one whose aspect is known.
+    pub fn set_ortho_span(&mut self, size: f32, axis: crate::OrthoAxis) {
+        if size.is_finite() && size > 0.0 {
+            self.ortho_span = Some((size, axis));
+        }
+    }
+
+    /// Whether the orthographic view is the place camera's own, which Studio
+    /// draws over black with no sky; the editor's own toggle keeps the sky.
+    pub fn set_place_orthographic(&mut self, place: bool) {
+        self.offscreen.set_place_orthographic(place);
     }
 
     /// The projection mode [`Headless::set_orthographic`] last set.
@@ -895,6 +955,19 @@ impl Headless {
         self.offscreen.gui_canvas((width, height), screen, backdrop)
     }
 
+    /// Whether a `ParticleEmitter2D` is moving: a [`Headless::render_gui`]
+    /// canvas is then owed a frame every tick, not only on change.
+    pub fn gui_animating(&self) -> bool {
+        self.offscreen.renderer().gui_animating()
+    }
+
+    /// The next [`Headless::render_gui`] shows the same particles as the
+    /// last one rather than moving them on: for a canvas drawn twice over
+    /// two backdrops.
+    pub fn hold_gui_particles(&mut self) {
+        self.offscreen.renderer_mut().hold_gui_particles();
+    }
+
     /// Draws one `ViewportFrame`'s content on its own at `width`×`height`
     /// the same bake the GUI paints it from, through its `CurrentCamera`
     /// (or saved pose), laid over the frame's background (unless
@@ -926,6 +999,9 @@ impl Headless {
     /// at has nothing to swap anything into.
     pub fn tick(&mut self, dt: Duration) -> bool {
         let ahead = self.wheel_ahead();
+        let cursor = self.cursor_room();
+        self.controller
+            .set_view(cursor, (self.size.1 > 0).then_some(self.size.1 as f32));
         let from = self.controller.update(
             &mut self.input,
             dt,
@@ -952,6 +1028,33 @@ impl Headless {
         let pose = self.pose()?;
         let ray = crate::pick::Ray::new(pose.position, pose.basis().0);
         self.loaded.scene().distance_ahead(ray)
+    }
+
+    /// The ray under the cursor and what it meets, only while a wheel notch
+    /// or an orbit point waits for it: it costs a ray against every part.
+    fn cursor_room(&self) -> Option<crate::controller::Cursor> {
+        if !self.input.wants_cursor() {
+            return None;
+        }
+        let (pose, cursor) = (self.pose()?, self.cursor?);
+        let extent = glam::Vec2::new(self.size.0 as f32, self.size.1 as f32);
+        if extent.x <= 0.0 || extent.y <= 0.0 {
+            return None;
+        }
+        let projection = pose.view_projection(self.view.orthographic, extent.x / extent.y);
+        let ray = crate::pick::ray_through(
+            projection,
+            crate::pick::ndc_of(glam::Vec2::from(cursor), extent),
+        );
+        let hit = self
+            .loaded
+            .scene()
+            .distance_ahead(ray)
+            .map(|distance| ray.at(distance));
+        Some(crate::controller::Cursor {
+            direction: ray.direction,
+            hit,
+        })
     }
 
     /// Whether the picture moves on its own, with no input and no edit: a
@@ -1055,6 +1158,14 @@ impl Headless {
         if self.ooms != gpu::ooms() {
             self.recover();
         }
+        if let Some((size, axis)) = self.ortho_span.take() {
+            let half_height = axis.half_height(size, width as f32 / height.max(1) as f32);
+            self.controller.set_ortho_scale(half_height);
+            if let Viewpoint::Free(pose) = &mut self.from {
+                pose.ortho_scale = half_height;
+            }
+        }
+        self.size = (width, height);
         self.offscreen.set_elapsed(self.start.elapsed());
         self.offscreen.queue_frame((width, height), self.from)
     }

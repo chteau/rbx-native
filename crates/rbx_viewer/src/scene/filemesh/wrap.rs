@@ -41,7 +41,7 @@ use std::sync::Arc;
 
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
-use rbx_dom::{Ref, Variant, WeakDom};
+use rbx_dom::{Instance, Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 
 use self::cage_map::{CageMap, Key, Surface, WorldCage};
@@ -122,6 +122,15 @@ impl HsrSource {
     }
 }
 
+/// A cage's asset under `key`. Places Studio saves now hold it as the
+/// `...Content` property that replaced `...Id` (`CageMeshContent`,
+/// `ReferenceMeshContent`), so that is read when `key` is missing.
+fn cage_ref(node: &Instance, key: &str) -> Option<AssetRef> {
+    let props = node.properties();
+    let renamed = key.strip_suffix("Id").map(|stem| format!("{stem}Content"));
+    parsed_asset_ref(props.get(key).or_else(|| props.get(renamed.as_deref()?))?)
+}
+
 /// The wrap of `handle`, when it carries a `WrapLayer` with a reference cage
 /// and sits in a character that has cages to wrap to.
 pub(super) fn of(dom: &WeakDom, database: &ReflectionDatabase, handle: Ref) -> Option<Wrap> {
@@ -131,23 +140,19 @@ pub(super) fn of(dom: &WeakDom, database: &ReflectionDatabase, handle: Ref) -> O
         .iter()
         .filter_map(|&c| dom.get(c))
         .find(|c| c.class() == "WrapLayer")?;
-    let reference = parsed_asset_ref(layer.properties().get("ReferenceMeshId")?)?;
+    let reference = cage_ref(layer, "ReferenceMeshId")?;
     let hsr = HsrSource::of(layer);
     let origin = match layer.properties().get("ReferenceOrigin") {
         Some(Variant::CFrame(c)) => cframe_matrix(c),
         _ => Mat4::IDENTITY,
     };
-    let outer = layer
-        .properties()
-        .get("CageMeshId")
-        .and_then(parsed_asset_ref)
-        .map(|cage| {
-            let origin = match layer.properties().get("CageOrigin") {
-                Some(Variant::CFrame(c)) => cframe_matrix(c),
-                _ => Mat4::IDENTITY,
-            };
-            (cage, origin)
-        });
+    let outer = cage_ref(layer, "CageMeshId").map(|cage| {
+        let origin = match layer.properties().get("CageOrigin") {
+            Some(Variant::CFrame(c)) => cframe_matrix(c),
+            _ => Mat4::IDENTITY,
+        };
+        (cage, origin)
+    });
     let order = crate::scene::number(layer.properties().get("Order"));
     let rig = dom.parent(dom.parent(handle)?)?;
     let bind = match layer.properties().get("BindOffset") {
@@ -182,7 +187,7 @@ pub(super) fn of(dom: &WeakDom, database: &ReflectionDatabase, handle: Ref) -> O
                 .filter_map(|&c| dom.get(c))
                 .find(|c| c.class() == "WrapTarget")?;
             Some(Target {
-                cage: parsed_asset_ref(target.properties().get("CageMeshId")?)?,
+                cage: cage_ref(target, "CageMeshId")?,
                 origin: match target.properties().get("CageOrigin") {
                     Some(Variant::CFrame(c)) => cframe_matrix(c),
                     _ => Mat4::IDENTITY,

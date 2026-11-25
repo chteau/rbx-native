@@ -41,6 +41,31 @@ fn load_mask(coord: vec2<i32>) -> u32 {
 // pass or a jump-flood would be the upgrade if the radius ever grows.
 const RADIUS: i32 = 1;
 
+// Set for the editor's cues (see `renderer::cue`): the mask carries
+// `DepthMode::Faded`'s visible marks in its top bit (`highlight.wgsl`'s
+// `VISIBLE`), and the paint lands on the finished frame in sRGB values, the
+// way Studio blends its selection outline. Measured in Studio 2026-11-24
+// over grey, green and red: the outline is its own colour where the part's
+// edge is the nearest thing there and 0.20 of the way to it where a part or
+// an opaque depth-tested adornment stands in front.
+override ON_FRAME: bool = false;
+const VISIBLE: u32 = 0x80u;
+const HIDDEN_ALPHA: f32 = 0.2;
+
+fn index_of(value: u32) -> u32 {
+    return select(value, value & ~VISIBLE, ON_FRAME);
+}
+
+fn encoded(linear: vec3<f32>) -> vec3<f32> {
+    let low = linear * 12.92;
+    let high = 1.055 * pow(linear, vec3<f32>(1.0 / 2.4)) - vec3<f32>(0.055);
+    return select(high, low, linear <= vec3<f32>(0.0031308));
+}
+
+fn painted(paint: vec4<f32>) -> vec4<f32> {
+    return select(paint, vec4<f32>(encoded(paint.rgb), paint.a), ON_FRAME);
+}
+
 struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
 };
@@ -69,7 +94,7 @@ fn sampled(coord: vec2<i32>, bounds: vec2<i32>) -> u32 {
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let bounds = vec2<i32>(textureDimensions(mask));
     let coord = vec2<i32>(input.clip_position.xy);
-    let here = load_mask(coord);
+    let here = index_of(load_mask(coord));
 
     // The boundary this pixel sits on, if any: the first-listed highlight
     // among it and its neighbours, wherever the two disagree, the same one
@@ -81,7 +106,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     var edge: u32 = 0u;
     for (var dy = -RADIUS; dy <= RADIUS; dy++) {
         for (var dx = -RADIUS; dx <= RADIUS; dx++) {
-            let there = sampled(coord + vec2<i32>(dx, dy), bounds);
+            let there = index_of(sampled(coord + vec2<i32>(dx, dy), bounds));
             if (there != here) {
                 // The lower of the two, unless that is "no highlight".
                 let low = select(min(there, here), max(there, here), min(there, here) == 0u);
@@ -91,12 +116,29 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     if (edge != 0u) {
-        let paint = paints[edge - 1u].outline;
-        return vec4<f32>(paint.rgb, paint.a);
+        var paint = paints[edge - 1u].outline;
+        if (ON_FRAME && !visible_near(coord, bounds, edge)) {
+            paint.a *= HIDDEN_ALPHA;
+        }
+        return painted(paint);
     }
     if (here != 0u) {
-        let paint = paints[here - 1u].fill;
-        return vec4<f32>(paint.rgb, paint.a);
+        return painted(paints[here - 1u].fill);
     }
     return vec4<f32>(0.0, 0.0, 0.0, 0.0);
+}
+
+// Whether any pixel of the edge's own highlight next to this one is marked
+// visible: the outline straddles the boundary, so the pixels inside it say
+// whether the edge they belong to is in front.
+fn visible_near(coord: vec2<i32>, bounds: vec2<i32>, edge: u32) -> bool {
+    for (var dy = -RADIUS; dy <= RADIUS; dy++) {
+        for (var dx = -RADIUS; dx <= RADIUS; dx++) {
+            let there = sampled(coord + vec2<i32>(dx, dy), bounds);
+            if (there == (edge | VISIBLE)) {
+                return true;
+            }
+        }
+    }
+    return false;
 }

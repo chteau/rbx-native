@@ -91,7 +91,21 @@ impl Shell {
     /// Called once per mutating call site, right after that mutation
     /// completes, so undo/redo can reflect it later without re-diffing two
     /// `WeakDom` trees.
-    pub(super) fn record_history_change(&mut self, changes: Vec<Change>) {
+    pub(super) fn record_history_change(&mut self, mut changes: Vec<Change>) {
+        // A union's collision pieces follow its `CollisionFidelity` in the
+        // same step, the way Studio rebuilds them (`csg::refresh_collision`).
+        let mut refreshed = false;
+        for change in &changes {
+            if let Change::Property { referent, name } = change {
+                if name == "CollisionFidelity" {
+                    refreshed |=
+                        rbx_lua::csg::refresh_collision(&mut self.dom, &self.database, *referent);
+                }
+            }
+        }
+        if refreshed {
+            changes.extend(self.dom.take_changes());
+        }
         self.history.record_changes(changes);
     }
 

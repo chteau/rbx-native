@@ -72,7 +72,7 @@
 //! sheet (see `shell::ui_editor::frame_sheet`).
 //! `RBX_STUDIO_GROUP=1` wraps the current selection in a new `Model` exactly
 //! as `Ctrl+G` would; `RBX_STUDIO_UNGROUP=1` unwraps it back out exactly as
-//! `Ctrl+Shift+G` would, the same aid, for the Explorer's Group/Ungroup
+//! `Ctrl+U` would, the same aid, for the Explorer's Group/Ungroup
 //! (see `shell::group`).
 //! Ctrl+S writes the place back to the file it was opened from, in the
 //! format it was opened in; `RBX_STUDIO_SAVE_AS=<path>` makes the editor
@@ -119,6 +119,7 @@ mod class_icons;
 mod cli;
 mod command_bar;
 mod crash_log;
+mod credits;
 mod debugger;
 mod device_sim;
 mod discord_presence;
@@ -132,6 +133,7 @@ mod history;
 mod home;
 mod input_actions;
 mod key_store;
+mod kits;
 mod launcher;
 mod layers;
 mod localization;
@@ -333,6 +335,7 @@ fn main() {
         configure: None,
         settings_only: false,
         test_peer: false,
+        repro: None,
     };
 
     // Everything read from the config directory beyond `settings.json`, in one
@@ -509,6 +512,9 @@ pub(crate) fn open_editor(
     if shell::game::manifest::is_manifest(path) {
         return shell::game::open_game(path, boot, cx);
     }
+    if playtests::repro::is_repro(path) {
+        return open_repro(path, boot, cx);
+    }
     let EditorBoot {
         settings,
         launch,
@@ -544,6 +550,56 @@ pub(crate) fn open_editor(
             .and_then(|link| link.name)
             .unwrap_or_else(|| file_name(path)),
     );
+    open_editor_window(title, place, settings, launch, user, cx);
+    Ok(())
+}
+
+/// A shared `.rbxrepro`, read-only in a window of its own over a copy of its
+/// place (see `playtests::repro`). Not added to Recent: the place it opens
+/// is a temporary copy.
+fn open_repro(
+    path: &Path,
+    boot: EditorBoot,
+    cx: &mut App,
+) -> Result<(), Box<(String, EditorBoot)>> {
+    let EditorBoot {
+        settings,
+        mut launch,
+        user,
+    } = boot;
+    let failed = |message: String, settings, launch, user| {
+        Err(Box::new((
+            format!("Can't open {}: {message}", file_name(path)),
+            EditorBoot {
+                settings,
+                launch,
+                user,
+            },
+        )))
+    };
+    println!("opening repro {}…", path.display());
+    let opened = match playtests::repro::open_for_editor(path) {
+        Ok(opened) => opened,
+        Err(message) => return failed(message, settings, launch, user),
+    };
+    let place = match load(&opened.place, &launch, settings.icon_pack) {
+        Ok(place) => place,
+        Err(message) => return failed(message, settings, launch, user),
+    };
+    let title = SharedString::from(format!("{} (repro)", opened.manifest.place.name));
+    launch.repro = Some(opened);
+    open_editor_window(title, place, settings, launch, user, cx);
+    Ok(())
+}
+
+fn open_editor_window(
+    title: SharedString,
+    place: Place,
+    settings: Settings,
+    launch: Launch,
+    user: packs::UserContent,
+    cx: &mut App,
+) {
     let options = window_options(&title, cx);
     cx.open_window(options, |window, cx| {
         mark_primary(window, cx);
@@ -558,7 +614,6 @@ pub(crate) fn open_editor(
     })
     .expect("failed to open the main window");
     bring_to_front(cx);
-    Ok(())
 }
 
 /// Makes this app the frontmost one on macOS, where nothing else does it

@@ -17,10 +17,13 @@ const FACES: [([f32; 3], [f32; 3], [f32; 3]); 6] = [
     ([0.0, 0.0, -1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]),
 ];
 
-const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
-    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3];
+// The colour sits past every instance attribute (decals reach 11, textured
+// meshes 12), so the shaders that never read it can still take this layout.
+const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] =
+    wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 15 => Unorm8x4];
 
-/// A vertex: position and per-face normal.
+/// A vertex: position, per-face normal, and the tint `shader.wgsl` multiplies
+/// the instance colour by (white but on a union drawn in its pieces' colours).
 ///
 /// Each face has 4 vertices with the same normal to ensure flat shading
 /// (no interpolation artifacts on box edges).
@@ -29,13 +32,22 @@ const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 2] =
 pub(super) struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
+    color: [u8; 4],
 }
 
 impl Vertex {
     // Lets `renderer::shaped` build vertices from `shapes::MeshData` without this
     // module exposing its private fields.
     pub(super) fn new(position: [f32; 3], normal: [f32; 3]) -> Self {
-        Vertex { position, normal }
+        Vertex::painted(position, normal, [255; 4])
+    }
+
+    pub(super) fn painted(position: [f32; 3], normal: [f32; 3], color: [u8; 4]) -> Self {
+        Vertex {
+            position,
+            normal,
+            color,
+        }
     }
 
     pub(super) const fn layout() -> wgpu::VertexBufferLayout<'static> {
@@ -55,10 +67,7 @@ pub(super) fn cube() -> (Vec<Vertex>, Vec<u16>) {
     for (face, (normal, u, v)) in FACES.iter().enumerate() {
         let base = u16::try_from(face).unwrap_or_default() * 4;
         for (su, sv) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
-            vertices.push(Vertex {
-                position: corner(normal, u, v, su, sv),
-                normal: *normal,
-            });
+            vertices.push(Vertex::new(corner(normal, u, v, su, sv), *normal));
         }
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     }

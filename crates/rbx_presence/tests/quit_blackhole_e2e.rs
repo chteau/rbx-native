@@ -6,7 +6,6 @@
 #[allow(dead_code)]
 mod common;
 
-use std::net::TcpListener;
 use std::time::{Duration, Instant};
 
 use common::hosted::{start, state};
@@ -16,7 +15,7 @@ use rbx_presence::{auth, crypt, secret};
 #[test]
 fn a_hanging_ntfy_does_not_hold_up_quitting() {
     // Never accepted: connections sit in the backlog and no byte comes back.
-    let blackhole = TcpListener::bind("127.0.0.1:0").unwrap();
+    let blackhole = rbx_presence::announce::bind_outside_loopback_range().unwrap();
     let ntfy = format!("http://{}", blackhole.local_addr().unwrap());
     let secret = secret::generate();
     let key = auth::derive_key(&secret, 4567);

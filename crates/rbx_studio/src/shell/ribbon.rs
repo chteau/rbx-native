@@ -690,6 +690,7 @@ impl Shell {
                 IconName::ShieldAlert,
                 "Security Audit",
             ),
+            (Panel::PrePublish, IconName::ListChecks, "Pre-publish"),
             (Panel::Playtests, IconName::Film, "Playtests"),
             (Panel::Layers, IconName::Layers, "Layers"),
             (Panel::Loren, IconName::Layers, "Loren"),
@@ -786,7 +787,7 @@ impl Shell {
         )
     }
 
-    /// Group/Ungroup are live (`shell::group`, the same Ctrl+G/Ctrl+Shift+G
+    /// Group/Ungroup are live (`shell::group`, the same Ctrl+G/Ctrl+U
     /// handlers the Model menu calls). Material, Color, Lock and Anchor live
     /// in `model_tiles`, and act on the whole selection's parts.
     /// Cut/Copy/Paste/Duplicate run the same `shell::clipboard` entry points

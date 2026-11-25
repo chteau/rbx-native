@@ -62,6 +62,7 @@ fn element(text: GuiText) -> GuiElement {
         viewport: None,
         group: None,
         scroll: None,
+        particles: Vec::new(),
     }
 }
 

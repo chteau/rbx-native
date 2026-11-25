@@ -9,7 +9,8 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use gpui_kit::{Context, Task, Window};
-use rbx_lua::{RunState, Runtime};
+use rbx_dom::{Change, Ref, WeakDom};
+use rbx_lua::{RunState, Runtime, Step};
 
 use crate::command_bar::{failure, stream, Feedback, RunUndo};
 
@@ -189,11 +190,7 @@ impl Shell {
 
         let selected = self.selection.all().to_vec();
         let runtime = self.command_run.runtime.as_mut()?;
-        runtime.set_selection(selected);
-        let step = runtime.resume_in(&mut self.dom);
-        if let Some(selection) = runtime.take_selection() {
-            self.reselect(selection, cx);
-        }
+        let (step, changes, selection) = resume(runtime, &mut self.dom, selected);
 
         let source = self.command_run.source.clone();
         for (kind, range) in stream::segments(step.output.kinds()) {
@@ -234,7 +231,10 @@ impl Shell {
                 None
             }
         };
-        self.reflect_command_changes(cx);
+        self.reflect_command_changes(changes, cx);
+        if let Some(selection) = selection {
+            self.reselect(selection, cx);
+        }
         if wait.is_none() {
             self.command_run.undo = None;
         }
@@ -256,8 +256,7 @@ impl Shell {
     /// Shows this step's DOM changes in the Explorer and the viewport, also
     /// after an error, since what the script did before it failed is kept,
     /// and files them under the run's undo step, pushing it on the first.
-    fn reflect_command_changes(&mut self, cx: &mut Context<Self>) {
-        let changes = self.dom.take_changes();
+    fn reflect_command_changes(&mut self, changes: Vec<Change>, cx: &mut Context<Self>) {
         if changes.is_empty() {
             return;
         }
@@ -283,3 +282,22 @@ impl Shell {
         }
     }
 }
+
+/// One resume of `runtime` over `dom`: the step, the changes it logged and
+/// the selection it left, if it set one. The changes come off the log here,
+/// before the selection is applied: a selection change is handed to the
+/// plugins, and handing them anything clears the log (see
+/// `Shell::plugin_input`), which would drop every write made alongside
+/// `Selection:Set`, a camera move among them, from the view and from undo.
+fn resume(
+    runtime: &mut Runtime,
+    dom: &mut WeakDom,
+    selected: Vec<Ref>,
+) -> (Step, Vec<Change>, Option<Vec<Ref>>) {
+    runtime.set_selection(selected);
+    let step = runtime.resume_in(dom);
+    (step, dom.take_changes(), runtime.take_selection())
+}
+
+#[cfg(test)]
+mod tests;

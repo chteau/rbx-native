@@ -71,6 +71,44 @@ pub(crate) fn inline_side_files(bytes: &[u8], dir: Option<&Path>) -> Result<Vec<
     serde_json::to_vec(&root).map_err(|err| err.to_string())
 }
 
+/// A `.glb` naming its images as files beside it (Kenney's kits share one
+/// `Textures/colormap.png` between every model) has each read into a data
+/// URI, so the upload carries its texture; one with none comes back as is.
+pub(crate) fn inline_glb_images(bytes: Vec<u8>, dir: Option<&Path>) -> Result<Vec<u8>, String> {
+    let mut root = glb_json(&bytes)?;
+    let Some(images) = root.get_mut("images").and_then(Value::as_array_mut) else {
+        return Ok(bytes);
+    };
+    let mut changed = false;
+    for image in images {
+        let Some(uri) = image.get("uri").and_then(Value::as_str) else {
+            continue;
+        };
+        if uri.starts_with("data:") {
+            continue;
+        }
+        let dir = dir.ok_or("a .glb naming separate image files must be imported from disk")?;
+        let name = decode_uri(uri);
+        let file = std::fs::read(dir.join(&name))
+            .map_err(|err| format!("{name} (named by the .glb): {err}"))?;
+        let data = base64::engine::general_purpose::STANDARD.encode(file);
+        image["uri"] = Value::String(format!("data:{};base64,{data}", image_mime(&name)));
+        changed = true;
+    }
+    if !changed {
+        return Ok(bytes);
+    }
+    let json_length = read_u32(&bytes, 12).ok_or("the .glb is cut short")?;
+    let bin = match bytes.get(20 + json_length..) {
+        Some(rest) if rest.len() >= 8 && &rest[4..8] == b"BIN\0" => {
+            let length = read_u32(rest, 0).ok_or("the .glb is cut short")?;
+            rest.get(8..8 + length).ok_or("the .glb is cut short")?
+        }
+        _ => &[],
+    };
+    glb_container(&root, bin)
+}
+
 fn image_mime(name: &str) -> &'static str {
     let lower = name.to_ascii_lowercase();
     if lower.ends_with(".jpg") || lower.ends_with(".jpeg") {

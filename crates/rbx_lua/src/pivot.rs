@@ -1,6 +1,7 @@
 //! Where a part's or model's pivot stands in the world, and moving an
 //! instance so its pivot lands somewhere else: `PVInstance:GetPivot` and
-//! `PVInstance:PivotTo`. Shared by Luau (see `instance`) and the editor's
+//! `PVInstance:PivotTo`, and `Model:ScaleTo` around that pivot (see
+//! `scale`). Shared by Luau (see `instance`) and the editor's
 //! Properties panel, whose `Origin` row reads and writes the same thing.
 //!
 //! A part's pivot is its `CFrame` times its `PivotOffset`. A model's is its
@@ -27,8 +28,10 @@ const BASE_PART: &str = "BasePart";
 const MODEL: &str = "Model";
 
 mod edit;
+mod scale;
 
 pub use edit::{clear_primary_part, follow, followers, keep_pivots, reset, set_pivot, Follower};
+pub use scale::{scale, scale_by, scale_to};
 
 /// `reference`'s pivot in world space, if it is a part or a model.
 pub fn pivot(dom: &WeakDom, db: &ReflectionDatabase, reference: Ref) -> Option<CFrameData> {

@@ -475,3 +475,244 @@ fn recorder_server_warning_becomes_event() {
     assert!((warning.t - 0.5).abs() < 1e-4);
     assert!(warning.label.contains("careful"));
 }
+
+// ---- repro ----
+
+fn meta(place_id: Option<u64>) -> repro::PlaceMeta {
+    repro::PlaceMeta {
+        name: "Obby".into(),
+        universe_id: place_id.map(|id| id + 1),
+        place_id,
+    }
+}
+
+fn sample_recording() -> Recording {
+    let died = event(4.0, 1, EventKind::Death, Some(Vec3::new(1.0, 2.0, 3.0)));
+    let mut error = event(2.5, 0, EventKind::Error, None);
+    error.label = "Workspace.Script:3: attempt to index nil".into();
+    let mut mark = event(6.0, 1, EventKind::Mark, None);
+    mark.label = "boss_down".into();
+    mark.data = "{\"boss\":\"Golem\"}".into();
+    recording(
+        1_700_000_000,
+        vec![standing(1, 0.0, 3.0, 0.0, 2)],
+        vec![error, died, mark],
+    )
+}
+
+/// A zip holding `json` as repro.json and nothing else.
+fn zip_with_manifest(json: &str) -> Vec<u8> {
+    use std::io::Write;
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    zip.start_file("repro.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    zip.write_all(json.as_bytes()).unwrap();
+    zip.finish().unwrap().into_inner()
+}
+
+fn repro_file(dir: &Path, name: &str, bytes: &[u8]) -> PathBuf {
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, bytes).unwrap();
+    path
+}
+
+#[test]
+fn repro_round_trips_with_the_place() {
+    let rec = sample_recording();
+    let place = b"place bytes".repeat(100);
+    let bytes = repro::pack(&rec, &place, meta(Some(7)), true, "  falls through  ", 42).unwrap();
+    let read = repro::unpack(&bytes).unwrap();
+    assert_eq!(read.recording, rec);
+    assert_eq!(read.place.as_deref(), Some(place.as_slice()));
+    let manifest = read.manifest;
+    assert_eq!(manifest.format, "rbxrepro");
+    assert_eq!(manifest.version, repro::VERSION);
+    assert_eq!(manifest.kind, repro::KIND_RBXREC);
+    assert_eq!(manifest.editor_version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(manifest.note, "falls through");
+    assert_eq!(manifest.created, 42);
+    assert_eq!(manifest.place.sha256, repro::sha256_hex(&place));
+    assert_eq!(manifest.place.size, place.len() as u64);
+    assert_eq!(manifest.place.place_id, Some(7));
+    assert_eq!(manifest.place.universe_id, Some(8));
+}
+
+#[test]
+fn repro_without_the_place_keeps_its_hash_and_is_smaller() {
+    let rec = sample_recording();
+    let place: Vec<u8> = (0..200_000u32).map(|i| (i * 7919 % 251) as u8).collect();
+    let with = repro::pack(&rec, &place, meta(Some(7)), true, "", 0).unwrap();
+    let without = repro::pack(&rec, &place, meta(Some(7)), false, "", 0).unwrap();
+    assert!(without.len() < with.len() / 2);
+    let read = repro::unpack(&without).unwrap();
+    assert_eq!(read.place, None);
+    assert_eq!(read.manifest.place.file, None);
+    assert_eq!(read.manifest.place.sha256, repro::sha256_hex(&place));
+}
+
+#[test]
+fn repro_refuses_a_newer_format_with_a_reason() {
+    let json = r#"{"format":"rbxrepro","version":99,"editor_version":"9.0.0","kind":"rbxrec"}"#;
+    let err = repro::unpack(&zip_with_manifest(json)).unwrap_err();
+    assert!(
+        err.contains("newer RbxNative (9.0.0, repro format 99)"),
+        "{err}"
+    );
+    assert!(err.contains("Update RbxNative"), "{err}");
+}
+
+#[test]
+fn repro_refuses_an_unknown_kind_by_name() {
+    let rec = sample_recording();
+    let bytes = repro::pack(&rec, b"p", meta(None), true, "", 0).unwrap();
+    let mut manifest = repro::unpack(&bytes).unwrap().manifest;
+    manifest.kind = "rbxnrec".into();
+    let err = repro::unpack(&zip_with_manifest(
+        &serde_json::to_string(&manifest).unwrap(),
+    ))
+    .unwrap_err();
+    assert!(err.contains("rbxnrec recording"), "{err}");
+}
+
+#[test]
+fn repro_refuses_other_files_and_damage() {
+    assert!(repro::unpack(b"not a zip")
+        .unwrap_err()
+        .contains("isn't a repro file"));
+    let other = zip_with_manifest(r#"{"format":"something","version":1}"#);
+    assert!(repro::unpack(&other)
+        .unwrap_err()
+        .contains("another format"));
+
+    let rec = sample_recording();
+    let bytes = repro::pack(&rec, b"place", meta(None), true, "", 0).unwrap();
+    let mut manifest = repro::unpack(&bytes).unwrap().manifest;
+    manifest.place.sha256 = repro::sha256_hex(b"something else");
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes.as_slice())).unwrap();
+    let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    for name in ["recording.rbxrec", "place.rbxl"] {
+        zip.raw_copy_file(archive.by_name(name).unwrap()).unwrap();
+    }
+    zip.start_file("repro.json", zip::write::SimpleFileOptions::default())
+        .unwrap();
+    std::io::Write::write_all(&mut zip, &serde_json::to_vec(&manifest).unwrap()).unwrap();
+    let tampered = zip.finish().unwrap().into_inner();
+    assert!(repro::unpack(&tampered).unwrap_err().contains("damaged"));
+}
+
+#[test]
+fn repro_open_writes_the_embedded_place() {
+    let dir = temp_dir("repro_open_embedded");
+    let rec = sample_recording();
+    let bytes = repro::pack(&rec, b"the place", meta(None), true, "", 0).unwrap();
+    let path = repro_file(&dir, "a.rbxrepro", &bytes);
+    let opened = repro::open(&path, &dir.join("out"), |_| panic!("no lookup")).unwrap();
+    assert_eq!(std::fs::read(&opened.place).unwrap(), b"the place");
+    assert_eq!(opened.recording, rec);
+    assert!(opened.notes.is_empty(), "{:?}", opened.notes);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn repro_open_without_the_place_explains_a_mismatch() {
+    let dir = temp_dir("repro_open_bare");
+    let rec = sample_recording();
+    let bytes = repro::pack(&rec, b"recorded place", meta(Some(55)), false, "", 0).unwrap();
+    let path = repro_file(&dir, "a.rbxrepro", &bytes);
+
+    let same = repro_file(&dir, "same.rbxl", b"recorded place");
+    let opened = repro::open(&path, &dir.join("out"), |id| {
+        assert_eq!(id, 55);
+        Some(same.clone())
+    })
+    .unwrap();
+    assert!(opened.notes.is_empty(), "{:?}", opened.notes);
+
+    let edited = repro_file(&dir, "edited.rbxl", b"edited since");
+    let opened = repro::open(&path, &dir.join("out"), |_| Some(edited.clone())).unwrap();
+    assert_eq!(std::fs::read(&opened.place).unwrap(), b"edited since");
+    assert_eq!(opened.notes.len(), 1);
+    assert!(
+        opened.notes[0].contains("isn't the same file"),
+        "{:?}",
+        opened.notes
+    );
+    // The user's own copy is only read, never written.
+    assert_eq!(std::fs::read(&edited).unwrap(), b"edited since");
+
+    let opened = repro::open(&path, &dir.join("out"), |_| None).unwrap();
+    assert!(opened.place.is_file());
+    assert!(
+        opened.notes[0].contains("place 55 isn't on this computer"),
+        "{:?}",
+        opened.notes
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn repro_open_reports_a_bad_file_instead_of_failing_later() {
+    let dir = temp_dir("repro_open_bad");
+    let path = repro_file(&dir, "bad.rbxrepro", b"garbage");
+    let err = repro::open(&path, &dir.join("out"), |_| None).unwrap_err();
+    assert!(err.contains("isn't a repro file"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn repro_version_notes() {
+    assert_eq!(repro::version_note("0.2.2", "0.2.2"), None);
+    let newer = repro::version_note("0.10.0", "0.2.2").unwrap();
+    assert!(newer.contains("newer than this one (0.2.2)"), "{newer}");
+    let older = repro::version_note("0.2.1", "0.2.2").unwrap();
+    assert!(!older.contains("newer"), "{older}");
+    assert!(older.contains("0.2.1"));
+}
+
+#[test]
+fn repro_names_and_sizes() {
+    assert!(repro::is_repro(Path::new("a/b.RbxRepro")));
+    assert!(!repro::is_repro(Path::new("b.rbxrec")));
+    assert_eq!(repro::size_label(512), "512 B");
+    assert_eq!(repro::size_label(1536), "1.5 KB");
+    assert_eq!(repro::size_label(3 * 1_048_576), "3.0 MB");
+}
+
+// ---- report ----
+
+#[test]
+fn report_lists_errors_deaths_and_markers_with_times() {
+    let report = report::bug_report(&sample_recording(), "Falls through the floor");
+    assert_eq!(
+        report,
+        "**Playtest: run 1700000000**\n\
+         > Falls through the floor\n\
+         2023-11-14 22:13 UTC · 0:20 · 1 player (Ann) · 1 death\n\
+         \n**Errors and warnings**\n\
+         - `0:02` Error: Workspace.Script:3: attempt to index nil\n\
+         \n**Deaths**\n\
+         - `0:04` Ann\n\
+         \n**Markers**\n\
+         - `0:06` boss_down `{\"boss\":\"Golem\"}`\n"
+    );
+}
+
+#[test]
+fn report_caps_sections_and_long_lines() {
+    let mut rec = recording(0, vec![], vec![]);
+    rec.players.clear();
+    rec.events = (0..12)
+        .map(|i| {
+            let mut warning = event(i as f32, 0, EventKind::Warning, None);
+            warning.label = "x".repeat(400);
+            warning
+        })
+        .collect();
+    let report = report::bug_report(&rec, "");
+    assert!(report.contains("0 players · 0 deaths"), "{report}");
+    assert!(report.contains("- …and 4 more\n"), "{report}");
+    assert_eq!(report.matches("Warning: ").count(), 8);
+    assert!(report.lines().all(|line| line.chars().count() < 200));
+    assert!(!report.contains("Deaths"));
+}

@@ -94,16 +94,7 @@ impl Shell {
         let Some((low, high)) = parts_box(&self.dom, roots) else {
             return;
         };
-        let view = self.viewport.read(cx);
-        let Some(pose) = view.pose() else {
-            return;
-        };
-        let centre = (low + high) * 0.5;
-        let reach = ((high - low).length() * 0.5).max(1.0);
-        // Far enough that the box's bounding sphere fits the view's height.
-        let distance = reach / (pose.fov_degrees.to_radians() * 0.5).sin();
-        let eye = centre - pose.basis().0 * distance;
-        view.look_at(eye.to_array(), centre.to_array());
+        self.viewport.read(cx).focus_box(low, high);
     }
 
     /// The View menu's Top, Front and Right.

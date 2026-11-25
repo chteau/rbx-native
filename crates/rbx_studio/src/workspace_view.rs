@@ -9,6 +9,7 @@
 //! of that but the upload happens on a thread of its own (see [`pump`]); this
 //! module is the UI half, events in, finished frames out.
 
+pub(crate) mod camera_row;
 mod canvas;
 mod changes;
 pub(crate) mod core_gui;
@@ -351,6 +352,12 @@ pub(crate) struct WorkspaceView {
     pacing: pacing::FocusPacing,
     speed: f32,
     speed_shown_until: Option<Instant>,
+    /// The beta camera's mode while "New Studio Camera Controls" is on, its
+    /// multiplier as the render thread last reported it, and the feel the
+    /// settings asked for, which the mode is laid over (see `camera_row`).
+    camera_mode: Option<rbx_viewer::CameraMode>,
+    multiplier: Option<f32>,
+    feel: rbx_viewer::CameraFeel,
     /// The quality mode the user picked, and the level the render thread last
     /// reported drawing at. In `Automatic` the two differ by design: the mode is
     /// the choice, the level is what the frame rate allows.
@@ -385,6 +392,8 @@ pub(crate) struct WorkspaceView {
     /// Everything screen-to-world unprojects against this, so a click resolves
     /// against the view it was aimed at.
     view: Option<Pose>,
+    /// The newest frame's width per height.
+    aspect: f32,
     /// The 3D notes' billboards (see `notes`).
     notes: Vec<NoteMark>,
     /// The file meshes resident on the render thread, as of the last scene it
@@ -485,6 +494,12 @@ impl WorkspaceView {
         viewer.set_selection(&selected);
         let outlined = selected;
         viewer.set_orthographic(orthographic);
+        // The Orthographic Camera beta: a place saved with an orthographic
+        // camera opens at its size; the shell turned `orthographic` on.
+        if let Some((size, axis)) = camera.and_then(|camera| camera.ortho) {
+            viewer.set_place_orthographic(true);
+            viewer.set_ortho_span(size, axis);
+        }
         // Applied here rather than after the view exists, so a saved
         // preference is already in force on the first frame instead of
         // flashing the default for one.
@@ -521,8 +536,7 @@ impl WorkspaceView {
         // delivered elsewhere, leaving the camera drifting for good and the
         // cursor hidden with no way to bring it back.
         let blur = cx.on_blur(&focus, window, |view, _, _| {
-            view.end_look();
-            view.release_summon();
+            view.drop_held();
             if let Some(play) = view.play.as_mut() {
                 play.release();
             }
@@ -534,8 +548,7 @@ impl WorkspaceView {
         let deactivated = cx.observe_window_activation(window, |view, window, _| {
             let active = window.is_window_active();
             if !active {
-                view.end_look();
-                view.release_summon();
+                view.drop_held();
             }
             if view.pacing.set_active(active) {
                 view.retarget_pacing();
@@ -585,6 +598,10 @@ impl WorkspaceView {
             pacing,
             speed,
             speed_shown_until: None,
+            camera_mode: crate::beta::enabled(camera_row::BETA_ID)
+                .then_some(rbx_viewer::CameraMode::Adaptive),
+            multiplier: None,
+            feel: rbx_viewer::CameraFeel::default(),
             quality,
             level: QualityLevel::MAX,
             orthographic,
@@ -594,6 +611,7 @@ impl WorkspaceView {
             targets: Targets::default(),
             neighbours: Vec::new(),
             view: None,
+            aspect: 1.0,
             notes: Vec::new(),
             meshes: Meshes::default(),
             drag: None,
@@ -636,6 +654,17 @@ impl WorkspaceView {
     /// The camera as of the last frame, `None` before the first one.
     pub(crate) fn pose(&self) -> Option<Pose> {
         self.view
+    }
+
+    /// The newest frame's width per height.
+    pub(crate) fn aspect(&self) -> f32 {
+        self.aspect
+    }
+
+    /// The place camera's orthographic span, `None` once it is
+    /// perspective, see `rbx_viewer::Headless::set_ortho_span`.
+    pub(crate) fn set_place_ortho(&self, span: Option<(f32, rbx_viewer::OrthoAxis)>) {
+        self.pump.place_ortho(span);
     }
 
     /// A press on the orientation indicator: snaps the view square-on to
@@ -715,9 +744,14 @@ impl WorkspaceView {
         let mut drawn = None;
         while let Some(ready) = self.pump.poll() {
             speed = Some(ready.speed);
+            if ready.multiplier != self.multiplier {
+                self.multiplier = ready.multiplier;
+                cx.notify();
+            }
             level = Some(ready.level);
             if let Some(pixels) = ready.pixels {
                 latest = Some((pixels, ready.size));
+                self.aspect = ready.size.0 as f32 / ready.size.1.max(1) as f32;
             }
             // The render thread already throttles and dedupes this (see
             // `pump::due_pose`), so whichever of possibly several drained
@@ -833,7 +867,11 @@ impl WorkspaceView {
         let changed = speed.filter(|speed| (speed - self.speed).abs() > f32::EPSILON);
         if let Some(speed) = changed {
             self.speed = speed;
-            self.speed_shown_until = Some(now + SPEED_LABEL);
+            // The beta camera's speed follows every zoom, and its row under
+            // the indicator already shows it.
+            if self.camera_mode.is_none() {
+                self.speed_shown_until = Some(now + SPEED_LABEL);
+            }
             cx.notify();
         } else if self.speed_shown_until.is_some_and(|until| now >= until) {
             self.speed_shown_until = None;
@@ -912,6 +950,16 @@ impl WorkspaceView {
     /// Ends the look however it ended, button up inside or outside the panel,
     /// lost focus, window deactivated, because each of those otherwise leaves
     /// the cursor hidden with the camera still turning.
+    /// The view lost the keyboard: every release from here on lands
+    /// elsewhere (a camera key held while the Command Bar takes focus types
+    /// into it and lets go there), so nothing held may stay held, a movement
+    /// key or `Shift` no more than the look button.
+    fn drop_held(&mut self) {
+        self.end_look();
+        self.release_summon();
+        self.pump.input(CameraInput::Release);
+    }
+
     fn end_look(&mut self) {
         self.lock.release();
         self.cursor = None;
@@ -919,6 +967,7 @@ impl WorkspaceView {
         self.pan_start = None;
         self.pump.input(CameraInput::LookButton(false));
         self.pump.input(CameraInput::PanButton(None));
+        self.pump.input(CameraInput::Dolly(false));
     }
 
     /// Reports the motion since the last move. Whether it turns the view is the
@@ -1147,12 +1196,6 @@ impl WorkspaceView {
         self.quality = mode;
         self.pump.quality(mode);
         cx.notify();
-    }
-
-    /// How the free camera turns, flies and eases, the render thread owns
-    /// the viewer, so it takes the change between two frames.
-    pub(crate) fn set_camera_feel(&self, feel: rbx_viewer::CameraFeel) {
-        self.pump.camera_feel(feel);
     }
 
     /// Veils the view (a blurred still of the last frame) or lifts the veil.
@@ -1525,6 +1568,8 @@ impl Render for WorkspaceView {
                         return;
                     }
                     view.plugin_mouse_press(2, event.position, window.scale_factor(), cx);
+                    // Studio's Alt + right drag: the beta camera dollies.
+                    view.pump.input(CameraInput::Dolly(event.modifiers.alt));
                     view.begin_look(window, cx);
                 }),
             )
@@ -1814,6 +1859,10 @@ impl Render for WorkspaceView {
                 this.child(measure)
             })
             .children(self.core_gui_element(window, cx))
+            // A player's view is the game's: no editor camera controls.
+            .when(self.play.is_none(), |this| {
+                this.children(self.camera_row(cx))
+            })
             // No pose yet (the very first frame or two, before the render
             // thread's first `Ready` lands, see `self.view`'s own doc) draws
             // nothing rather than a widget with no orientation to show.

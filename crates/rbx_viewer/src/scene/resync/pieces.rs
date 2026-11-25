@@ -86,7 +86,7 @@ impl Scene {
             self.resolved_file_meshes.remove(referent);
             return Ok(Drawn::Gone);
         }
-        match entry.patched(evaluated, &self.resolved_file_meshes) {
+        match entry.patched(&self.resolved_file_meshes) {
             // A texture, `SurfaceAppearance` set or material sample not
             // finished downloading: the same "not landed yet" case as the
             // mesh itself not resolving, so the box until it does.

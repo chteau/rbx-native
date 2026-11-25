@@ -36,7 +36,10 @@ impl Renderer {
                 depth_slice: None,
                 resolve_target: resolve,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(isolation::clear_color(self.isolated, CLEAR_COLOR)),
+                    load: wgpu::LoadOp::Clear(match self.sky_hidden() {
+                        true => wgpu::Color::BLACK,
+                        false => isolation::clear_color(self.isolated, CLEAR_COLOR),
+                    }),
                     store: wgpu::StoreOp::Store,
                 },
             })],
@@ -60,7 +63,7 @@ impl Renderer {
         // on top of it, then the opaque surfaces, then everything
         // translucent over the top. None of the three over an isolated
         // view, whose backdrop is the clear colour itself.
-        if self.surroundings().sky {
+        if self.surroundings().sky && !self.sky_hidden() {
             if let Some(sky) = &self.sky {
                 sky.draw(&mut pass);
             }
@@ -200,14 +203,6 @@ impl Renderer {
         if decals {
             pass.set_bind_group(0, &self.frame.bind_group, &[]);
             self.textured.draw_blended(&mut pass, &self.meshes);
-        }
-
-        // Place content, so before the editor's own cues below: an
-        // adornment is something the file asks for, where a selection
-        // outline is something this editor draws about it. Not over an
-        // isolated view, where its adornee may well be hidden.
-        if self.surroundings().adornments {
-            self.adornments.draw(&mut pass, &self.frame.bind_group);
         }
 
         // Last, so the outlines never get drawn over by geometry they should

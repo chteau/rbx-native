@@ -290,9 +290,69 @@ fn header_u32(headers: &ureq::http::HeaderMap, name: &str) -> Option<u32> {
         .and_then(|s| s.parse().ok())
 }
 
+/// What the asset service says about an id, read off one anonymous
+/// delivery request that downloads nothing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssetPresence {
+    /// Delivered, or "authentication required", which the service answers
+    /// only for an asset that exists.
+    Exists,
+    /// "Request asset was not found".
+    Missing,
+    /// Refused outright.
+    Restricted,
+}
+
+impl Client {
+    /// `None` when there was no answer to read (offline, or a 5xx or 429
+    /// that outlasted the retries).
+    pub fn asset_presence(&self, asset_id: u64) -> Option<AssetPresence> {
+        let url = format!("{}?id={asset_id}", self.anonymous_root());
+        presence(self.get_raw(&url, false, false).ok()?.status)
+    }
+
+    /// [`Self::asset_presence`] of every id, a few at a time, in `ids`
+    /// order. When the first gets no answer the rest aren't asked, so an
+    /// offline check doesn't wait out every id's retries: all `None`.
+    pub fn asset_presences(&self, ids: &[u64]) -> Vec<Option<AssetPresence>> {
+        let Some((first, rest)) = ids.split_first() else {
+            return Vec::new();
+        };
+        let Some(head) = self.asset_presence(*first) else {
+            return vec![None; ids.len()];
+        };
+        std::iter::once(Some(head))
+            .chain(crate::parallel::fan_out(rest, |&id| {
+                self.asset_presence(id)
+            }))
+            .collect()
+    }
+}
+
+fn presence(status: u16) -> Option<AssetPresence> {
+    match status {
+        200..=299 | 401 | 409 => Some(AssetPresence::Exists),
+        status if is_redirect(status) => Some(AssetPresence::Exists),
+        400 | 404 => Some(AssetPresence::Missing),
+        403 => Some(AssetPresence::Restricted),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn presence_reads_the_delivery_status() {
+        // Measured 2026-11-23: a public asset answers 401 anonymously, an
+        // unknown id 404, both with a JSON error naming why.
+        assert_eq!(presence(302), Some(AssetPresence::Exists));
+        assert_eq!(presence(401), Some(AssetPresence::Exists));
+        assert_eq!(presence(404), Some(AssetPresence::Missing));
+        assert_eq!(presence(403), Some(AssetPresence::Restricted));
+        assert_eq!(presence(503), None);
+    }
 
     const SAMPLE_DELIVERY: &str = r#"{"location":"https://example.rbxcdn.com/signed?sig=abc","requestId":"req-1","isArchived":false,"assetTypeId":9,"assetMetadatas":[{"metadataType":1,"value":"282701"}],"isRecordable":true}"#;
 

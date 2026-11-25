@@ -11,6 +11,7 @@ mod legacy;
 mod rng;
 // `pub(crate)`: `scene::beam` samples the same ColorSequence/NumberSequence
 // shape along a beam's length, so its evaluator is shared rather than copied.
+pub(crate) mod flat;
 pub(crate) mod sequence;
 mod sim;
 

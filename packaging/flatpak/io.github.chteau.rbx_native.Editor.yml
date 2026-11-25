@@ -88,6 +88,8 @@ modules:
       - install -Dm644 packaging/flatpak/io.github.chteau.rbx_native.Editor.metainfo.xml -t /app/share/metainfo
       - install -Dm644 packaging/flatpak/io.github.chteau.rbx_native.Editor.svg -t /app/share/icons/hicolor/scalable/apps
       - install -Dm644 packaging/flatpak/io.github.chteau.rbx_native.Editor.mime.xml /app/share/mime/packages/io.github.chteau.rbx_native.Editor.xml
+      - install -Dm644 LICENSE .github/release/THIRD-PARTY-EMBEDDED.txt -t /app/share/licenses/io.github.chteau.rbx_native.Editor
+      - .github/release/notices.sh /app/share/licenses/io.github.chteau.rbx_native.Editor
     sources:
       # Flathub builds a tagged release instead: see README.md.
       - type: dir

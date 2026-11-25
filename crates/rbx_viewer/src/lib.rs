@@ -62,12 +62,12 @@ mod view;
 mod web;
 
 pub use assets::{decode_image_uri, DecodedImage};
-pub use camera::Pose;
+pub use camera::{OrthoAxis, Pose};
 #[cfg(not(target_arch = "wasm32"))]
 pub use capture::Rendered;
 pub use changes::{Applied, Rebuild};
 pub use cli::Options;
-pub use controller::{CameraFeel, Flight};
+pub use controller::{focus_distance, CameraFeel, CameraMode, CameraStyle, Flight};
 pub use gizmo::Gizmo;
 // Only so a report (`examples/bench`) can label its numbers with the GPU that
 // produced them; nothing in the render path itself asks for this.
@@ -85,13 +85,14 @@ pub use lighting::Calibration;
 pub use load::{parse_place, read_place};
 pub use quality::{valid_band_ends, FrameRateManager, QualityLevel, TUNED_BAND_ENDS};
 pub use renderer::{
-    measure_text, particle_burst, Fill, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap,
-    OverlayColors, Segment, ISOLATION_BACKDROP,
+    gui_particle_burst, measure_text, particle_burst, Fill, GuiBox, GuiTextEdit, GuiTextLine,
+    GuiTextMap, OverlayColors, Segment, ISOLATION_BACKDROP,
 };
 pub use scene::perf;
 pub use scene::{
-    player_gui, pseudo_localize, resolved_shape_label, rich_runs, set_player_gui, shows_screen,
-    GuiScrolls, PseudoLocale, RichRun, SafeInsets, ScrollTarget, ThumbGrab, STAGE_REACH,
+    player_gui, pseudo_localize, resolved_shape_label, rich_runs, set_player_gui,
+    set_variant_alpha_modes, shows_screen, GuiScrolls, PseudoLocale, RichRun, SafeInsets,
+    ScrollTarget, ThumbGrab, STAGE_REACH,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};

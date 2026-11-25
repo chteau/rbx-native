@@ -28,6 +28,7 @@
 
 pub(crate) mod bridge;
 pub(crate) mod broker;
+pub(crate) mod connect;
 pub(crate) mod endpoint;
 pub(crate) mod protocol;
 mod tools;
@@ -190,6 +191,12 @@ impl PlayState {
             PlayState::Playing | PlayState::ShowingLive => "Play",
         }
     }
+}
+
+/// How many tools `tools/list` answers with.
+#[cfg(test)]
+pub(crate) fn tool_count() -> usize {
+    tools::list().as_array().map_or(0, Vec::len)
 }
 
 /// Where every running editor says how to reach it, one file each.

@@ -109,10 +109,13 @@ pub(crate) fn of(dom: &WeakDom, part: &Instance) -> Option<Appearance> {
 
     // `TexturePack` is deliberately not read: it is the layered-clothing bundle
     // these four maps were unpacked from, so following it would paint twice.
+    // Roblox's own import leaves the legacy map empty and names the image
+    // in its `Content` twin (`ColorMapContent`).
     let maps = MapKind::ALL.map(|kind| {
-        properties
-            .get(property_of(kind))
-            .and_then(super::parsed_asset_ref)
+        let legacy = property_of(kind);
+        [legacy.to_owned(), format!("{legacy}Content")]
+            .iter()
+            .find_map(|key| super::parsed_asset_ref(properties.get(key)?))
     });
     let alpha_mode = match properties.get("AlphaMode") {
         Some(&Variant::Enum(TRANSPARENCY)) => AlphaMode::Transparency,

@@ -5,10 +5,17 @@
 //! Each VM says how a `require` argument names a module and how a module's
 //! `Source` becomes a function (see [`install`]); caching and the
 //! recursion check are shared.
+//!
+//! With Luau exports on (see [`crate::set_luau_exports`]), a module that
+//! `export`s values may be required again while its body still runs, the
+//! way Studio's "Luau Exports and Cyclic Requires" beta allows: that
+//! `require` gets a placeholder table that errors when touched, filled with
+//! the module's exports once its body finishes.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use mlua::{Function, Lua, Result, Value};
+use mlua::{Function, Lua, Result, Table, Value};
 use rbx_dom::Ref;
 
 use super::engine;
@@ -24,6 +31,9 @@ pub(crate) const INVALID: &str = "Attempted to call require with invalid argumen
 /// What the `require` of a module whose body failed raises, every time:
 /// the body's own error goes to Output once, when it fails.
 const FAILED: &str = "Requested module experienced an error while loading";
+
+/// See [`crate::set_luau_exports`].
+pub(crate) static EXPORTS: AtomicBool = AtomicBool::new(false);
 
 /// The `script` to bind a `require` to for the command bar (see
 /// [`Requirer::CommandBar`]).
@@ -63,6 +73,71 @@ pub(crate) struct Modules {
     loaded: HashMap<Ref, Value>,
     loading: HashSet<Ref>,
     failed: HashSet<Ref>,
+    /// The placeholder a cyclic `require` of a still-running module got.
+    placeholders: HashMap<Ref, Table>,
+}
+
+/// Whether `source` exports values: an `export local`, `export const` or
+/// `export function` statement, which Luau only allows at the top level.
+fn exports_values(source: &str) -> bool {
+    source.lines().any(|line| {
+        line.trim_start()
+            .strip_prefix("export")
+            .is_some_and(|rest| {
+                rest.starts_with(char::is_whitespace)
+                    && ["local", "const", "function"]
+                        .iter()
+                        .any(|word| rest.trim_start().starts_with(word))
+            })
+    })
+}
+
+/// A table that raises Studio's cyclic-dependency errors when read or
+/// written, and whose metatable is locked.
+fn placeholder(lua: &Lua) -> Result<Table> {
+    let meta = lua.create_table()?;
+    meta.set(
+        "__index",
+        lua.create_function(|_, (_, key): (Value, Value)| -> Result<()> {
+            Err(mlua::Error::runtime(format!(
+                "Cannot access the exported field '{}' because it has a cyclic dependency on its requiring module",
+                key.to_string().unwrap_or_default()
+            )))
+        })?,
+    )?;
+    meta.set(
+        "__newindex",
+        lua.create_function(|_, (_, key, _): (Value, Value, Value)| -> Result<()> {
+            Err(mlua::Error::runtime(format!(
+                "Cannot set the exported field '{}' because it has a cyclic dependency on its requiring module",
+                key.to_string().unwrap_or_default()
+            )))
+        })?,
+    )?;
+    meta.set("__metatable", "The metatable is locked")?;
+    let table = lua.create_table()?;
+    table.set_metatable(Some(meta))?;
+    table.set_readonly(true);
+    Ok(table)
+}
+
+/// Fills a placeholder with what the module returned, its metatable too,
+/// and freezes it: everyone who required it, cycle or not, holds the same
+/// table.
+fn fill(placeholder: &Table, value: &Value) -> Result<()> {
+    let Value::Table(result) = value else {
+        return Err(mlua::Error::runtime(
+            "Module code did not return a table of exports",
+        ));
+    };
+    placeholder.set_readonly(false);
+    for pair in result.pairs::<Value, Value>() {
+        let (key, value) = pair?;
+        placeholder.raw_set(key, value)?;
+    }
+    placeholder.set_metatable(result.metatable())?;
+    placeholder.set_readonly(true);
+    Ok(())
 }
 
 impl Modules {
@@ -88,10 +163,30 @@ pub(crate) fn install(lua: &Lua, resolve: Function, compile: Function) -> Result
         if modules.failed.contains(&module) {
             return Err(mlua::Error::runtime(FAILED));
         }
-        Ok(match modules.loaded.get(&module) {
-            Some(value) => (true, value.clone()),
-            None => (false, Value::Nil),
-        })
+        if let Some(value) = modules.loaded.get(&module) {
+            return Ok((true, value.clone()));
+        }
+        if !modules.loading.contains(&module) || !EXPORTS.load(Ordering::Relaxed) {
+            return Ok((false, Value::Nil));
+        }
+        let exports = engine.ctx.dom().get(module).is_some_and(|instance| {
+            matches!(instance.properties().get("Source"),
+                Some(rbx_dom::Variant::String(source)) if exports_values(source))
+        });
+        if !exports {
+            return Ok((false, Value::Nil));
+        }
+        drop(modules);
+        let mut modules = engine.modules.borrow_mut();
+        let table = match modules.placeholders.get(&module) {
+            Some(table) => table.clone(),
+            None => {
+                let table = placeholder(lua)?;
+                modules.placeholders.insert(module, table.clone());
+                table
+            }
+        };
+        Ok((true, Value::Table(table)))
     })?;
     let enter = lua.create_function(|lua, module: Value| {
         let module = module_ref(lua, &module)?;
@@ -108,10 +203,19 @@ pub(crate) fn install(lua: &Lua, resolve: Function, compile: Function) -> Result
         let engine = engine(lua);
         let mut modules = engine.modules.borrow_mut();
         modules.loading.remove(&module);
-        if let Some(value) = value {
-            modules.loaded.insert(module, value);
-        }
-        Ok(())
+        let Some(value) = value else {
+            modules.placeholders.remove(&module);
+            return Ok(Value::Nil);
+        };
+        let value = match modules.placeholders.remove(&module) {
+            Some(table) => {
+                fill(&table, &value)?;
+                Value::Table(table)
+            }
+            None => value,
+        };
+        modules.loaded.insert(module, value.clone());
+        Ok(value)
     })?;
     // A body that failed: its error goes to Output and the module is never
     // run again, its `require` raising [`FAILED`] instead.
@@ -126,6 +230,7 @@ pub(crate) fn install(lua: &Lua, resolve: Function, compile: Function) -> Result
         engine.host.output(LineKind::Error, text);
         let mut modules = engine.modules.borrow_mut();
         modules.loading.remove(&module);
+        modules.placeholders.remove(&module);
         modules.failed.insert(module);
         Err::<(), _>(mlua::Error::runtime(FAILED))
     })?;
@@ -140,7 +245,12 @@ pub(crate) fn install(lua: &Lua, resolve: Function, compile: Function) -> Result
                     if hit then
                         return value
                     end
-                    local body = compile(module)
+                    -- A body that does not compile fails like one that
+                    -- errors: Output gets the compiler's message.
+                    local compiled, body = pcall(compile, module)
+                    if not compiled then
+                        fail(module, body)
+                    end
                     enter(module)
                     local results = table.pack(pcall(body))
                     if not results[1] then
@@ -150,8 +260,7 @@ pub(crate) fn install(lua: &Lua, resolve: Function, compile: Function) -> Result
                         leave(module)
                         error("Module code did not return exactly one value", 0)
                     end
-                    leave(module, results[2])
-                    return results[2]
+                    return leave(module, results[2])
                 end
             end
             "#,

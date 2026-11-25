@@ -3,7 +3,6 @@
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::net::TcpListener;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::{Arc, Mutex};
@@ -26,7 +25,7 @@ pub fn fake_ntfy() -> (String, Topics) {
 /// [`fake_ntfy`] counting every request in `seen`, and answering ntfy.sh's
 /// rate-limit 429 (with `Retry-After: 1`) while `refuse` counts down.
 pub fn fake_ntfy_limited(refuse: Arc<AtomicUsize>, seen: Arc<AtomicUsize>) -> (String, Topics) {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = rbx_presence::announce::bind_outside_loopback_range().unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
     let topics: Topics = Arc::default();
     let store = Arc::clone(&topics);

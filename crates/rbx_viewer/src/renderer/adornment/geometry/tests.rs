@@ -162,30 +162,49 @@ fn a_hairline_still_covers_a_pixel() {
     assert_eq!(out[0].half_width, 0.5);
 }
 
+/// Where `point` lands on screen, as the tangent of its angle off the line
+/// from an eye straight up +Z from `centre`.
+fn spread(eye: Vec3, centre: Vec3, point: Vec3) -> f32 {
+    (point - centre).truncate().length() / (eye.z - point.z)
+}
+
 #[test]
-fn a_ring_faces_the_eye_at_its_own_radius() {
+fn a_ring_spans_the_two_silhouettes_in_front_of_its_sphere() {
     let mut out = Vec::new();
     let centre = Vec3::new(1.0, 2.0, 3.0);
     let eye = centre + Vec3::new(0.0, 0.0, 20.0);
-    ring(centre, 4.0, 2.0, WHITE, eye, &mut out);
-    assert!(!out.is_empty());
+    ring(centre, 1.0, 2.0, WHITE, eye, &mut out);
+    assert_eq!(out.len(), RING_SEGMENTS * 6);
+    // A sphere `r` across seen from 20 studs spans tan(asin(r / 20)).
+    let silhouette = |r: f32| (r / 20.0).asin().tan();
+    let mut seen = (f32::MAX, 0.0f32);
     for vertex in &out {
-        let offset = Vec3::from(vertex.position) - centre;
-        assert!((offset.length() - 4.0).abs() < 1e-3, "on the circle");
-        assert!(offset.z.abs() < 1e-3, "in the plane facing the eye");
+        let point = Vec3::from(vertex.position);
+        assert!(
+            (point.z - (centre.z + 2.0)).abs() < 1e-4,
+            "on the outer sphere's near plane"
+        );
+        let angle = spread(eye, centre, point);
+        seen = (seen.0.min(angle), seen.1.max(angle));
     }
+    assert!((seen.0 - silhouette(1.0)).abs() < 1e-4);
+    assert!((seen.1 - silhouette(2.0)).abs() < 1e-4);
 }
 
-/// An eye exactly at the centre has no direction to face; the ring still
-/// has to be geometry rather than a pile of zero-length lines.
+/// Studio draws no outline at all once the camera is inside its sphere.
 #[test]
-fn a_ring_seen_from_its_own_centre_still_draws() {
+fn a_ring_seen_from_inside_draws_nothing() {
     let mut out = Vec::new();
-    ring(Vec3::ZERO, 2.0, 1.0, WHITE, Vec3::ZERO, &mut out);
-    assert!(!out.is_empty());
-    for vertex in &out {
-        assert!((Vec3::from(vertex.position).length() - 2.0).abs() < 1e-3);
-    }
+    ring(
+        Vec3::ZERO,
+        1.0,
+        2.0,
+        WHITE,
+        Vec3::new(0.0, 0.0, 1.9),
+        &mut out,
+    );
+    ring(Vec3::ZERO, 1.0, 2.0, WHITE, Vec3::ZERO, &mut out);
+    assert!(out.is_empty());
 }
 
 #[test]
@@ -195,14 +214,210 @@ fn a_picture_is_one_quad_the_size_it_asks_for() {
         frame: Mat4::IDENTITY,
         size: Vec2::new(4.0, 2.0),
         texture: rbx_assets::AssetRef::Id(1),
+        color: [1.0; 3],
         alpha: 0.5,
+        double_sided: true,
     };
-    picture_quad(&picture, 0.5, &mut out);
+    picture_quad(&picture, [0.2, 0.4, 0.6, 0.5], &mut out);
     assert_eq!(out.len(), 6);
     for vertex in &out {
-        assert_eq!(vertex.alpha, 0.5);
+        assert_eq!(vertex.color, [0.2, 0.4, 0.6, 0.5]);
         assert!(vertex.position[0].abs() <= 2.0 + 1e-5);
         assert!(vertex.position[1].abs() <= 1.0 + 1e-5);
         assert_eq!(vertex.position[2], 0.0);
     }
+}
+
+/// Every closed shape winds each triangle counter-clockwise from outside,
+/// what a single-sided adornment's back-face discard relies on.
+#[test]
+fn closed_shapes_wind_every_triangle_outward() {
+    let frame = Mat4::from_rotation_translation(
+        glam::Quat::from_euler(glam::EulerRot::XYZ, 0.4, 0.6, 0.1),
+        Vec3::new(3.0, -2.0, 5.0),
+    );
+    let centre = |local: Vec3| frame.transform_point3(local);
+    for (mesh, inside) in [
+        (
+            AdornMesh::Box {
+                size: Vec3::new(2.0, 4.0, 6.0),
+            },
+            centre(Vec3::ZERO),
+        ),
+        (AdornMesh::Sphere { radius: 2.0 }, centre(Vec3::ZERO)),
+        (
+            AdornMesh::Cone {
+                radius: 1.0,
+                height: 3.0,
+            },
+            centre(Vec3::new(0.0, 0.0, -0.75)),
+        ),
+        (
+            AdornMesh::Cylinder {
+                radius: 1.0,
+                inner: 0.0,
+                height: 2.0,
+                sweep: 360.0,
+            },
+            centre(Vec3::new(0.0, 0.0, -1.0)),
+        ),
+    ] {
+        let mut out = Vec::new();
+        solid(mesh, frame, WHITE, &mut out);
+        for corners in positions(&out).chunks(3) {
+            let [a, b, c] = [corners[0], corners[1], corners[2]];
+            let normal = (b - a).cross(c - a);
+            // A sphere's pole quads each hold one zero-area triangle.
+            if normal.length() < 1e-6 {
+                continue;
+            }
+            assert!(
+                normal.dot((a + b + c) / 3.0 - inside) > 0.0,
+                "{mesh:?} has an inward triangle"
+            );
+        }
+    }
+}
+
+/// A hollow sector's inner wall faces the axis and its cut faces face out
+/// of the slice: each triangle's normal points away from a point inside the
+/// solid ring beside it.
+#[test]
+fn a_hollow_sector_winds_outward_too() {
+    let mut out = Vec::new();
+    solid(
+        AdornMesh::Cylinder {
+            radius: 2.0,
+            inner: 1.0,
+            height: 2.0,
+            sweep: 270.0,
+        },
+        Mat4::IDENTITY,
+        WHITE,
+        &mut out,
+    );
+    for corners in positions(&out).chunks(3) {
+        let [a, b, c] = [corners[0], corners[1], corners[2]];
+        let centroid = (a + b + c) / 3.0;
+        // The nearest point of the solid's core: mid-radius, mid-height, at
+        // the centroid's own angle, clamped into the sweep.
+        let angle = centroid
+            .y
+            .atan2(centroid.x)
+            .rem_euclid(std::f32::consts::TAU)
+            .clamp(0.05, 270f32.to_radians() - 0.05);
+        let core = Vec3::new(angle.cos() * 1.5, angle.sin() * 1.5, -1.0);
+        assert!((b - a).cross(c - a).dot(centroid - core) > 0.0);
+    }
+}
+
+/// The image's front is the side its frame's `LookVector` (-Z) points to.
+#[test]
+fn a_picture_faces_along_its_look_vector() {
+    let mut out = Vec::new();
+    let picture = AdornPicture {
+        frame: Mat4::IDENTITY,
+        size: Vec2::new(4.0, 2.0),
+        texture: rbx_assets::AssetRef::Id(1),
+        color: [1.0; 3],
+        alpha: 1.0,
+        double_sided: false,
+    };
+    picture_quad(&picture, [1.0; 4], &mut out);
+    for corners in out.chunks(3) {
+        let [a, b, c] = [0, 1, 2].map(|i| Vec3::from(corners[i].position));
+        assert!((b - a).cross(c - a).z < 0.0);
+        assert!(corners.iter().all(|vertex| vertex.single_sided == 1.0));
+    }
+}
+
+fn pyramid(sides: u32, size: f32, height: f32) -> Vec<Vec3> {
+    let mut out = Vec::new();
+    solid(
+        AdornMesh::Pyramid {
+            sides,
+            size,
+            height,
+        },
+        Mat4::IDENTITY,
+        WHITE,
+        &mut out,
+    );
+    positions(&out)
+}
+
+/// What Studio 0.748 drew at `Size = 4`: a square with half-side 2, a
+/// hexagon and an octagon with inradius 2, a triangle and a pentagon `Size`
+/// tall from their flat bottom edge to the top corner.
+#[test]
+fn a_pyramid_base_is_size_tall_with_a_flat_bottom_edge() {
+    for sides in [3, 4, 5, 6, 8, 32] {
+        let points = pyramid(sides, 4.0, 3.0);
+        let base: Vec<Vec3> = points.into_iter().filter(|p| p.z.abs() < 1e-4).collect();
+        let low = base.iter().map(|p| p.y).fold(f32::MAX, f32::min);
+        let high = base.iter().map(|p| p.y).fold(f32::MIN, f32::max);
+        assert!(
+            (high - low - 4.0).abs() < 1e-4,
+            "{sides} sides span {}",
+            high - low
+        );
+        let bottom = base.iter().filter(|p| (p.y - low).abs() < 1e-4);
+        assert!(
+            bottom.map(|p| p.x).fold(f32::MIN, f32::max) > 0.1,
+            "{sides}: no flat edge"
+        );
+    }
+    let square = pyramid(4, 4.0, 3.0);
+    assert!(square
+        .iter()
+        .any(|p| (*p - Vec3::new(2.0, -2.0, 0.0)).length() < 1e-4));
+    let hexagon = pyramid(6, 4.0, 3.0);
+    assert!(hexagon
+        .iter()
+        .all(|p| p.y >= -2.0 - 1e-4 && p.y <= 2.0 + 1e-4));
+}
+
+#[test]
+fn a_pyramid_points_along_negative_z_unless_its_height_is_negative() {
+    let up = pyramid(5, 3.0, 3.0);
+    assert!(up
+        .iter()
+        .any(|p| (*p - Vec3::new(0.0, 0.0, -3.0)).length() < 1e-4));
+    assert!(up.iter().all(|p| p.z <= 1e-4));
+    let down = pyramid(5, 3.0, -3.0);
+    assert!(down
+        .iter()
+        .any(|p| (*p - Vec3::new(0.0, 0.0, 3.0)).length() < 1e-4));
+    assert_eq!(
+        pyramid(5, 3.0, 3.0).len(),
+        5 * 6,
+        "a side and a base slice per edge"
+    );
+}
+
+#[test]
+fn a_pyramid_winds_outward_whichever_way_it_points() {
+    for (size, height) in [(4.0, 3.0), (4.0, -3.0), (-4.0, 3.0)] {
+        let inside = Vec3::new(0.0, 0.0, -height * 0.25);
+        for corners in pyramid(5, size, height).chunks(3) {
+            let [a, b, c] = [corners[0], corners[1], corners[2]];
+            assert!(
+                (b - a).cross(c - a).dot((a + b + c) / 3.0 - inside) > 0.0,
+                "size {size} height {height}"
+            );
+        }
+    }
+}
+
+/// Flat, a pyramid is its base twice over, facing both ways, as Studio
+/// shows it from either side.
+#[test]
+fn a_flat_pyramid_faces_both_ways() {
+    let points = pyramid(4, 2.0, 0.0);
+    let normals: Vec<f32> = points
+        .chunks(3)
+        .map(|t| (t[1] - t[0]).cross(t[2] - t[0]).z)
+        .filter(|z| z.abs() > 1e-6)
+        .collect();
+    assert!(normals.iter().any(|z| *z > 0.0) && normals.iter().any(|z| *z < 0.0));
 }

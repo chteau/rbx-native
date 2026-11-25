@@ -22,6 +22,7 @@ mod folder_row;
 mod material_colors;
 mod ranges;
 mod sheet;
+pub(crate) use sheet::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID;
 
 pub(crate) use ranges::slider_range;
 

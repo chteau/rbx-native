@@ -104,6 +104,35 @@ impl ReflectionDatabase {
         None
     }
 
+    /// Whether `class`'s method `name`, found up its superclass chain, is
+    /// tagged `Deprecated`; `None` when no class in the chain has it.
+    pub fn function_deprecated(&self, class: &str, name: &str) -> Option<bool> {
+        self.lineage(class).find_map(|class| {
+            self.classes[class]
+                .functions
+                .iter()
+                .find(|function| function.name == name)
+                .map(|function| function.deprecated)
+        })
+    }
+
+    /// Every method name the dump tags `Deprecated` on each class that has
+    /// it, so a call to one is a deprecated call whatever its receiver is
+    /// (`FindPartOnRay`, `isA`, but not `Remove`, current on `Tween`).
+    pub fn always_deprecated_functions(&self) -> std::collections::BTreeSet<&str> {
+        let mut deprecated = std::collections::BTreeSet::new();
+        let mut current = std::collections::HashSet::new();
+        for function in self.classes.values().flat_map(|class| &class.functions) {
+            if function.deprecated {
+                deprecated.insert(function.name.as_str());
+            } else {
+                current.insert(function.name.as_str());
+            }
+        }
+        deprecated.retain(|name| !current.contains(name));
+        deprecated
+    }
+
     /// The type Studio saves `class`'s `name` as: the dump's value type, a
     /// legacy ContentId always spelled `ContentId` whichever spelling the
     /// dump uses, and `BinaryString` for the instance-wide `Tags` and

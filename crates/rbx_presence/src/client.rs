@@ -1028,7 +1028,6 @@ impl FromStaticLower for HeaderName {
 mod tests {
     use super::*;
     use crate::schema::SCHEMA_VERSION;
-    use std::net::TcpListener;
     use tungstenite::handshake::server::{ErrorResponse, Request, Response};
 
     #[test]
@@ -1103,7 +1102,7 @@ mod tests {
     // The handshake callback's `Result` shape is tungstenite's, not ours.
     #[allow(clippy::result_large_err)]
     fn connects_publishes_and_receives_snapshot() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let listener = crate::announce::bind_outside_loopback_range().unwrap();
         let port = listener.local_addr().unwrap().port();
         let key = "k".repeat(64);
         let (hdr_tx, hdr_rx) = mpsc::channel();

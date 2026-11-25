@@ -309,20 +309,39 @@ impl UserData for LuaInstance {
         });
         // A wireframe's lines are not instance data and the viewport draws no
         // wireframe adornments, so drawing calls are accepted and dropped.
-        for name in ["AddLine", "AddLines", "AddPath", "AddText", "Clear"] {
+        for name in ["AddLine", "AddLines", "AddPath", "AddText", "Clear", "Emit"] {
             methods.add_method(name, move |lua, this, mut args: MultiValue| {
-                // `ParticleEmitter:Clear` and `Terrain:Clear`, the run's, go
-                // on to the hooks (methods answer before `__index`, as for
-                // `Remove`).
+                // `ParticleEmitter:Emit`/`Clear` and `Terrain:Clear`, the
+                // run's, go on to the hooks (methods answer before
+                // `__index`, as for `Remove`).
                 let class = this.class()?;
-                if name == "Clear" && matches!(class.as_str(), "ParticleEmitter" | "Terrain") {
+                let hooked = match name {
+                    "Clear" => matches!(class.as_str(), "ParticleEmitter" | "Terrain"),
+                    "Emit" => class == "ParticleEmitter",
+                    _ => false,
+                };
+                if hooked {
                     if let Some(hooks) = crate::hooks::hooks(lua) {
                         let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
-                        if let Some(Value::Function(clear)) = member {
+                        if let Some(Value::Function(f)) = member {
                             args.push_front(Value::Nil);
-                            return clear.call::<MultiValue>(args);
+                            return f.call::<MultiValue>(args);
                         }
                     }
+                }
+                if matches!(name, "Clear" | "Emit") && class == crate::particles::CLASS {
+                    let burst = if name == "Emit" {
+                        let count: Option<f64> =
+                            lua.unpack(args.pop_front().unwrap_or(Value::Nil))?;
+                        Some(count.map_or(crate::particles::DEFAULT_COUNT, |n| n.max(0.0) as u32))
+                    } else {
+                        None
+                    };
+                    crate::particles::push(this.referent, burst);
+                    return Ok(MultiValue::new());
+                }
+                if name == "Emit" {
+                    this.require_class(crate::particles::CLASS, name)?;
                 }
                 this.require_class("WireframeHandleAdornment", name)?;
                 Ok(MultiValue::new())
@@ -409,6 +428,23 @@ impl UserData for LuaInstance {
             match moved {
                 Some(result) => result.map_err(mlua::Error::runtime),
                 None => Err(this.not_a_member("PivotTo")),
+            }
+        });
+        methods.add_method("GetScale", |_, this, ()| {
+            crate::pivot::scale(&this.ctx.dom(), this.ctx.database(), this.referent)
+                .ok_or_else(|| this.not_a_member("GetScale"))
+        });
+        methods.add_method("ScaleTo", |_, this, factor: f32| {
+            this.ctx.check_write(this.referent)?;
+            let scaled = crate::pivot::scale_to(
+                &mut this.ctx.dom_mut(),
+                this.ctx.database(),
+                this.referent,
+                factor,
+            );
+            match scaled {
+                Some(result) => result.map_err(mlua::Error::runtime),
+                None => Err(this.not_a_member("ScaleTo")),
             }
         });
         methods.add_method("Destroy", |lua, this, ()| {
@@ -545,6 +581,9 @@ impl UserData for LuaInstance {
                 }
             }
             if let Some(value) = property::get(lua, &this.ctx, this.referent, &key)? {
+                return Ok(value);
+            }
+            if let Some(value) = crate::csg::script::member(lua, &this.ctx, &this.class()?, &key)? {
                 return Ok(value);
             }
             let child = tree::find_child(&this.ctx.dom(), this.referent, &key, false);

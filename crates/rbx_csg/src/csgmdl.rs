@@ -13,6 +13,7 @@
 
 use glam::DVec3;
 
+use crate::solidmesh::{read_deltas, write_deltas};
 use crate::{dominant_axes, Solid};
 
 const MAGIC: &[u8; 6] = b"CSGMDL";
@@ -22,7 +23,6 @@ const KEY: [u8; 31] = [
     0x1a, 0x60, 0x37, 0x69, 0x1d, 0x52, 0x2b, 0x07, 0x4f, 0x24, 0x59, 0x65, 0x53, 0x04, 0x7a,
 ];
 const PREFIX: usize = 10;
-const WIDE: u8 = 0x80;
 const STUDS_PER_TILE: f32 = 4.0;
 
 fn unit(value: f32) -> [u8; 2] {
@@ -40,10 +40,11 @@ fn units(out: &mut Vec<u8>, count: u16, vectors: &[[f32; 3]]) {
 }
 
 /// `solid` (in the union's own space) as a version 5 blob, every vertex
-/// coloured `color`. `None` past the format's 65535 vertices.
-pub fn encode(solid: &Solid, color: [u8; 3]) -> Option<Vec<u8>> {
+/// in its face's colour. `None` past the format's 65535 vertices.
+pub fn encode(solid: &Solid) -> Option<Vec<u8>> {
     let mut positions = Vec::new();
     let mut normals = Vec::new();
+    let mut colors = Vec::new();
     let mut indices = Vec::new();
     for polygon in &solid.polygons {
         let base = positions.len() as u32;
@@ -51,6 +52,7 @@ pub fn encode(solid: &Solid, color: [u8; 3]) -> Option<Vec<u8>> {
         for v in &polygon.vertices {
             positions.push(v.as_vec3().to_array());
             normals.push(normal);
+            colors.push(polygon.color);
         }
         for corner in 1..polygon.vertices.len().saturating_sub(1) as u32 {
             indices.extend([base, base + corner, base + corner + 1]);
@@ -70,7 +72,7 @@ pub fn encode(solid: &Solid, color: [u8; 3]) -> Option<Vec<u8>> {
     }
     units(&mut out, count, &normals);
     out.extend(count.to_le_bytes());
-    for _ in 0..count {
+    for color in &colors {
         out.extend([color[0], color[1], color[2], 255]);
     }
     out.extend(count.to_le_bytes());
@@ -95,17 +97,7 @@ pub fn encode(solid: &Solid, color: [u8; 3]) -> Option<Vec<u8>> {
     // Every real blob carries a second LOD; ours repeats the first.
     let n = indices.len() as u32;
     let mut stream = Vec::new();
-    let mut current: i64 = 0;
-    for &index in indices.iter().chain(&indices) {
-        let delta = i64::from(index) - current;
-        current = i64::from(index);
-        if (-64..64).contains(&delta) {
-            stream.push((delta as u8) & 0x7f);
-        } else {
-            let word = (delta as u32) & 0x7f_ffff;
-            stream.extend([WIDE | (word >> 16) as u8, (word >> 8) as u8, word as u8]);
-        }
-    }
+    write_deltas(&mut stream, indices.iter().chain(&indices).copied());
     out.extend((2 * n).to_le_bytes());
     out.extend((stream.len() as u32).to_le_bytes());
     out.extend(stream);
@@ -178,29 +170,7 @@ pub fn decode(bytes: &[u8]) -> Option<(Vec<[f32; 3]>, Vec<u32>)> {
     r.take(length)?;
     let index_count = r.u32()?;
     let length = r.u32()?;
-    let mut stream = Reader {
-        bytes: r.take(length)?,
-        at: 0,
-    };
-    let mut indices = Vec::with_capacity(index_count.min(length));
-    let mut current: i64 = 0;
-    for _ in 0..index_count {
-        let code = stream.take(1)?[0];
-        let delta = match code & WIDE {
-            0 => i64::from(((code << 1) as i8) >> 1),
-            _ => {
-                let rest = stream.take(2)?;
-                let word = u32::from_be_bytes([0, code & !WIDE, rest[0], rest[1]]);
-                i64::from(((word << 9) as i32) >> 9)
-            }
-        };
-        current += delta;
-        let index = u32::try_from(current).ok()?;
-        if index as usize >= count {
-            return None;
-        }
-        indices.push(index);
-    }
+    let (mut indices, _) = read_deltas(r.take(length)?, index_count, count)?;
     let lods = r.take(1)?[0] as usize;
     let offsets: Vec<usize> = (0..lods).map(|_| r.u32()).collect::<Option<_>>()?;
     if let [first, second, ..] = offsets[..] {
@@ -224,7 +194,7 @@ mod tests {
             Mat4::from_translation(Vec3::splat(50.0)) * Mat4::from_scale(Vec3::splat(60.0)),
         );
         let solid = a.subtract(b).unwrap().finish(None).unwrap();
-        let blob = encode(&solid, [10, 20, 30]).unwrap();
+        let blob = encode(&solid.clone().painted([10, 20, 30])).unwrap();
         assert_ne!(&blob[..6], MAGIC, "the prefix is scrambled as Studio's is");
         let (positions, indices) = decode(&blob).unwrap();
         let back = Solid::from_triangles(&positions, &indices, glam::DMat4::IDENTITY);
@@ -243,7 +213,7 @@ mod tests {
                 .polygons,
             );
         }
-        let blob = encode(&solid, [0; 3]).unwrap();
+        let blob = encode(&solid).unwrap();
         let (positions, indices) = decode(&blob).unwrap();
         assert_eq!(positions.len(), 40 * 24);
         assert_eq!(indices.len(), 40 * 36);

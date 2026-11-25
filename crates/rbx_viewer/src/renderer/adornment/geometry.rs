@@ -2,9 +2,11 @@
 //!
 //! Everything here is plain CPU geometry with no GPU handle, built once per
 //! plan rather than per frame (the one exception is [`ring`], which faces
-//! the camera and so is rebuilt with it). Nothing is culled by winding, see
-//! [`super::Adornments`] for why, so these builders only have to put the
-//! corners in the right places, not agree on an order.
+//! the camera and so is rebuilt with it). Every triangle is wound
+//! counter-clockwise seen from outside the shape, so a single-sided
+//! `HandleAdornment` (`DoubleSided = false`, see [`super::Adornments`]) can
+//! drop the faces turned away from the eye. Each builder says which way is
+//! out, and [`triangle`] turns the corners round to agree.
 
 use glam::{Mat4, Vec2, Vec3};
 
@@ -20,7 +22,7 @@ const BANDS: usize = 12;
 /// Segments per full turn of an arc's ring, and round its tube.
 const ARC_SEGMENTS: usize = 64;
 const TUBE_SEGMENTS: usize = 8;
-/// Segments in a camera-facing outline circle.
+/// Segments round a camera-facing outline band.
 const RING_SEGMENTS: usize = 64;
 
 /// Appends one [`AdornMesh`], placed by `frame`, as triangles.
@@ -29,6 +31,11 @@ pub(super) fn solid(mesh: AdornMesh, frame: Mat4, color: [f32; 4], out: &mut Vec
         AdornMesh::Box { size } => cuboid(frame, size, color, out),
         AdornMesh::Sphere { radius } => sphere(frame, radius, color, out),
         AdornMesh::Cone { radius, height } => cone(frame, radius, height, color, out),
+        AdornMesh::Pyramid {
+            sides,
+            size,
+            height,
+        } => pyramid(frame, sides, size, height, color, out),
         AdornMesh::Cylinder {
             radius,
             inner,
@@ -44,7 +51,7 @@ pub(super) fn solid(mesh: AdornMesh, frame: Mat4, color: [f32; 4], out: &mut Vec
 }
 
 /// A textured quad in the frame's own XY plane, an `ImageHandleAdornment`.
-pub(super) fn picture_quad(picture: &AdornPicture, alpha: f32, out: &mut Vec<ImageVertex>) {
+pub(super) fn picture_quad(picture: &AdornPicture, color: [f32; 4], out: &mut Vec<ImageVertex>) {
     let half = picture.size * 0.5;
     let corner = |x: f32, y: f32| picture.frame.transform_point3(Vec3::new(x, y, 0.0));
     let (a, b, c, d) = (
@@ -54,19 +61,23 @@ pub(super) fn picture_quad(picture: &AdornPicture, alpha: f32, out: &mut Vec<Ima
         corner(-half.x, half.y),
     );
     // V runs down the image, as every other image this renderer draws does.
+    // Wound counter-clockwise seen from the frame's own -Z: Studio shows a
+    // single-sided image only to an eye its `LookVector` points at (checked
+    // 2026-11-20).
     let uv = |u: f32, v: f32| Vec2::new(u, v);
     for (position, texcoord) in [
         (a, uv(0.0, 1.0)),
+        (c, uv(1.0, 0.0)),
         (b, uv(1.0, 1.0)),
-        (c, uv(1.0, 0.0)),
         (a, uv(0.0, 1.0)),
-        (c, uv(1.0, 0.0)),
         (d, uv(0.0, 0.0)),
+        (c, uv(1.0, 0.0)),
     ] {
         out.push(ImageVertex {
             position: position.to_array(),
             uv: texcoord.to_array(),
-            alpha,
+            color,
+            single_sided: if picture.double_sided { 0.0 } else { 1.0 },
         });
     }
 }
@@ -103,41 +114,59 @@ pub(in crate::renderer) fn line(
     ]);
 }
 
-/// A circle of `radius` around `centre`, drawn in the plane facing `eye`,
-/// the silhouette a `SelectionSphere` outlines itself with.
+/// A `SelectionSphere`'s outline facing `eye`: the band between the
+/// silhouettes of the spheres `inner` and `outer` studs round `centre`, laid
+/// on the plane touching the outer sphere's near side, so the adornment's
+/// own surface never covers it, with every radius scaled to project where
+/// that sphere's silhouette does. From inside the outer sphere Studio draws
+/// none of it.
 pub(super) fn ring(
     centre: Vec3,
-    radius: f32,
-    pixels: f32,
+    inner: f32,
+    outer: f32,
     color: [f32; 4],
     eye: Vec3,
-    out: &mut Vec<LineVertex>,
+    out: &mut Vec<Vertex>,
 ) {
-    let normal = (eye - centre).normalize_or_zero();
-    let normal = if normal.length_squared() < 0.5 {
-        Vec3::Z
-    } else {
-        normal
-    };
+    let to_eye = eye - centre;
+    let distance = to_eye.length();
+    if distance <= outer {
+        return;
+    }
+    let normal = to_eye / distance;
     let aside = if normal.y.abs() < 0.99 {
         Vec3::Y
     } else {
         Vec3::X
     };
-    let u = aside.cross(normal).normalize_or_zero() * radius;
-    let v = normal.cross(u.normalize_or_zero()) * radius;
-
-    let point = |segment: usize| {
+    let u = aside.cross(normal).normalize();
+    let v = normal.cross(u);
+    let plane = centre + normal * outer;
+    // A sphere `radius` across fills the cone of half-angle
+    // asin(radius / distance) round the line to its centre.
+    let reach =
+        |radius: f32| (distance - outer) * radius / (distance * distance - radius * radius).sqrt();
+    let (near, far) = (reach(inner), reach(outer));
+    let point = |segment: usize, radius: f32| {
         let angle = std::f32::consts::TAU * segment as f32 / RING_SEGMENTS as f32;
-        centre + u * angle.cos() + v * angle.sin()
+        plane + (u * angle.cos() + v * angle.sin()) * radius
     };
     for segment in 0..RING_SEGMENTS {
-        line(point(segment), point(segment + 1), pixels, color, out);
+        quad(
+            out,
+            color,
+            point(segment, near),
+            point(segment, far),
+            point(segment + 1, far),
+            point(segment + 1, near),
+            normal,
+        );
     }
 }
 
 fn cuboid(frame: Mat4, size: Vec3, color: [f32; 4], out: &mut Vec<Vertex>) {
     let half = size * 0.5;
+    let centre = frame.w_axis.truncate();
     let corner = |x: f32, y: f32, z: f32| frame.transform_point3(Vec3::new(x, y, z) * half);
     let corners = [
         corner(-1.0, -1.0, -1.0),
@@ -157,14 +186,8 @@ fn cuboid(frame: Mat4, size: Vec3, color: [f32; 4], out: &mut Vec<Vertex>) {
         [3, 2, 6, 7],
         [4, 5, 1, 0],
     ] {
-        quad(
-            out,
-            color,
-            corners[face[0]],
-            corners[face[1]],
-            corners[face[2]],
-            corners[face[3]],
-        );
+        let [a, b, c, d] = face.map(|index| corners[index]);
+        quad(out, color, a, b, c, d, (a + c) * 0.5 - centre);
     }
 }
 
@@ -176,15 +199,18 @@ fn sphere(frame: Mat4, radius: f32, color: [f32; 4], out: &mut Vec<Vertex>) {
             Vec3::new(phi.sin() * theta.cos(), phi.cos(), phi.sin() * theta.sin()) * radius,
         )
     };
+    let centre = frame.w_axis.truncate();
     for band in 0..BANDS {
         for segment in 0..SEGMENTS {
+            let (a, c) = (point(band, segment), point(band + 1, segment + 1));
             quad(
                 out,
                 color,
-                point(band, segment),
+                a,
                 point(band, segment + 1),
-                point(band + 1, segment + 1),
+                c,
                 point(band + 1, segment),
+                (a + c) * 0.5 - centre,
             );
         }
     }
@@ -198,9 +224,67 @@ fn cone(frame: Mat4, radius: f32, height: f32, color: [f32; 4], out: &mut Vec<Ve
         let angle = std::f32::consts::TAU * segment as f32 / SEGMENTS as f32;
         frame.transform_point3(Vec3::new(angle.cos() * radius, angle.sin() * radius, 0.0))
     };
+    let inside = frame.transform_point3(Vec3::new(0.0, 0.0, -height * 0.25));
     for segment in 0..SEGMENTS {
-        triangle(out, color, rim(segment), rim(segment + 1), apex);
-        triangle(out, color, rim(segment + 1), rim(segment), base);
+        let (a, b) = (rim(segment), rim(segment + 1));
+        triangle(out, color, a, b, apex, (a + b + apex) / 3.0 - inside);
+        triangle(out, color, b, a, base, base - inside);
+    }
+}
+
+/// A `PyramidHandleAdornment`, laid out as Studio 0.748 draws one: the base
+/// is a regular polygon centred on the frame's origin with one edge flat
+/// along the bottom (-Y), sized so its height up the frame's Y is `size`
+/// (an even polygon's inradius is half of it; an odd one's circumradius
+/// and inradius add up to it), and the apex sits `height` along -Z.
+fn pyramid(
+    frame: Mat4,
+    sides: u32,
+    size: f32,
+    height: f32,
+    color: [f32; 4],
+    out: &mut Vec<Vertex>,
+) {
+    let n = sides.max(3) as f32;
+    let half_step = std::f32::consts::PI / n;
+    let circumradius = if sides.is_multiple_of(2) {
+        size * 0.5 / half_step.cos()
+    } else {
+        size / (1.0 + half_step.cos())
+    };
+    let corner = |k: u32| {
+        let angle = -std::f32::consts::FRAC_PI_2 + half_step + 2.0 * half_step * k as f32;
+        Vec3::new(angle.cos(), angle.sin(), 0.0) * circumradius
+    };
+    let apex = Vec3::new(0.0, 0.0, -height);
+    // The base faces away from the apex. With no height at all, base and
+    // sides lie in one plane facing opposite ways, so Studio's flat
+    // pyramid shows from both sides even single-sided.
+    let away = if height < 0.0 { -1.0 } else { 1.0 };
+    let world = |local: Vec3| frame.transform_point3(local);
+    let outward = |local: Vec3| frame.transform_vector3(local);
+    for k in 0..sides {
+        let (a, b) = (corner(k), corner(k + 1));
+        let middle = (a + b) * 0.5;
+        let inradius = middle.length();
+        let side_out =
+            middle / inradius.max(f32::EPSILON) * height.abs() - Vec3::Z * inradius * away;
+        triangle(
+            out,
+            color,
+            world(a),
+            world(b),
+            world(apex),
+            outward(side_out),
+        );
+        triangle(
+            out,
+            color,
+            world(b),
+            world(a),
+            world(Vec3::ZERO),
+            outward(Vec3::Z * away),
+        );
     }
 }
 
@@ -222,8 +306,16 @@ fn cylinder(
         let angle = sweep * segment as f32 / segments as f32;
         frame.transform_point3(Vec3::new(angle.cos() * r, angle.sin() * r, z))
     };
+    // Which way is out, in the frame's own space: away from the axis on the
+    // outer wall, towards it on the inner one, along the axis at the ends.
+    let radial = |segment: f32| {
+        let angle = sweep * segment / segments as f32;
+        frame.transform_vector3(Vec3::new(angle.cos(), angle.sin(), 0.0))
+    };
+    let along = frame.transform_vector3(Vec3::Z);
     let hollow = inner > 0.0;
     for segment in 0..segments {
+        let middle = radial(segment as f32 + 0.5);
         // Outer wall, then the inner one a hollow cylinder shows through.
         quad(
             out,
@@ -232,6 +324,7 @@ fn cylinder(
             at(segment + 1, radius, 0.0),
             at(segment + 1, radius, -height),
             at(segment, radius, -height),
+            middle,
         );
         if hollow {
             quad(
@@ -241,10 +334,12 @@ fn cylinder(
                 at(segment + 1, inner, 0.0),
                 at(segment + 1, inner, -height),
                 at(segment, inner, -height),
+                -middle,
             );
         }
         // The two ends. A hollow one is an annulus, a solid one a fan.
         for z in [0.0, -height] {
+            let outward = if z == 0.0 { along } else { -along };
             if hollow {
                 quad(
                     out,
@@ -253,6 +348,7 @@ fn cylinder(
                     at(segment + 1, inner, z),
                     at(segment + 1, radius, z),
                     at(segment, radius, z),
+                    outward,
                 );
             } else {
                 triangle(
@@ -261,6 +357,7 @@ fn cylinder(
                     frame.transform_point3(Vec3::new(0.0, 0.0, z)),
                     at(segment, radius, z),
                     at(segment + 1, radius, z),
+                    outward,
                 );
             }
         }
@@ -268,6 +365,10 @@ fn cylinder(
     // A sector is open at the two cuts; close them so it reads as a solid.
     if sweep < std::f32::consts::TAU - 1e-3 {
         for segment in [0, segments] {
+            // Out of the slice: back against the sweep at its start,
+            // onwards with it at its end.
+            let tangent = along.cross(radial(segment as f32));
+            let outward = if segment == 0 { -tangent } else { tangent };
             quad(
                 out,
                 color,
@@ -275,6 +376,7 @@ fn cylinder(
                 at(segment, radius, 0.0),
                 at(segment, radius, -height),
                 at(segment, inner, -height),
+                outward,
             );
         }
     }
@@ -292,30 +394,46 @@ fn arc(frame: Mat4, radius: f32, tube: f32, sweep: f32, color: [f32; 4], out: &m
         let offset = centre * (phi.cos() * tube) + Vec3::Z * (phi.sin() * tube);
         frame.transform_point3(centre * radius + offset)
     };
+    let spine = |segment: usize| {
+        let angle = sweep * (segment as f32 + 0.5) / segments as f32;
+        frame.transform_point3(Vec3::new(angle.cos(), angle.sin(), 0.0) * radius)
+    };
     for segment in 0..segments {
         for around in 0..TUBE_SEGMENTS {
+            let (a, c) = (point(segment, around), point(segment + 1, around + 1));
             quad(
                 out,
                 color,
-                point(segment, around),
+                a,
                 point(segment + 1, around),
-                point(segment + 1, around + 1),
+                c,
                 point(segment, around + 1),
+                (a + c) * 0.5 - spine(segment),
             );
         }
     }
 }
 
-fn quad(out: &mut Vec<Vertex>, color: [f32; 4], a: Vec3, b: Vec3, c: Vec3, d: Vec3) {
-    triangle(out, color, a, b, c);
-    triangle(out, color, a, c, d);
+/// `a`, `b`, `c`, `d` in order round a flat quad's border, `outward` any
+/// vector pointing out of the shape through it.
+fn quad(out: &mut Vec<Vertex>, color: [f32; 4], a: Vec3, b: Vec3, c: Vec3, d: Vec3, outward: Vec3) {
+    triangle(out, color, a, b, c, outward);
+    triangle(out, color, a, c, d, outward);
 }
 
-fn triangle(out: &mut Vec<Vertex>, color: [f32; 4], a: Vec3, b: Vec3, c: Vec3) {
-    for position in [a, b, c] {
+/// One triangle, wound counter-clockwise seen from the side `outward`
+/// points to.
+fn triangle(out: &mut Vec<Vertex>, color: [f32; 4], a: Vec3, b: Vec3, c: Vec3, outward: Vec3) {
+    let corners = if (b - a).cross(c - a).dot(outward) < 0.0 {
+        [a, c, b]
+    } else {
+        [a, b, c]
+    };
+    for position in corners {
         out.push(Vertex {
             position: position.to_array(),
             color,
+            single_sided: 0.0,
         });
     }
 }

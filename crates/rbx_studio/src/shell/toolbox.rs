@@ -15,7 +15,11 @@
 //!
 //! The download needs the Open Cloud key (anonymous asset delivery refuses
 //! store models); without one the card says how to add it.
+//!
+//! Its other source, Free kits, browses CC0 model packs (see `kits`).
 
+mod kits;
+mod kits_view;
 mod view;
 
 use std::collections::{HashMap, HashSet};
@@ -81,6 +85,32 @@ impl Category {
     }
 }
 
+/// Where the Toolbox's results come from.
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub(super) enum Source {
+    #[default]
+    Store,
+    Kits,
+}
+
+impl Source {
+    pub(super) const ALL: [Source; 2] = [Source::Store, Source::Kits];
+
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Source::Store => "Creator Store",
+            Source::Kits => "Free kits",
+        }
+    }
+
+    fn placeholder(self) -> &'static str {
+        match self {
+            Source::Store => "Search the Creator Store",
+            Source::Kits => "Filter free kits",
+        }
+    }
+}
+
 #[derive(Clone, Default, PartialEq, Eq, Debug)]
 pub(super) enum Load {
     #[default]
@@ -98,6 +128,8 @@ pub(super) struct ScriptNotice {
 
 #[derive(Default)]
 pub(crate) struct ToolboxDock {
+    pub(super) source: Source,
+    pub(super) kits: kits::KitBrowser,
     pub(super) category: Category,
     pub(super) query: Option<Entity<InputState>>,
     _query_entered: Option<Subscription>,
@@ -127,10 +159,13 @@ impl Shell {
             return;
         }
         let query =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search the Creator Store"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(Source::Store.placeholder()));
         let entered = cx.subscribe(&query, |shell, _, event: &InputEvent, cx| {
-            if matches!(event, InputEvent::PressEnter { .. }) {
-                shell.toolbox_search(cx);
+            match (shell.toolbox.source, event) {
+                (Source::Store, InputEvent::PressEnter { .. }) => shell.toolbox_search(cx),
+                // Free kits filters what is already listed, as it is typed.
+                (Source::Kits, InputEvent::Change) => cx.notify(),
+                _ => {}
             }
         });
         self.toolbox.query = Some(query);
@@ -143,6 +178,30 @@ impl Shell {
         if let Some(query) = &self.toolbox.query {
             query.update(cx, |state, cx| state.focus(window, cx));
         }
+    }
+
+    pub(super) fn toolbox_set_source(
+        &mut self,
+        source: Source,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.toolbox.source == source {
+            return;
+        }
+        self.toolbox.source = source;
+        if let Some(query) = &self.toolbox.query {
+            query.update(cx, |state, cx| {
+                state.set_value("", window, cx);
+                state.set_placeholder(source.placeholder(), window, cx);
+            });
+        }
+        match source {
+            Source::Kits if self.toolbox.kits.load == Load::Idle => self.kits_load(cx),
+            Source::Store => self.toolbox_search(cx),
+            Source::Kits => {}
+        }
+        cx.notify();
     }
 
     pub(super) fn toolbox_set_category(&mut self, category: Category, cx: &mut Context<Self>) {
@@ -253,7 +312,7 @@ impl Shell {
                         .items
                         .get(&id)
                         .map_or(name, |item| item.name.clone());
-                    shell.toolbox_place(&content, name, cx)
+                    shell.toolbox_place(&[&content], name, cx)
                 });
                 if let Err(err) = placed {
                     shell.toolbox.error = Some(err);
@@ -267,7 +326,7 @@ impl Shell {
     /// Grafts `content`'s roots in as one undo step, placed and selected.
     fn toolbox_place(
         &mut self,
-        content: &WeakDom,
+        contents: &[&WeakDom],
         name: String,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
@@ -278,20 +337,22 @@ impl Shell {
             export::workspace(&self.dom).ok_or("The place has no Workspace to insert into.")?;
         // Aimed before grafting, so the ray can't find the asset itself.
         let aim = self.toolbox_aim(cx);
-        let decal = content
-            .root_refs()
-            .iter()
-            .all(|&root| content.get(root).is_some_and(|i| i.class() == "Decal"));
+        let decal = contents.iter().all(|content| {
+            content
+                .root_refs()
+                .iter()
+                .all(|&root| content.get(root).is_some_and(|i| i.class() == "Decal"))
+        });
         let parent = match (decal, aim.part) {
             (true, Some(part)) => part,
             _ => workspace,
         };
         self.dom.take_changes();
         let before = self.dom.clone();
-        let roots: Vec<Ref> = content
-            .root_refs()
+        let roots: Vec<Ref> = contents
             .iter()
-            .filter_map(|&root| clipboard::graft(&mut self.dom, content, root, parent))
+            .flat_map(|content| content.root_refs().iter().map(move |&root| (content, root)))
+            .filter_map(|(content, root)| clipboard::graft(&mut self.dom, content, root, parent))
             .collect();
         if roots.is_empty() {
             return Err(format!("{name} holds nothing to insert."));
@@ -411,35 +472,7 @@ fn land(dom: &mut WeakDom, roots: &[Ref], aim: &Aim) {
     };
     // A model's stored pivot moves with its parts, or it would be left
     // behind where the asset was published.
-    let pivots: Vec<Ref> = roots
-        .iter()
-        .flat_map(|&root| subtree(dom, root))
-        .filter(|&r| {
-            dom.get(r)
-                .is_some_and(|i| i.properties().contains_key("WorldPivotData"))
-        })
-        .collect();
-    for r in parts.into_iter().chain(pivots) {
-        for (name, optional) in [("CFrame", false), ("WorldPivotData", true)] {
-            let shifted = match dom.get(r).and_then(|i| i.properties().get(name)) {
-                Some(Variant::CFrame(cframe)) if !optional => {
-                    Variant::CFrame(shift(*cframe, offset))
-                }
-                Some(Variant::OptionalCFrame(Some(cframe))) if optional => {
-                    Variant::OptionalCFrame(Some(shift(*cframe, offset)))
-                }
-                _ => continue,
-            };
-            let _ = dom.set_property(r, name, shifted);
-        }
-    }
-}
-
-fn shift(mut cframe: rbx_dom::CFrameData, offset: Vec3) -> rbx_dom::CFrameData {
-    cframe.position.x += offset.x;
-    cframe.position.y += offset.y;
-    cframe.position.z += offset.z;
-    cframe
+    crate::kits::translate(dom, roots, offset);
 }
 
 /// The `NormalId` of `part`'s face whose outward axis is closest to the

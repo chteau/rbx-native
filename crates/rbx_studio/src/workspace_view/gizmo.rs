@@ -32,6 +32,7 @@ use crate::transform::{Slope, Target, Targets, Tool};
 
 use super::{readout, ViewportAction, WorkspaceView};
 
+mod next_gen;
 mod scale;
 
 /// `BasePart.Size`'s documented range: "the individual dimensions (length,
@@ -152,6 +153,24 @@ pub(super) enum Drag {
         last: f32,
         turned: f32,
     },
+    /// One of next-gen Move's plane squares is held (see `next_gen`): the
+    /// anchor's start, the plane's two axes and normal, and where the cursor
+    /// met the plane at the grab, along each axis.
+    Slide {
+        origin: Vec3,
+        axes: [Vec3; 2],
+        normal: Vec3,
+        grabbed: Vec2,
+    },
+    /// Next-gen Rotate's trackball is held: its centre and radius, the
+    /// direction from the centre the cursor grabbed, and the orientation
+    /// the anchor started at.
+    Ball {
+        origin: Vec3,
+        radius: f32,
+        from: Vec3,
+        orientation: Mat3,
+    },
     /// The Sun tool is aiming the sun or the moon. Nothing of the gizmo's is
     /// held: each step goes to `Shell` as the cursor's ray (see
     /// `super::sun`), and the selection is never touched.
@@ -261,7 +280,7 @@ impl WorkspaceView {
     pub(super) fn hovered_axis(&self, ray: Ray) -> Option<Axis> {
         let handles = self.handles()?;
         match self.transform.tool {
-            Tool::Move => handles.grab(ray),
+            Tool::Move => handles.grab(ray).or_else(|| handles.grab_plane(ray)),
             Tool::Rotate => handles.grab_ring(ray),
             Tool::Transform | Tool::Pivot => handles.grab(ray).or_else(|| handles.grab_ring(ray)),
             Tool::Select | Tool::Scale | Tool::Sun | Tool::Terrain => None,
@@ -314,13 +333,23 @@ impl WorkspaceView {
             pivot,
             anchor.rotation(),
         );
-        Some(Handles::new(
+        let handles = Handles::new(
             origin,
             gizmo::basis(axes),
             // The render target's height, which the renderer floors the
             // same arm by.
             gizmo::handle_length(origin, pose, self.orthographic, self.sized.1 as f32),
-        ))
+        );
+        // The renderer skins Move's and Rotate's alone the same way.
+        Some(match self.transform.tool {
+            Tool::Move | Tool::Rotate => handles.skinned(
+                crate::transform::skin(),
+                pose,
+                self.orthographic,
+                self.transform.tool == Tool::Rotate,
+            ),
+            _ => handles,
+        })
     }
 
     /// Where the Scale tool's balls stand this frame: on the faces of a lone
@@ -545,11 +574,17 @@ impl WorkspaceView {
         self.click_on_release = None;
     }
 
-    /// Draws only the Move arrow or Scale ball `ray` grabbed, for as long as
-    /// the drag holds it: Studio hides the other five mid-drag (see
-    /// `rbx_viewer::gizmo::Gizmo::held`), and [`WorkspaceView::end_drag`]
-    /// brings them back.
+    /// Draws only the Move arrow or Scale ball `ray` grabbed, or next-gen's
+    /// plane square or ring, for as long as the drag holds it: Studio hides
+    /// the rest mid-drag (see `rbx_viewer::gizmo::Gizmo::held` and
+    /// `Gizmo::grip`), and [`WorkspaceView::end_drag`] brings them back.
     fn hold_handle(&mut self, ray: Ray) {
+        let grip = match self.transform.tool {
+            Tool::Move | Tool::Rotate => self
+                .handles()
+                .and_then(|handles| handles.grip(ray, self.transform.tool == Tool::Rotate)),
+            _ => None,
+        };
         let end = match self.transform.tool {
             Tool::Move => self.handles().and_then(|handles| handles.grab_arm(ray)),
             Tool::Scale => self.faces().and_then(|faces| faces.grab(ray)),
@@ -567,9 +602,12 @@ impl WorkspaceView {
             | Tool::Pivot
             | Tool::Terrain => None,
         };
-        if let Some(end) = end {
+        let end = end.map(End::of);
+        if end.is_some() || grip.is_some() {
             let held = self.transform.gizmo().map(|gizmo| Gizmo {
-                held: Some(End::of(end)),
+                held: end,
+                // An arrow under the cursor wins the press over a square.
+                grip: grip.filter(|_| end.is_none()),
                 ..gizmo
             });
             self.show_gizmo(held);
@@ -585,9 +623,13 @@ impl WorkspaceView {
         match self.transform.tool {
             // Edit Pivot's handles are `grab_pivot`'s.
             Tool::Select | Tool::Sun | Tool::Pivot | Tool::Terrain => None,
-            Tool::Move => self.grab_axis(&handles, ray),
+            Tool::Move => self
+                .grab_axis(&handles, ray)
+                .or_else(|| next_gen::grab_plane(&handles, anchor, ray)),
             Tool::Scale => self.grab_scale(ray, lock_shape, centred),
-            Tool::Rotate => self.grab_ring(&handles, anchor, ray),
+            Tool::Rotate => self
+                .grab_ring(&handles, anchor, ray)
+                .or_else(|| next_gen::grab_rotate(&handles, anchor, ray)),
             // Innermost first: Move's arms sit closest to the part, Scale's
             // balls stand on its own surface a little further out, and
             // Rotate's rings reach the furthest, the same distance as an
@@ -1127,6 +1169,7 @@ pub(super) fn advance(drag: Drag, ray: Ray, landing: Landing) -> Option<(Drag, C
             Some((drag, Change::Position(hit + offset)))
         }
         Drag::Size { .. } | Drag::Box { .. } => scale::advance(drag, ray, landing),
+        Drag::Slide { .. } | Drag::Ball { .. } => next_gen::advance(drag, ray, landing),
         Drag::Ring {
             origin,
             frame,

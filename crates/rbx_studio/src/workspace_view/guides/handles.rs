@@ -65,6 +65,8 @@ impl WorkspaceView {
             }
             Drag::Plane { .. }
             | Drag::Ring { .. }
+            | Drag::Slide { .. }
+            | Drag::Ball { .. }
             | Drag::Sun
             | Drag::Terrain
             | Drag::Joint { .. } => return,
@@ -120,6 +122,8 @@ impl WorkspaceView {
             } => (origin, axis, grabbed),
             Drag::Plane { .. }
             | Drag::Ring { .. }
+            | Drag::Slide { .. }
+            | Drag::Ball { .. }
             | Drag::Sun
             | Drag::Terrain
             | Drag::Joint { .. } => return,
@@ -227,7 +231,7 @@ impl WorkspaceView {
         let at = label::move_label(
             base,
             direction,
-            (gizmo::SHAFT_START * arm, arm),
+            (handles.shaft_start(), arm),
             along,
             lagging.direction,
             offset,

@@ -9,8 +9,12 @@
 
 pub mod bsp;
 pub mod csgmdl;
+pub mod csgphs;
+pub mod decompose;
+pub mod hull;
 pub mod repair;
 pub mod shapes;
+pub mod solidmesh;
 
 pub use glam;
 use glam::{DMat4, DVec3, Mat4};
@@ -24,6 +28,9 @@ pub use shapes::MeshData;
 /// A result that outgrows this many polygons after any single step is
 /// abandoned: the fallback box is better than a load stalled on one asset.
 const MAX_POLYGONS: usize = 200_000;
+
+/// Medium stone grey, a new part's colour: what a face no part painted takes.
+pub const DEFAULT_COLOR: [u8; 3] = [163, 162, 165];
 
 /// Why a boolean did not turn into a mesh.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -40,6 +47,17 @@ pub enum Failure {
     /// additive leaf's own volume, a global (or large partial) winding
     /// flip, or a boolean that grew instead of shrank.
     Inverted,
+}
+
+/// What [`Solid::mass_properties`] measures.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MassProperties {
+    pub volume: f64,
+    pub centroid: DVec3,
+    /// `Ixx`, `Iyy`, `Izz`.
+    pub inertia_diagonal: DVec3,
+    /// `Ixy`, `Ixz`, `Iyz` (negated products of inertia).
+    pub inertia_off_diagonal: DVec3,
 }
 
 /// A closed polygon soup, the unit of every boolean here.
@@ -84,7 +102,7 @@ fn merge_quad_pairs(polygons: Vec<Polygon>) -> Vec<Polygon> {
 fn merge_diagonal(a: &Polygon, b: &Polygon) -> Option<Polygon> {
     const POSITION_EPSILON: f64 = 1e-9;
     let same = |p: DVec3, q: DVec3| (p - q).length_squared() < POSITION_EPSILON * POSITION_EPSILON;
-    if a.vertices.len() != 3 || b.vertices.len() != 3 {
+    if a.vertices.len() != 3 || b.vertices.len() != 3 || a.color != b.color {
         return None;
     }
     if a.plane.normal.dot(b.plane.normal) < 1.0 - 1e-7 || (a.plane.w - b.plane.w).abs() > 1e-6 {
@@ -102,6 +120,7 @@ fn merge_diagonal(a: &Polygon, b: &Polygon) -> Option<Polygon> {
                 return Some(Polygon {
                     vertices: vec![apex_a, s_a, apex_b, s_b],
                     plane: a.plane,
+                    color: a.color,
                 });
             }
         }
@@ -138,12 +157,21 @@ impl Solid {
                 Some(Polygon {
                     vertices: vec![a, b, c],
                     plane,
+                    color: DEFAULT_COLOR,
                 })
             })
             .collect();
         Solid {
             polygons: merge_quad_pairs(polygons),
         }
+    }
+
+    /// The same solid with every face painted `color`.
+    pub fn painted(mut self, color: [u8; 3]) -> Solid {
+        for polygon in &mut self.polygons {
+            polygon.color = color;
+        }
+        self
     }
 
     pub fn is_empty(&self) -> bool {
@@ -274,14 +302,20 @@ impl Solid {
                 }
                 let plane = Plane::from_points(vertices[0], vertices[1], vertices[2])
                     .unwrap_or(polygon.plane);
-                Polygon { vertices, plane }
+                Polygon {
+                    vertices,
+                    plane,
+                    color: polygon.color,
+                }
             })
             .collect();
         Solid { polygons }
     }
 
     /// Fan-triangulates every polygon with its plane normal on each corner:
-    /// flat shading, the look Roblox's own baked unions have.
+    /// flat shading, the look Roblox's own baked unions have. Each corner
+    /// carries its polygon's colour, what Studio paints a union in when
+    /// `UsePartColor` is off.
     pub fn to_mesh(&self) -> rbx_mesh::Mesh {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
@@ -309,7 +343,7 @@ impl Solid {
                         position[axis_u] / rbx_materials::DEFAULT_STUDS_PER_TILE,
                         position[axis_v] / rbx_materials::DEFAULT_STUDS_PER_TILE,
                     ],
-                    color: [255; 4],
+                    color: [polygon.color[0], polygon.color[1], polygon.color[2], 255],
                 });
             }
             for corner in 1..polygon.vertices.len().saturating_sub(1) as u32 {
@@ -340,6 +374,59 @@ impl Solid {
             .tetrahedra()
             .fold((0.0, DVec3::ZERO), |(v, m), (dv, c)| (v + dv, m + c * dv));
         (volume.abs() > f64::EPSILON).then(|| moment / volume)
+    }
+
+    /// Volume, centre of mass and volume inertia about that centre at unit
+    /// density, the `UnscaledVolume`, `UnscaledCofm` and
+    /// `UnscaledVolInertiaDiags`/`OffDiags` Studio saves on a union.
+    /// `None` for a solid with no volume.
+    pub fn mass_properties(&self) -> Option<MassProperties> {
+        let mut volume = 0.0;
+        let mut moment = DVec3::ZERO;
+        // Second moments about the origin: x², y², z², then xy, xz, yz.
+        let mut square = DVec3::ZERO;
+        let mut product = DVec3::ZERO;
+        for polygon in &self.polygons {
+            let a = polygon.vertices[0];
+            for pair in polygon.vertices[1..].windows(2) {
+                let (b, c) = (pair[0], pair[1]);
+                let det = a.dot(b.cross(c));
+                volume += det / 6.0;
+                moment += (a + b + c) * det / 24.0;
+                square += (a * a + b * b + c * c + a * b + a * c + b * c) * det / 60.0;
+                let mixed = |i: usize, j: usize| {
+                    2.0 * (a[i] * a[j] + b[i] * b[j] + c[i] * c[j])
+                        + a[i] * b[j]
+                        + a[j] * b[i]
+                        + a[i] * c[j]
+                        + a[j] * c[i]
+                        + b[i] * c[j]
+                        + b[j] * c[i]
+                };
+                product += DVec3::new(mixed(0, 1), mixed(0, 2), mixed(1, 2)) * det / 120.0;
+            }
+        }
+        if volume.abs() <= f64::EPSILON {
+            return None;
+        }
+        let centroid = moment / volume;
+        let square = square - centroid * centroid * volume;
+        let product = product
+            - DVec3::new(
+                centroid.x * centroid.y,
+                centroid.x * centroid.z,
+                centroid.y * centroid.z,
+            ) * volume;
+        Some(MassProperties {
+            volume,
+            centroid,
+            inertia_diagonal: DVec3::new(
+                square.y + square.z,
+                square.x + square.z,
+                square.x + square.y,
+            ),
+            inertia_off_diagonal: -product,
+        })
     }
 
     /// Axis-aligned bounds, `None` for an empty solid.

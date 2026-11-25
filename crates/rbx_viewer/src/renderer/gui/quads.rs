@@ -18,7 +18,7 @@ use super::atlas::Slot;
 use super::gradient::Rows;
 use super::pipeline::VertexRaw;
 use super::text::Typesetter;
-use crate::scene::{gui_image_placeholder, GuiElement, GuiRect};
+use crate::scene::{gui_image_placeholder, GuiElement, GuiParticles, GuiRect};
 
 mod image;
 mod shape;
@@ -39,11 +39,15 @@ pub(super) struct Scissor {
     pub(super) height: u32,
 }
 
-/// One contiguous slice of the vertex buffer sharing a texture and a scissor.
+/// One contiguous slice of the vertex buffer sharing a texture and a scissor,
+/// or, with `particles`, the place in the paint order one
+/// `ParticleEmitter2D`'s particles are drawn at, from a buffer of their own
+/// rebuilt every frame (see `super::particles`); its `range` is then empty.
 pub(super) struct Run {
     pub(super) texture: usize,
     pub(super) scissor: Option<Scissor>,
     pub(super) range: Range<u32>,
+    pub(super) particles: Option<Box<GuiParticles>>,
 }
 
 /// Every rectangle of every element, in paint order, and the gradient ramps
@@ -87,6 +91,9 @@ fn build_once(
             None => None,
         };
         if element.rect.width <= 0.0 || element.rect.height <= 0.0 {
+            // Nothing of its own to paint, but a `Point` emitter still has a
+            // centre to emit from.
+            particles(element, target, &mut runs);
             continue;
         }
 
@@ -280,9 +287,33 @@ fn build_once(
                 &mut runs,
             );
         }
+
+        // Over everything the element paints, strokes and text included,
+        // and under its children, which come later in `elements`.
+        particles(element, target, &mut runs);
     }
 
     (vertices, runs, rows)
+}
+
+/// A run for each of `element`'s `ParticleEmitter2D`s, in tree order, so a
+/// later sibling emitter's particles land over an earlier one's (measured).
+fn particles(element: &GuiElement, target: (u32, u32), runs: &mut Vec<Run>) {
+    for emitter in &element.particles {
+        let scissor = match &emitter.clip {
+            Some(clip) => match scissor(clip, target) {
+                Some(scissor) => Some(scissor),
+                None => continue,
+            },
+            None => None,
+        };
+        runs.push(Run {
+            texture: WHITE,
+            scissor,
+            range: 0..0,
+            particles: Some(Box::new(emitter.clone())),
+        });
+    }
 }
 
 /// Appends to the last run where it shares this one's texture and scissor,
@@ -293,13 +324,16 @@ fn extend(runs: &mut Vec<Run>, texture: usize, scissor: Option<Scissor>, range: 
     }
     let range = range.start as u32..range.end as u32;
     match runs.last_mut() {
-        Some(last) if last.texture == texture && last.scissor == scissor => {
+        Some(last)
+            if last.texture == texture && last.scissor == scissor && last.particles.is_none() =>
+        {
             last.range.end = range.end;
         }
         _ => runs.push(Run {
             texture,
             scissor,
             range,
+            particles: None,
         }),
     }
 }

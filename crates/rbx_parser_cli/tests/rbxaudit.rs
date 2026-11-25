@@ -31,10 +31,20 @@ fn audit(dom: &WeakDom) -> Output {
 }
 
 fn run(path: &Path) -> Output {
+    run_with(&[], path)
+}
+
+fn run_with(flags: &[&str], path: &Path) -> Output {
     Command::new(env!("CARGO_BIN_EXE_rbxaudit"))
+        .args(flags)
         .arg(path)
         .output()
         .expect("spawn rbxaudit")
+}
+
+/// The generated pre-publish fixture place (`rbx_audit`'s `tests/prepublish.rs`).
+fn prepublish_fixture() -> std::path::PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/tests/prepublish/PrePublish.rbxlx")
 }
 
 #[test]
@@ -66,4 +76,56 @@ fn a_missing_file_exits_two() {
 
     assert_eq!(output.status.code(), Some(2));
     assert!(!output.stderr.is_empty());
+}
+
+#[test]
+fn prepublish_offline_reports_every_rule_and_exits_one() {
+    let output = run_with(&["--prepublish", "--offline"], &prepublish_fixture());
+
+    // A malformed asset id and an over-limit-free place: High from the id.
+    assert_eq!(output.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    for expected in [
+        "high   broken-asset Workspace.Props.BadMesh",
+        "medium broken-asset Workspace.Props.EmptyMesh",
+        "low    assets-not-checked Workspace 4 asset id(s) not checked",
+        "low    deprecated-api ServerScriptService.Deprecated:5",
+        "medium datastore-without-pcall ServerScriptService.Data:10",
+        "medium unanchored-parts Workspace.Crates 2 unanchored",
+        "medium heavy-geometry Workspace.Props.BigUnion",
+        "low    streaming-index StarterPlayer.StarterPlayerScripts.Streaming:2",
+        "low    no-server-listener ReplicatedStorage.Orphan",
+    ] {
+        assert!(
+            stdout.lines().any(|l| l.starts_with(expected)),
+            "{expected}\n{stdout}"
+        );
+    }
+}
+
+#[test]
+fn prepublish_json_is_one_object_for_ci() {
+    let output = run_with(
+        &["--prepublish", "--offline", "--json"],
+        &prepublish_fixture(),
+    );
+
+    assert_eq!(output.status.code(), Some(1));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("json");
+    let findings = report["findings"].as_array().unwrap();
+    assert!(findings.iter().any(|f| f["check"] == "broken-asset"
+        && f["severity"] == "high"
+        && f["path"] == "Workspace.Props.BadMesh"
+        && f["line"].is_null()));
+    assert!(findings
+        .iter()
+        .any(|f| f["check"] == "deprecated-api" && f["line"] == 5));
+    assert_eq!(report["summary"]["high"], 1);
+}
+
+#[test]
+fn offline_without_prepublish_is_bad_usage() {
+    let output = run_with(&["--offline"], &prepublish_fixture());
+
+    assert_eq!(output.status.code(), Some(2));
 }

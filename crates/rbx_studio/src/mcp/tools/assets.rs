@@ -1,5 +1,6 @@
 //! The asset and content-generation tools: searching the Creator Store and
-//! an inventory, inserting an asset by id, uploading images, and the AI
+//! an inventory, inserting an asset by id, importing a model file or free
+//! kit model (ours), uploading images, and the AI
 //! generation tools, whose backend Roblox keeps to Studio.
 //!
 //! Everything here reaches Roblox through Open Cloud with the editor's API
@@ -9,6 +10,7 @@
 
 mod generate;
 mod images;
+mod import;
 mod insert;
 mod search;
 
@@ -32,6 +34,7 @@ pub(super) fn run(name: &str, arguments: &Value, session: &mut Session) -> Optio
     Some(match name {
         search::NAME => search::run(arguments, session),
         insert::NAME => insert::run(arguments, session),
+        import::NAME => import::run(arguments, session),
         images::UPLOAD => images::upload(arguments, session),
         images::STORE => images::store(arguments),
         generate::MESH | generate::MATERIAL | generate::PROCEDURAL => generate::refuse(name),

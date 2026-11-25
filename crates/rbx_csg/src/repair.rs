@@ -206,6 +206,7 @@ pub fn clean(polygons: Vec<Polygon>) -> Vec<Polygon> {
             (ring.len() >= 3).then_some(Polygon {
                 vertices: ring,
                 plane: polygon.plane,
+                color: polygon.color,
             })
         })
         .collect()
@@ -274,6 +275,7 @@ pub fn weld_t_junctions(polygons: Vec<Polygon>) -> Vec<Polygon> {
             Polygon {
                 vertices: ring,
                 plane: polygon.plane,
+                color: polygon.color,
             }
         })
         .collect()

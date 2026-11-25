@@ -319,7 +319,7 @@ impl Metrics {
             images: HashMap::new(),
             shapes: Vec::new(),
             unions: HashMap::new(),
-            materials: material_service(dom, database),
+            materials: material_service(dom, database, false),
             garments: HashMap::new(),
             constraints: HashMap::new(),
             models: HashMap::new(),
@@ -407,7 +407,7 @@ impl Metrics {
             self.read(dom, referent, false, fetch);
         }
         if materials {
-            self.materials = material_service(dom, self.database);
+            self.materials = material_service(dom, self.database, false);
             let parts: Vec<Ref> = self.entries.keys().copied().collect();
             for part in parts {
                 self.read(dom, part, true, fetch);

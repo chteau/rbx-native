@@ -1,4 +1,4 @@
-//! The top menu bar: File / Edit / Model / View, mounted above the dock area
+//! The top menu bar: File / Edit / Model / View / Help, mounted above the dock area
 //! (see `Render for Shell`). The structure is GPUI's own OS-menu shape
 //! (`Menu`/`MenuItem`/`OwnedMenu`), and each dropdown is `gpui_component`'s
 //! stock [`PopupMenu`](gpui_kit::component::menu::PopupMenu), which already
@@ -79,10 +79,13 @@ actions!(
         MenuUpdatePlanning,
         MenuOpenAutoSaves,
         MenuStudioSettings,
+        /// Help › About RbxNative, and macOS's app menu item of that name.
+        MenuAbout,
         /// Cmd+Q on macOS: the close button's question, then the whole app.
         MenuQuit,
         MenuCustomizeShortcuts,
         MenuBetaFeatures,
+        MenuConnectAi,
         MenuScriptTemplates,
         MenuUndo,
         MenuRedo,
@@ -92,6 +95,7 @@ actions!(
         MenuInsertMesh,
         MenuInsertRig,
         MenuImportImage,
+        MenuImportVideo,
         MenuInsertScript,
         MenuInsertLocalScript,
         MenuInsertModuleScript,
@@ -126,6 +130,7 @@ actions!(
         MenuToggleInputActions,
         MenuToggleToolbox,
         MenuToggleSecurityAudit,
+        MenuTogglePrePublish,
         MenuRequireGraph,
         MenuRunLocal,
         MenuTogglePlaytests,
@@ -185,7 +190,7 @@ pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut Ap
 /// script classes and the OOP `ModuleScript` variant, Roblox itself offers
 /// `Script`/`LocalScript`/`ModuleScript` as distinct inserts, so this matches
 /// that rather than collapsing them into one generic "Insert Script", and
-/// Group/Ungroup (`shell::group`, Ctrl+G/Ctrl+Shift+G). View's Explorer,
+/// Group/Ungroup (`shell::group`, Ctrl+G/Ctrl+U). View's Explorer,
 /// Properties and Command Bar items show and hide their panels, and Style
 /// Editor brings its own
 /// Style Editor document to the front (see `shell::style_panel`). The
@@ -193,6 +198,8 @@ pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut Ap
 /// the ribbon's Script menu names them, so the two menus list the same
 /// things; last because the list is the user's and can run long, and the
 /// popup does not scroll, so it must not push Group/Ungroup out of reach.
+/// Help holds About RbxNative, Settings' About page: the version and the
+/// credits.
 ///
 /// Also the command palette's source (`shell::palette`): every enabled item
 /// here is a palette row, so the two cannot list different commands.
@@ -211,6 +218,11 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         MenuItem::action("Insert Rig…", MenuInsertRig),
         MenuItem::action("Import 3D Model…", MenuImportModel),
         MenuItem::action("Import Image…", MenuImportImage),
+    ];
+    if crate::shell::video_upload_enabled() {
+        model.push(MenuItem::action("Import Video…", MenuImportVideo));
+    }
+    model.extend([
         MenuItem::separator(),
         // The id Sync Shared matches across a game's places.
         MenuItem::action("Mark as Shared", MenuMarkShared),
@@ -218,7 +230,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         MenuItem::separator(),
         MenuItem::action("Group", MenuGroup),
         MenuItem::action("Ungroup", MenuUngroup),
-    ];
+    ]);
     if crate::beta::enabled(crate::shell::LOCAL_RUN_BETA_ID) {
         model.push(MenuItem::separator());
         model.push(MenuItem::action("Run (local)", MenuRunLocal));
@@ -285,6 +297,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
         // Studio keeps both of these under File as well.
         MenuItem::action("Customize Shortcuts…", MenuCustomizeShortcuts),
         MenuItem::action("Beta Features…", MenuBetaFeatures),
+        MenuItem::action("Connect an AI Assistant…", MenuConnectAi),
         MenuItem::action("Script Templates…", MenuScriptTemplates),
     ];
     if crate::beta::enabled(crate::update_planning::BETA_ID) {
@@ -340,6 +353,7 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                     MenuItem::action("Toolbox", MenuToggleToolbox),
                     MenuItem::action("Input Actions", MenuToggleInputActions),
                     MenuItem::action("Security Audit", MenuToggleSecurityAudit),
+                    MenuItem::action("Pre-publish Check", MenuTogglePrePublish),
                 ]
                 .into_iter()
                 // A window rather than a dock, listed with the docks that read
@@ -369,6 +383,9 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                 ])
                 .collect::<Vec<_>>(),
             )
+            .owned(),
+        Menu::new("Help")
+            .items(vec![MenuItem::action("About RbxNative", MenuAbout)])
             .owned(),
     ]
 }

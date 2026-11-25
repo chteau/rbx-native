@@ -252,6 +252,10 @@ impl Offscreen {
     }
 
     /// Swaps the main camera between perspective and orthographic projection.
+    pub(crate) fn set_place_orthographic(&mut self, place: bool) {
+        self.renderer.set_place_orthographic(place);
+    }
+
     pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
         self.renderer.set_orthographic(orthographic);
     }
@@ -312,6 +316,10 @@ impl Offscreen {
     /// rather than writes into the next (see `Headless::gui_scroll_target`).
     pub(crate) fn renderer(&self) -> &Renderer {
         &self.renderer
+    }
+
+    pub(crate) fn renderer_mut(&mut self) -> &mut Renderer {
+        &mut self.renderer
     }
 
     /// The renderer with the device and queue it draws through, for an

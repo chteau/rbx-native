@@ -1,9 +1,9 @@
 use gpui_kit::{Action, OwnedMenuItem};
 
 use super::{
-    menus, MenuClosePlace, MenuExportFbx, MenuExportGltf, MenuInsertTemplate, MenuLinkRobloxPlace,
-    MenuMergePlace, MenuOpenAutoSaves, MenuPlaceholder, MenuPublishToRoblox, MenuSave,
-    MenuSaveToFile, MenuSaveToRoblox, MenuVersionHistory,
+    menus, MenuAbout, MenuClosePlace, MenuExportFbx, MenuExportGltf, MenuInsertTemplate,
+    MenuLinkRobloxPlace, MenuMergePlace, MenuOpenAutoSaves, MenuPlaceholder, MenuPublishToRoblox,
+    MenuSave, MenuSaveToFile, MenuSaveToRoblox, MenuVersionHistory,
 };
 use crate::script_templates::Template;
 
@@ -35,16 +35,31 @@ fn a_placeholder_item_is_exactly_the_set_of_disabled_items() {
     }
 }
 
-/// The four titles the rest of this module's doc comment describes, in the
-/// order Studio itself puts them, a reordering here changes what F10 lands
-/// on, so it is worth being deliberate about.
+/// The five titles the rest of this module's doc comment describes, in the
+/// order Studio itself puts them, Help last as every app does; a reordering
+/// here changes what F10 lands on, so it is worth being deliberate about.
 #[test]
-fn the_bar_holds_the_four_titles_in_order() {
+fn the_bar_holds_the_five_titles_in_order() {
     let names: Vec<String> = menus(&[])
         .iter()
         .map(|menu| menu.name.to_string())
         .collect();
-    assert_eq!(names, ["File", "Edit", "Model", "View"]);
+    assert_eq!(names, ["File", "Edit", "Model", "View", "Help"]);
+}
+
+/// Help holds About RbxNative, the way to the version and the credits.
+#[test]
+fn help_opens_about() {
+    let menus = menus(&[]);
+    let help = menus
+        .iter()
+        .find(|menu| menu.name == "Help")
+        .expect("a Help menu");
+    assert!(matches!(
+        help.items.as_slice(),
+        [OwnedMenuItem::Action { name, action, .. }]
+            if name == "About RbxNative" && action.partial_eq(&MenuAbout)
+    ));
 }
 
 /// A menu whose first entry is a separator draws a stray rule at the top,
@@ -158,11 +173,12 @@ fn file_ends_with_script_templates_under_studio_settings() {
         })
         .collect();
     assert_eq!(
-        names[names.len() - 4..],
+        names[names.len() - 5..],
         [
             "Studio Settings\u{2026}",
             "Customize Shortcuts\u{2026}",
             "Beta Features\u{2026}",
+            "Connect an AI Assistant\u{2026}",
             "Script Templates\u{2026}"
         ]
     );

@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 
-use crate::class::{ClassDescriptor, PropertyDescriptor};
+use crate::class::{ClassDescriptor, FunctionDescriptor, PropertyDescriptor};
 use crate::enums::EnumDescriptor;
 
 // The dump marks classes with no parent (e.g. `Instance`) with this sentinel
@@ -102,6 +102,15 @@ pub(crate) fn parse_dump(
 fn convert_class(raw: RawClass) -> ClassDescriptor {
     let superclass = raw.superclass.filter(|name| name != ROOT_SUPERCLASS);
 
+    let functions = raw
+        .members
+        .iter()
+        .filter(|member| member.member_type == "Function")
+        .map(|member| FunctionDescriptor {
+            name: member.name.clone(),
+            deprecated: member.tags.iter().any(|tag| tag == "Deprecated"),
+        })
+        .collect();
     // Function/Event/Callback members share the same list; only properties
     // carry a ValueType and matter for serialized instance data.
     let properties = raw
@@ -127,6 +136,7 @@ fn convert_class(raw: RawClass) -> ClassDescriptor {
         name: raw.name,
         superclass,
         properties,
+        functions,
         tags: raw.tags,
     }
 }

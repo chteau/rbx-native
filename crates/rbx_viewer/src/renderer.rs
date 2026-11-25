@@ -83,7 +83,7 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use cue::OverlayColors;
-pub use gui::{measure_text, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
+pub use gui::{gui_particle_burst, measure_text, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;
 pub use lines::{Fill, Segment};
@@ -237,6 +237,10 @@ pub(crate) struct Renderer {
     /// [`Renderer::set_isolated`]): no environment, neutral light, a flat
     /// backdrop. Which *parts* are drawn is the scene's to say, not this.
     isolated: bool,
+    /// The orthographic view is the place camera's own (`ProjectionType`
+    /// Orthographic), which Studio draws over black with no sky, unlike the
+    /// editor's own orthographic toggle.
+    place_ortho: bool,
     /// See [`Renderer::set_fullbright`].
     fullbright: bool,
     /// What the sun's shadow map is fitted to instead of `bounds` while
@@ -400,12 +404,13 @@ impl Renderer {
                 images,
                 quality,
             ),
-            adornments: Adornments::new(device, queue, target, scene.adornments(), images, quality),
+            adornments: Adornments::new(device, queue, scene.adornments(), images, quality),
             highlights: highlight::Highlights::new(
                 device,
                 queue,
                 &layout,
                 target,
+                highlight::Onto::Scene,
                 highlight::Source {
                     highlights: scene.highlights(),
                     parts: scene.parts(),
@@ -456,6 +461,7 @@ impl Renderer {
             target,
             refracting: scene.has_glass(),
             isolated: false,
+            place_ortho: false,
             fullbright: false,
             stage: None,
         }
@@ -521,6 +527,17 @@ impl Renderer {
     /// see `Camera::with_orthographic`.
     pub(crate) fn set_orthographic(&mut self, orthographic: bool) {
         self.camera = self.camera.with_orthographic(orthographic);
+    }
+
+    /// See the `place_ortho` field.
+    pub(crate) fn set_place_orthographic(&mut self, place: bool) {
+        self.place_ortho = place;
+    }
+
+    /// Whether this frame leaves the sky out for a place camera's
+    /// orthographic view.
+    fn sky_hidden(&self) -> bool {
+        self.place_ortho && self.camera.is_orthographic()
     }
 
     /// The `ScrollingFrame` of the screen overlay the wheel over `point` (in
@@ -677,8 +694,11 @@ impl Renderer {
         let axes = handle_axes(editing, gizmo.local, gizmo.pivot, rotation);
         let arm = handle_length(origin, pose, orthographic, height);
         let handles = Handles::new(origin, basis(axes), arm);
+        // Only Move and Rotate take the next-gen geometry; Transform's and
+        // Edit Pivot's combined gizmos keep the classic one in its colours.
+        let skinned = handles.skinned(gizmo.skin, pose, orthographic, gizmo.kind == Kind::Rotate);
         Some(match gizmo.kind {
-            Kind::Rotate => Shape::Rotate(handles),
+            Kind::Rotate => Shape::Rotate(skinned),
             Kind::Pivot => {
                 // Squared to the pivot, so the hotspots turn with it.
                 let axes = Mat3::from_mat4(gizmo.pivot?);
@@ -699,7 +719,7 @@ impl Renderer {
                 Shape::Transform(handles, faces)
             }
             // `Kind::Scale` never reaches here, it returned above.
-            _ => Shape::Move(handles),
+            _ => Shape::Move(skinned),
         })
     }
 
@@ -728,7 +748,18 @@ impl Renderer {
             || (drawn.terrain && self.terrain.grass.is_drawn())
             || (drawn.effects && (self.beams.is_live() || self.trails.is_live()))
             || (drawn.effects && self.particles.is_live())
+            || self.gui.animating()
             || self.textured.has_pending()
+    }
+
+    /// Whether a GUI's particles are moving, so a canvas of it is owed frames.
+    pub(crate) fn gui_animating(&self) -> bool {
+        self.gui.animating()
+    }
+
+    /// See `Headless::hold_gui_particles`.
+    pub(crate) fn hold_gui_particles(&mut self) {
+        self.gui.hold_particles();
     }
 
     /// The terrain half of an edit: re-meshes `keys`, rewrites every
@@ -809,10 +840,8 @@ impl Renderer {
         // and this level's render distance. The shadow pass below never uses
         // this, see `Fit::visible`, so a caster it culls can still land a
         // shadow inside the frame.
-        let held = self.gizmo.and_then(|gizmo| gizmo.held);
-        let hover = self.gizmo.and_then(|gizmo| gizmo.hover);
         self.draggers
-            .update(queue, self.handles(from, size.1 as f32), held, hover, eye);
+            .update(queue, self.handles(from, size.1 as f32), self.gizmo, eye);
         let frustum = Frustum::new(&self.camera, from, aspect);
         let cull = MainCull::new(&frustum, eye, self.quality.render_distance);
         let drawn = self.surroundings();
@@ -894,8 +923,11 @@ impl Renderer {
         }
         // A `SelectionSphere`'s outline faces the eye, so its vertices are
         // the camera's to decide, and a buffer written here cannot be
-        // written inside the pass that reads it.
-        self.adornments.prepare(device, eye);
+        // written inside the pass that reads it. The adornments' draw order
+        // is the eye's too (see `renderer::adornment`).
+        self.adornments.prepare(device, eye, view_projection);
+        // Not over an isolated view, where an adornee may well be hidden.
+        let adorned = self.surroundings().adornments;
 
         // Every frame rather than when the switch flips: a `Lighting` edit
         // writes the place's effects into the chain while isolated too.
@@ -1009,8 +1041,19 @@ impl Renderer {
             &self.meshes,
             size,
         );
-        // After the place's own highlights: the editor's cue for what is
-        // selected has to read on top of whatever the file asks for.
+        // Place content over every scene pass: the resolve lays the
+        // depth-tested adornments over the frame through Studio's tone curve
+        // (see `renderer::adornment`).
+        self.adornments.draw_layer(
+            device,
+            &mut encoder,
+            targets,
+            &self.frame.bind_group,
+            adorned,
+        );
+        // Between the layer's two passes: the selection fades where an
+        // opaque adornment stands in front of it, and not where a handle
+        // does (see `renderer::cue`).
         self.cues.draw(
             device,
             &mut encoder,
@@ -1018,6 +1061,14 @@ impl Renderer {
             &self.frame.bind_group,
             &self.meshes,
             size,
+            self.adornments.depth_written(),
+        );
+        self.adornments.finish_layer(
+            &mut encoder,
+            targets,
+            &self.frame.bind_group,
+            adorned,
+            self.draggers.triangles(),
         );
 
         // The scene is HDR and unclamped until here: the bloom, the grade and
@@ -1027,6 +1078,19 @@ impl Renderer {
             ..Default::default()
         });
         self.post.resolve(&mut encoder, &view);
+        // Onto the finished frame, over the depth-tested adornments and
+        // under the `AlwaysOnTop` ones, which is where Studio draws its
+        // selection and hover outlines.
+        self.cues.composite(device, &mut encoder, target);
+        // After the curve, the way Studio draws an `AlwaysOnTop` one.
+        self.adornments.draw_on_top(
+            device,
+            &mut encoder,
+            target,
+            targets,
+            &self.frame.bind_group,
+            adorned,
+        );
         // Onto the finished frame, so a one-pixel guide keeps its colour
         // (see `renderer::lines`), and under the `ScreenGui` like the rest
         // of the 3D view.

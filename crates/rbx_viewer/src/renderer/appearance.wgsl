@@ -78,7 +78,8 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     // A SurfaceAppearance replaces the part's texture pack outright, so only the
     // kinds that read no texture anyway survive it; everything else shades as a
     // plain textured material would.
-    out.kind = select(KIND_TEXTURED, instance.material_kind, is_procedural(instance.material_kind));
+    let kind = instance.material_kind & KIND_MASK;
+    out.kind = select(KIND_TEXTURED, kind, is_procedural(kind));
     return out;
 }
 

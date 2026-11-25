@@ -33,6 +33,7 @@ pub(in crate::shell::ugc) enum Key {
 
 #[derive(Debug, Clone, PartialEq)]
 struct PartPlan {
+    node: Ref,
     name: String,
     mesh: Option<Key>,
     size: [f32; 3],
@@ -52,6 +53,14 @@ struct CagePlan {
     kind: CageKind,
     name: String,
     mesh: Key,
+    /// The part the cage is placed by, and the cage's own frame on it:
+    /// a `WrapLayer`'s `CageOrigin` or `ReferenceOrigin` on its handle.
+    node: Ref,
+    origin: CFrame,
+    /// `node`'s own `CFrame`, to measure the cage against the handle.
+    cframe: CFrame,
+    /// A cage that is a `MeshPart` of its own is stretched to its `Size`.
+    fit: Option<[f32; 3]>,
 }
 
 /// What [`resolve`] needs from the tree, with asset ids still unfetched.
@@ -67,8 +76,13 @@ pub(super) struct Plan {
     notes: Vec<Finding>,
 }
 
+/// `key`'s asset URI. A file Studio saves now holds a `FooId` property as
+/// the `FooContent` that replaced it (`ReferenceMeshContent`,
+/// `CageMeshContent`), so that is read when `key` is missing.
 fn uri<'a>(props: &'a BTreeMap<String, Variant>, key: &str) -> Option<&'a str> {
-    let text = match props.get(key)? {
+    let renamed = key.strip_suffix("Id").map(|stem| format!("{stem}Content"));
+    let value = props.get(key).or_else(|| props.get(renamed.as_deref()?))?;
+    let text = match value {
         Variant::String(text) => text.as_str(),
         Variant::Content(Content::Uri(uri)) => uri.as_str(),
         _ => return None,
@@ -92,7 +106,7 @@ pub(in crate::shell::ugc) fn mesh_key(text: &str) -> Option<Key> {
     }
 }
 
-fn cframe_of(props: &BTreeMap<String, Variant>) -> CFrame {
+pub(super) fn cframe_of(props: &BTreeMap<String, Variant>) -> CFrame {
     cframe_at(props, "CFrame")
 }
 
@@ -150,6 +164,7 @@ fn part_plan(dom: &WeakDom, part: Ref) -> Option<PartPlan> {
         })
         .collect();
     Some(PartPlan {
+        node: part,
         name: inst.name().to_string(),
         mesh: ["MeshId", "MeshContent"]
             .iter()
@@ -201,20 +216,30 @@ fn collect_textures(dom: &WeakDom, part: Ref, plan: &mut Plan) {
 
 fn wrap_cages(dom: &WeakDom, part: Ref, item: &str, plan: &mut Plan) {
     let Some(inst) = dom.get(part) else { return };
+    let cframe = cframe_of(inst.properties());
     for &child in inst.children() {
         let Some(wrap) = dom.get(child).filter(|c| c.class() == "WrapLayer") else {
             continue;
         };
         let props = wrap.properties();
-        for (key, kind, suffix) in [
-            ("ReferenceMeshId", CageKind::Inner, "InnerCage"),
-            ("CageMeshId", CageKind::Outer, "OuterCage"),
+        for (key, kind, suffix, origin) in [
+            (
+                "ReferenceMeshId",
+                CageKind::Inner,
+                "InnerCage",
+                "ReferenceOrigin",
+            ),
+            ("CageMeshId", CageKind::Outer, "OuterCage", "CageOrigin"),
         ] {
             if let Some(mesh) = uri(props, key).and_then(mesh_key) {
                 plan.cages.push(CagePlan {
                     kind,
                     name: format!("{item}_{suffix}"),
                     mesh,
+                    node: part,
+                    origin: cframe_at(props, origin),
+                    cframe,
+                    fit: None,
                 });
             }
         }
@@ -303,6 +328,10 @@ pub(super) fn plan(dom: &WeakDom, root: Ref, kind: ItemKind) -> Result<Plan, Str
                 kind,
                 name: name.to_string(),
                 mesh,
+                node: r,
+                origin: IDENTITY,
+                cframe: cframe_of(child.properties()),
+                fit: part_plan(dom, r).map(|p| p.size),
             });
             continue;
         }

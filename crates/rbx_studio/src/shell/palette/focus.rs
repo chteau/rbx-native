@@ -44,6 +44,7 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::Collaborators
         | Panel::InputActions
         | Panel::SecurityAudit
+        | Panel::PrePublish
         | Panel::Playtests
         | Panel::Tests
         | Panel::Bytecode

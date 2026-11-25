@@ -134,6 +134,8 @@ pub(crate) enum Panel {
     /// The whole-place security audit (`shell::security_audit`). Shut until
     /// asked for.
     SecurityAudit,
+    /// The pre-publish check (`shell::prepublish`). Shut until asked for.
+    PrePublish,
     /// Recorded playtests and their replay (`shell::playtests`). Shut
     /// until asked for.
     Playtests,
@@ -183,7 +185,7 @@ impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 26] = [
+    pub(crate) const ALL: [Panel; 27] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -197,6 +199,7 @@ impl Panel {
         Panel::Collaborators,
         Panel::InputActions,
         Panel::SecurityAudit,
+        Panel::PrePublish,
         Panel::Playtests,
         Panel::Tests,
         Panel::Bytecode,
@@ -228,6 +231,7 @@ impl Panel {
             | Panel::CallStack
             | Panel::InputActions
             | Panel::SecurityAudit
+            | Panel::PrePublish
             | Panel::Playtests
             | Panel::Tests
             | Panel::Loren
@@ -258,6 +262,7 @@ impl Panel {
             Panel::Collaborators => "Collaborators",
             Panel::InputActions => "Input Actions",
             Panel::SecurityAudit => "Security Audit",
+            Panel::PrePublish => "Pre-publish",
             Panel::Playtests => "Playtests",
             Panel::Tests => "Tests",
             Panel::Bytecode => "Bytecode",
@@ -294,6 +299,7 @@ impl Panel {
                 | Panel::Collaborators
                 | Panel::InputActions
                 | Panel::SecurityAudit
+                | Panel::PrePublish
                 | Panel::Playtests
                 | Panel::Tests
                 | Panel::Bytecode

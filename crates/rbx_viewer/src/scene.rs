@@ -53,10 +53,10 @@ pub(crate) use gui::{
     scroll_target as gui_scroll_target, span_face as gui_span_face, Align as GuiAlign,
     Anchor as GuiAnchor, Element as GuiElement, GradientKind as GuiGradientKind,
     GradientPx as GuiGradient, Grouped as GuiGroup, ImageScale as GuiImageScale, Join as GuiJoin,
-    Painted, PixelRect as GuiPixelRect, Rect as GuiRect, Screen as GuiScreen,
-    ScrollWindow as GuiScrollWindow, ShadowPx as GuiShadow, SpaceGui, StrokePx as GuiStroke,
-    Text as GuiText, TextMeasure as GuiTextMeasure, TextSpan as GuiTextSpan, Tile as GuiTile,
-    Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
+    Painted, ParticlesPx as GuiParticles, PixelRect as GuiPixelRect, Rect as GuiRect,
+    Screen as GuiScreen, ScrollWindow as GuiScrollWindow, ShadowPx as GuiShadow, SpaceGui,
+    StrokePx as GuiStroke, Text as GuiText, TextMeasure as GuiTextMeasure, TextSpan as GuiTextSpan,
+    Tile as GuiTile, Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
 #[cfg(test)]
 pub(crate) use gui::{
@@ -70,7 +70,15 @@ pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
 pub use isolation::STAGE_REACH;
 pub(crate) use isolation::{within as isolation_within, Isolation};
+pub use material::set_variant_alpha_modes;
+#[cfg(test)]
+pub(crate) use material::VariantAlpha;
 pub(crate) use material::{Catalog, Kind, Maps, Slot};
+#[cfg(test)]
+pub(crate) use particles::flat::read as read_gui_emitter;
+#[cfg(test)]
+pub(crate) use particles::flat::{FlatFrame, GuiEmitter};
+pub(crate) use particles::flat::{FlatParticle, FlatSim};
 pub(crate) use particles::sequence::{eval_color, eval_number};
 pub(crate) use particles::{Emitter, Simulation};
 use resync::Standing;
@@ -81,6 +89,7 @@ pub(crate) use union::fit as union_fit;
 // Read by the mesh export, which leaves out what these say draws nothing.
 pub(crate) use shape::draws_nothing;
 pub(crate) use union::is_empty as union_is_empty;
+pub(crate) use union::is_painted as is_painted_union;
 pub(crate) use union::triangles as union_triangles;
 pub(crate) use union::{unit_mesh, Evaluations as UnionEvaluations};
 

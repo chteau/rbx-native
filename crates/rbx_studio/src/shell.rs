@@ -29,6 +29,7 @@ mod documents;
 mod drag;
 mod edit;
 mod explorer_edit;
+mod explorer_icons;
 mod export;
 mod folder_color;
 mod format;
@@ -70,6 +71,7 @@ mod quality;
 mod query_select;
 mod recovery;
 mod ref_pick;
+mod reimport;
 mod reparent;
 mod reveal;
 mod ribbon;
@@ -88,12 +90,12 @@ pub(crate) use find_in_place::OpenFindInPlace;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
 pub(crate) use local_run::BETA_ID as LOCAL_RUN_BETA_ID;
 pub(crate) use localization::BETA_ID as PSEUDO_LOC_BETA_ID;
-pub(crate) use mcp::BETA_ID as MCP_BETA_ID;
 pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
 pub(crate) use plugins::install_text_box_keys;
 pub(crate) use profiler_dock::OpenMicroProfiler;
+pub(crate) use reimport::BETA_ID as AUTO_REIMPORT_BETA_ID;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
 pub(crate) use script_folds::FoldMemory;
@@ -102,6 +104,8 @@ pub(crate) use settings_window::open::{
     open_loading as open_loading_settings,
 };
 pub(crate) use team_presence::key_arrived;
+pub(crate) use ugc::VISUAL_BETA_ID as UGC_VISUAL_BETA_ID;
+pub(crate) use video_upload::{enabled as video_upload_enabled, BETA_ID as VIDEO_UPLOADS_BETA_ID};
 pub(crate) use view_snap::PresetView;
 mod toolbox;
 mod tree_keys;
@@ -113,6 +117,7 @@ mod game_settings;
 mod leak_finder;
 mod loadtest_dock;
 pub(crate) mod local_run;
+mod prepublish;
 mod profiler_dock;
 mod remote_inspector;
 mod require_graph;
@@ -145,6 +150,7 @@ pub(crate) mod tooltip;
 mod ugc;
 mod ui_editor;
 mod update_planning;
+mod video_upload;
 mod view_snap;
 mod viewport_dock;
 mod wally_dock;
@@ -258,6 +264,11 @@ pub(crate) struct Shell {
     /// (see `shell::theme_live`).
     theme: crate::theme::ThemePack,
     theme_watch: crate::theme::Watch,
+    /// A checked video waiting on its price (see `shell::video_upload`).
+    pending_video: Option<video_upload::PendingVideo>,
+    /// Auto-Reimport's watched instances and reimports in flight (see
+    /// `shell::reimport`).
+    reimports: reimport::Reimports,
     /// The render loop's frame rate cap while the window is unfocused (see
     /// `pacing::FocusPacing`). Persisted (see `settings`); every write goes
     /// through [`Shell::save_settings`].
@@ -357,6 +368,8 @@ pub(crate) struct Shell {
     insert_anchored: bool,
     /// See `Settings::strip_on_publish`.
     strip_on_publish: bool,
+    /// See `Settings::prepublish_skip`.
+    prepublish_skip: Vec<u64>,
     /// Editor layers and 3D notes; see `shell::layers`.
     layers: layers::LayerState,
     search: Entity<InputState>,
@@ -372,6 +385,7 @@ pub(crate) struct Shell {
     /// property name; see `shell::edit`.
     edits: edit::Edits,
     image_sizes: image_size::ImageSizes,
+    explorer_icons: explorer_icons::ExplorerIcons,
     sound_preview: sound_preview::SoundPreview,
     /// The Attributes/Tags section's own rename box and add-attribute/add-tag
     /// fields; see `shell::attributes_panel`.
@@ -439,6 +453,8 @@ pub(crate) struct Shell {
     input_edits: input_panel::InputEdits,
     /// The Security Audit dock's cached findings; see `shell::security_audit`.
     audit: security_audit::AuditState,
+    /// The Pre-publish dock's cached check; see `shell::prepublish`.
+    prepublish: prepublish::PrePublishState,
     /// The Localization dock's preview switch and strings; see
     /// `shell::localization`.
     localization: localization::LocalizationState,
@@ -451,6 +467,9 @@ pub(crate) struct Shell {
     ui: ui_editor::UiEditor,
     /// The Animation Editor document's own state; see `shell::animation`.
     anim: animation::Animation,
+    /// Why the last Union, Intersect, Negate or Separate failed, over the 3D
+    /// view; see `shell::solid_modeling`.
+    solid_toast: Option<animation::toast::Toast>,
     quality: Entity<SelectState<QualityOptions>>,
     /// The canonical, mutable tree a Command Bar script runs against; see
     /// `Place::dom`.
@@ -481,6 +500,8 @@ pub(crate) struct Shell {
     /// Whether opening a script's Graph side tidies it; persisted (see
     /// `settings`), written through `Shell::set_optimize_graph_on_open`.
     optimize_graph_on_open: bool,
+    /// Whether the MCP server should listen; see `Settings::mcp_server`.
+    mcp_enabled: bool,
     /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
     script_font_size: f32,
     output_scroll: ScrollHandle,
@@ -613,7 +634,7 @@ pub(crate) struct Shell {
     /// marked Active when several names hold the docks' arrangement.
     last_named_layout: Option<String>,
     output_collapsed: bool,
-    /// Beta Features › MCP server's listener; see `shell::mcp`.
+    /// Settings › AI assistants › MCP server's listener; see `shell::mcp`.
     mcp: Option<crate::mcp::endpoint::Server>,
     /// MCP tool calls waiting on work only the shell can do.
     mcp_jobs: mcp::Jobs,
@@ -706,10 +727,12 @@ impl Shell {
             output_display,
             optimize_graph_on_open,
             offline,
+            mcp_server,
             increment_names,
             expand_on_select,
             insert_anchored,
             strip_on_publish,
+            prepublish_skip,
             dragger,
             controls,
             argon_address: argon_address_setting,
@@ -860,6 +883,12 @@ impl Shell {
         transform.translate.increment = controls.move_increment;
         transform.rotate.increment = controls.rotate_increment;
         transform.pivot_snap = controls.pivot_snap;
+        // With the Orthographic Camera beta the place camera decides, as in
+        // Studio: a place saved looking orthographically opens that way.
+        let orthographic = match crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID) {
+            true => camera.is_some_and(|camera| camera.ortho.is_some()),
+            false => orthographic,
+        };
         let viewport = cx.new(|cx| {
             let opened = Opened {
                 viewer,
@@ -970,6 +999,8 @@ impl Shell {
             appearance: user.appearance,
             installed_icon_packs: user.icon_packs,
             theme_watch: crate::theme::Watch::new(user.theme.dir.clone()),
+            pending_video: None,
+            reimports: reimport::Reimports::default(),
             theme: user.theme,
             unfocused_fps,
             dragger,
@@ -1011,6 +1042,7 @@ impl Shell {
             expand_on_select,
             insert_anchored,
             strip_on_publish,
+            prepublish_skip,
             search,
             explorer_query: String::new(),
             query: query_select::QuerySearch::default(),
@@ -1018,6 +1050,7 @@ impl Shell {
             properties,
             edits: edit::Edits::default(),
             image_sizes: image_size::ImageSizes::default(),
+            explorer_icons: explorer_icons::ExplorerIcons::default(),
             sound_preview: sound_preview::SoundPreview::default(),
             attribute_edits: attributes_panel::AttributeEdits::default(),
             selection: Selection::new(selected),
@@ -1044,6 +1077,7 @@ impl Shell {
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
             audit: Default::default(),
+            prepublish: Default::default(),
             localization: Default::default(),
             layers: layers::LayerState::load(&path),
             loren: loren_panel::LorenState::default(),
@@ -1051,6 +1085,7 @@ impl Shell {
             style_scroll: ScrollHandle::new(),
             ui,
             anim: animation::Animation::new(cx).with_seams(anim_sheet_height, anim_names_width),
+            solid_toast: None,
             quality: selector,
             dom,
             history: History::new(DEFAULT_CAP),
@@ -1064,6 +1099,7 @@ impl Shell {
             output_display,
             output_context: output::ContextFilter::default(),
             optimize_graph_on_open,
+            mcp_enabled: mcp_server,
             script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
@@ -1179,6 +1215,8 @@ impl Shell {
         // Its light guides, for the same reason.
         shell.sync_light_guides(cx);
         shell.sync_layers(cx);
+        // Any `ExplorerIconContent` images the place names.
+        shell.refresh_explorer_icons(cx);
         // And the screen it sits in, for the UI editor's canvas.
         shell.ui_follow_selection();
 
@@ -1198,7 +1236,7 @@ impl Shell {
             shell.init_team_presence(cx);
             // Loads and starts the installed plugins (see `shell::plugins`).
             shell.plugins_start(cx);
-            // Beta Features › MCP server (see `shell::mcp`).
+            // Settings › AI assistants › MCP server (see `shell::mcp`).
             shell.mcp_start(cx);
         }
         shell.start_credential_watch(cx);
@@ -1410,6 +1448,7 @@ impl Shell {
         shell.apply_debug_style_editor(cx);
         shell.apply_debug_input_actions(cx);
         shell.apply_debug_security_audit(cx);
+        shell.apply_debug_prepublish(cx);
         shell.apply_debug_pseudo_locale(cx);
         if std::env::var_os(playtests::DEBUG_VARIABLE).is_some() {
             shell.set_panel_open(layout::Panel::Playtests, true, cx);
@@ -1466,13 +1505,18 @@ impl Shell {
             shell.configure_game(page, cx);
         }
 
-        // Home's Settings host has no place worth recovering or merging.
-        if !launch.settings_only {
+        // Home's Settings host and a repro's temporary copy have no place
+        // worth recovering or merging.
+        let scratch = launch.settings_only || launch.repro.is_some();
+        if !scratch {
             shell.offer_merge_sidecar(cx);
         }
         shell.watch_theme(cx);
-        if !launch.settings_only {
+        if !scratch {
             shell.watch_recovery(cx);
+        }
+        if let Some(repro) = launch.repro {
+            shell.playtests_open_repro(repro, cx);
         }
         shell.watch_script_templates(cx);
 
@@ -1509,6 +1553,10 @@ impl Shell {
     /// by a pose update landing mid-edit.
     fn sync_camera_pose(&mut self, pose: rbx_viewer::Pose, cx: &mut Context<Self>) {
         crate::camera::write_pose(&mut self.dom, pose);
+        if self.orthographic && crate::beta::enabled(crate::camera::ORTHOGRAPHIC_BETA_ID) {
+            let aspect = self.viewport.read(cx).aspect();
+            crate::camera::write_ortho_size(&mut self.dom, pose.ortho_scale, aspect);
+        }
         // Not a `reflect_changes`, so the Properties cache is told here,
         // only when a camera is among the selection, or a flight would
         // rebuild a large selection's rows five times a second for nothing.
@@ -2169,8 +2217,10 @@ impl Shell {
             output_display: self.output_display,
             optimize_graph_on_open: self.optimize_graph_on_open,
             offline: rbx_net::forced(),
+            mcp_server: self.mcp_enabled,
             increment_names: self.increment_names,
             strip_on_publish: self.strip_on_publish,
+            prepublish_skip: self.prepublish_skip.clone(),
             expand_on_select: self.expand_on_select,
             insert_anchored: self.insert_anchored,
             dragger: self.dragger,
@@ -2230,6 +2280,7 @@ impl Shell {
             .child(self.viewport.clone())
             .child(measure)
             .children(self.plugin_viewport_overlays(cx))
+            .children(self.toast_overlay(|shell| &mut shell.solid_toast, "solid-toast", cx))
             .children(self.play_veil(window, cx))
     }
 }
@@ -2294,6 +2345,7 @@ impl Render for Shell {
             }
         }
         self.open_requested_palette(window, cx);
+        self.playtests_prepare_export(window, cx);
         // An increment set from Settings has to reach the popover's text.
         self.snap_fields.sync(self.transform, window, cx);
         self.sync_argon_fields(window, cx);
@@ -2303,7 +2355,9 @@ impl Render for Shell {
             self.roblox_dialog(cx),
             self.play_dialog(cx),
             self.close_place_dialog(cx),
+            self.playtests_export_dialog(cx),
             self.toolbox_notice_dialog(cx),
+            self.video_upload_dialog(cx),
             self.rig_dialog_overlay(cx),
             self.animation_publish_overlay(cx),
             self.animation_id_prompt_overlay(cx),
@@ -2346,7 +2400,15 @@ impl Render for Shell {
                 cx.notify();
             }))
             .on_drop(cx.listener(|shell, paths: &ExternalPaths, _, cx| {
-                shell.import_files(paths.paths().to_vec(), cx);
+                let (repros, files): (Vec<PathBuf>, Vec<PathBuf>) = paths
+                    .paths()
+                    .iter()
+                    .cloned()
+                    .partition(|path| crate::playtests::repro::is_repro(path));
+                for repro in repros {
+                    shell.open_repro_window(repro, cx);
+                }
+                shell.import_files(files, cx);
             }))
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);

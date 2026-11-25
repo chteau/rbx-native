@@ -3,7 +3,11 @@
 //! holds them.
 
 use rbx_assets::AssetRef;
+use std::sync::Arc;
+
 use rbx_dom::Ref;
+
+use crate::scene::particles::flat::GuiEmitter;
 
 use super::viewport;
 use super::{Border, Fill, SizeAxes};
@@ -82,6 +86,9 @@ pub(in crate::scene::gui) struct Node {
     /// Every enabled `UIShadow`, lowest `ZIndex` first.
     pub(in crate::scene::gui) shadows: Vec<Shadow>,
     pub(in crate::scene::gui) gradient: Option<Gradient>,
+    /// Every `ParticleEmitter2D` child, in tree order, which is also the
+    /// order their particles stack in.
+    pub(in crate::scene::gui) particles: Vec<Arc<GuiEmitter>>,
     /// A `ViewportFrame`'s 3D content, rendered into a texture the box then
     /// shows like an image.
     pub(in crate::scene::gui) viewport: Option<Viewport>,
@@ -106,6 +113,7 @@ impl Node {
             })
             || self.strokes.iter().any(|stroke| stroke.alpha > 0.0)
             || self.shadows.iter().any(|shadow| shadow.alpha > 0.0)
+            || !self.particles.is_empty()
             || self.text.as_ref().is_some_and(Text::visible)
             // A fixed `CanvasSize` can overflow an empty frame, and the bar
             // that shows for it is paint of its own.
@@ -260,6 +268,15 @@ pub(in crate::scene::gui) fn collect_assets(node: &Node, into: &mut Vec<AssetRef
     if let Some(fill) = &node.fill {
         if !into.contains(&fill.asset) {
             into.push(fill.asset.clone());
+        }
+    }
+    for texture in node
+        .particles
+        .iter()
+        .filter_map(|emitter| emitter.texture.as_ref())
+    {
+        if !into.contains(texture) {
+            into.push(texture.clone());
         }
     }
     if let Some(scrolling) = &node.scrolling {

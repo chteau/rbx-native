@@ -13,6 +13,11 @@ pub mod spec;
 
 mod rules;
 
+pub use rules::{
+    cage_distance_failures, cage_mesh_distances, cage_uv_mismatches, degenerate_triangles,
+    mesh_outside_cage, open_edges, weld, welded_triangles,
+};
+
 pub use spec::{AssetType, BodyGroup, BodyScale, Bounds, Category};
 
 /// Mesh data in the part's own space. `positions` are studs when
@@ -36,6 +41,10 @@ pub struct Geometry {
 pub type CFrame = [f32; 12];
 
 pub const IDENTITY: CFrame = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+
+/// A [`CFrame`] whose 3 x 3 part may also scale: a vertex maps to
+/// translation + matrix x vertex.
+pub type Affine = [f32; 12];
 
 /// An `Attachment` under a part, placed in the part's space.
 #[derive(Debug, Clone, PartialEq)]
@@ -82,6 +91,10 @@ pub struct Cage {
     /// The cage it was made from, when known: its vertex count and UVs must
     /// survive untouched.
     pub template: Option<Geometry>,
+    /// Takes the cage's vertices into the space of its handle's
+    /// [`Geometry`], so the two can be measured against each other
+    /// ([`IDENTITY`] when they already share one, as in a source file).
+    pub to_mesh: Affine,
 }
 
 /// Everything about an item the rules look at.
@@ -127,6 +140,12 @@ pub enum Rule {
     CageTopology,
     CageUvs,
     Watertight,
+    /// Studio's `Measure_Degen_Triangles`.
+    DegenerateTriangles,
+    /// Studio's `Measure_Mesh_Outside_OuterCage`.
+    MeshOutsideCage,
+    /// Studio's `Measure_Cage_Mesh_Distance`.
+    CageDistance,
     /// Instances Studio's schema doesn't allow, or required ones missing.
     Schema,
     Tags,
@@ -161,6 +180,9 @@ impl Rule {
             Rule::CageTopology => "Cage vertices",
             Rule::CageUvs => "Cage UVs",
             Rule::Watertight => "Watertight",
+            Rule::DegenerateTriangles => "Degenerate triangles",
+            Rule::MeshOutsideCage => "Mesh outside cage",
+            Rule::CageDistance => "Cage distance",
             Rule::Schema => "Instances",
             Rule::Tags => "Tags",
             Rule::Attributes => "Attributes",
@@ -195,6 +217,9 @@ impl Rule {
             }
             Rule::BodyTriangles | Rule::BodyPartSize | Rule::BodySize | Rule::Watertight => {
                 "https://create.roblox.com/docs/avatar/character-bodies/specifications"
+            }
+            Rule::DegenerateTriangles | Rule::MeshOutsideCage | Rule::CageDistance => {
+                "https://create.roblox.com/docs/marketplace/validation-system"
             }
             Rule::Head(rule) => rule.source(),
         }
@@ -251,6 +276,8 @@ pub fn validate(item: &Item) -> Vec<Finding> {
     rules::size(item, &mut findings);
     rules::cages(item, &mut findings);
     rules::watertight(item, &mut findings);
+    rules::degenerate(item, &mut findings);
+    rules::fit(item, &mut findings);
     findings.sort_by_key(|f| f.severity);
     findings
 }

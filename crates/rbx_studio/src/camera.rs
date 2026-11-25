@@ -7,10 +7,15 @@
 //! write Ctrl+S later picks back up.
 
 use rbx_dom::{CFrameData, Change, Instance, Ref, Variant, Vector3Data, WeakDom};
-use rbx_viewer::Pose;
+use rbx_viewer::{OrthoAxis, Pose};
 
 /// Roblox's own default when a `Camera` names no `FieldOfView` at all, in degrees.
 const DEFAULT_FOV_DEGREES: f32 = 70.0;
+/// A new `Camera`'s `OrthographicSize` in Studio 0.748, in studs.
+const DEFAULT_ORTHO_SIZE: f32 = 35.0;
+/// Studio's "Orthographic Camera" beta: the edit camera follows the place
+/// camera's `ProjectionType`, `OrthographicSize` and `OrthographicMode`.
+pub(crate) const ORTHOGRAPHIC_BETA_ID: &str = "orthographic-camera";
 
 /// Where a place says its view opens: the eye, a point it looks toward, both in
 /// studs, and the field of view to open it at, exactly what
@@ -20,6 +25,9 @@ pub(crate) struct PlaceCamera {
     pub(crate) eye: [f32; 3],
     pub(crate) look_at: [f32; 3],
     pub(crate) fov_degrees: f32,
+    /// `Some((OrthographicSize, OrthographicMode))` when the camera's
+    /// `ProjectionType` is Orthographic.
+    pub(crate) ortho: Option<(f32, OrthoAxis)>,
 }
 
 impl PlaceCamera {
@@ -42,12 +50,44 @@ impl PlaceCamera {
             return None;
         }
         let look = look_vector(&cframe.rotation)?;
+        // Studio's new camera orbits the camera's `Focus` when the view looks
+        // at it: aiming at the point keeps that distance for the orbit.
+        let reach = match camera.properties().get("Focus") {
+            Some(Variant::CFrame(focus))
+                if crate::beta::enabled(crate::workspace_view::camera_row::BETA_ID) =>
+            {
+                focus_depth(
+                    eye,
+                    look,
+                    [focus.position.x, focus.position.y, focus.position.z],
+                )
+            }
+            _ => 1.0,
+        };
 
         Some(PlaceCamera {
             eye,
-            look_at: [eye[0] + look[0], eye[1] + look[1], eye[2] + look[2]],
+            look_at: [
+                eye[0] + look[0] * reach,
+                eye[1] + look[1] * reach,
+                eye[2] + look[2] * reach,
+            ],
             fov_degrees: field_of_view(camera),
+            ortho: orthographic(camera),
         })
+    }
+}
+
+/// How far ahead `focus` stands when the view from `eye` along `look` is
+/// aimed at it, or 1 when it is off to one side or behind.
+fn focus_depth(eye: [f32; 3], look: [f32; 3], focus: [f32; 3]) -> f32 {
+    let to = glam::Vec3::from(focus) - glam::Vec3::from(eye);
+    let depth = to.dot(glam::Vec3::from(look));
+    let aimed = depth > 0.0 && (to - glam::Vec3::from(look) * depth).length() <= depth * 0.01;
+    if aimed && depth.is_finite() {
+        depth
+    } else {
+        1.0
     }
 }
 
@@ -66,17 +106,44 @@ fn field_of_view(camera: &Instance) -> f32 {
     }
 }
 
+/// The camera's orthographic span, `None` while its `ProjectionType` is
+/// Perspective (or missing, Roblox's default).
+fn orthographic(camera: &Instance) -> Option<(f32, OrthoAxis)> {
+    let properties = camera.properties();
+    let Some(Variant::Enum(projection)) = properties.get("ProjectionType") else {
+        return None;
+    };
+    if *projection != 1 {
+        return None;
+    }
+    let size = match properties.get("OrthographicSize") {
+        Some(Variant::Float32(size)) if size.is_finite() && *size > 0.0 => *size,
+        _ => DEFAULT_ORTHO_SIZE,
+    };
+    let axis = match properties.get("OrthographicMode") {
+        Some(Variant::Enum(mode)) => OrthoAxis::from_value(*mode),
+        _ => OrthoAxis::Vertical,
+    };
+    Some((size, axis))
+}
+
 /// Where `changes` moved the view to, when one of them wrote the current
-/// camera's `CFrame` or `FieldOfView`: Studio's edit camera follows
-/// `workspace.CurrentCamera.CFrame = ...` from the Command Bar, a plugin or
-/// the Properties panel.
+/// camera's `CFrame`, `FieldOfView`, `ProjectionType` or `OrthographicSize`:
+/// Studio's edit camera follows `workspace.CurrentCamera.CFrame = ...` from
+/// the Command Bar, a plugin or the Properties panel. Not `OrthographicMode`:
+/// Studio keeps the picture when the mode changes and rewrites the size,
+/// which [`write_ortho_size`] does here on the next pose sync.
 pub(crate) fn moved_by(dom: &WeakDom, changes: &[Change]) -> Option<PlaceCamera> {
     let camera = current_camera(dom)?;
     changes
         .iter()
         .any(|change| {
             matches!(change, Change::Property { referent, name }
-                if *referent == camera && (name == "CFrame" || name == "FieldOfView"))
+            if *referent == camera
+                && matches!(
+                    name.as_str(),
+                    "CFrame" | "FieldOfView" | "ProjectionType" | "OrthographicSize"
+                ))
         })
         .then(|| PlaceCamera::from_dom(dom))
         .flatten()
@@ -142,6 +209,27 @@ pub(crate) fn write_pose(dom: &mut WeakDom, pose: Pose) {
         properties.insert("CFrame".into(), Variant::CFrame(cframe_from_pose(pose)));
         properties.insert("FieldOfView".into(), Variant::Float32(pose.fov_degrees));
     }
+}
+
+/// Mirrors the orthographic view's zoom into the current camera's
+/// `OrthographicSize`, along its own `OrthographicMode` on a view `aspect`
+/// wide per high. Only while that camera is Orthographic, and past the
+/// change log like [`write_pose`].
+pub(crate) fn write_ortho_size(dom: &mut WeakDom, half_height: f32, aspect: f32) {
+    let Some(referent) = workspace_ref(dom).and_then(|workspace| existing_camera(dom, workspace))
+    else {
+        return;
+    };
+    let Some(instance) = dom.get_mut(referent) else {
+        return;
+    };
+    let Some((_, axis)) = orthographic(instance) else {
+        return;
+    };
+    let size = axis.size(half_height, aspect);
+    instance
+        .properties_mut()
+        .insert("OrthographicSize".into(), Variant::Float32(size));
 }
 
 /// Builds the `CFrameData` a place would need to reopen at exactly this

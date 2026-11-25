@@ -54,11 +54,6 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Countdown icons on autopilot: timers over the current icon, uploaded for review early, swapped in at their time by the editor or a background helper the OS runs while the PC is on. Not yet tried against Roblox: the icon swap needs the key's legacy-universe:manage permission.",
     },
     Feature {
-        id: crate::shell::MCP_BETA_ID,
-        name: "MCP server",
-        description: "Lets an AI client drive the open place over MCP: point the client at `rbxnative --mcp`. It can read and edit scripts, run Luau, start and stop Play, read the Output, capture the viewport, simulate player input and insert assets. Several open editors are told apart by studio ID. Edits are undo steps of their own; `http_get` and `skill` serve Roblox documentation and best-practice guides.",
-    },
-    Feature {
         id: crate::shell::PSEUDO_LOC_BETA_ID,
         name: "Pseudo-localization",
         description: "Previews every GUI text longer and accented (and optionally right to left) in the 3D view and the UI Editor, lists what no longer fits, and writes the place's user-facing strings into a LocalizationTable. The preview never touches the place; overflow is measured, not yet suggested fixes.",
@@ -67,6 +62,51 @@ pub(crate) const FEATURES: &[Feature] = &[
         id: crate::shell::PERF_BETA_ID,
         name: "Performance heatmap: totals and models",
         description: "Adds Total and Physics to the Viewport dock's Performance view and ranks the costliest models with a breakdown of what each costs: triangles, texture memory, instances, physics, shadows and overdraw. The weights are an estimate, not Roblox's own costs.",
+    },
+    Feature {
+        id: LUAU_EXPORTS_BETA_ID,
+        name: "Luau Exports and Cyclic Requires",
+        description: "export local, export const and export function in a ModuleScript, like Studio's beta of the same name: the module returns a table of what it exports, and two modules that export can require each other. Mixing export with a top-level return is a compile error there too.",
+    },
+    Feature {
+        id: crate::camera::ORTHOGRAPHIC_BETA_ID,
+        name: "Orthographic Camera",
+        description: "The 3D view follows the place camera's ProjectionType, OrthographicSize and OrthographicMode, like Studio's beta of the same name: set workspace.CurrentCamera.ProjectionType to Orthographic and the view goes flat at that size, and zooming writes the size back.",
+    },
+    Feature {
+        id: crate::workspace_view::camera_row::BETA_ID,
+        name: "New Studio Camera Controls",
+        description: "The edit camera flies like Studio's beta of the same name: Adaptive, FPS and Orbit modes under the View Selector, fly speed that follows the focus distance, wheel zoom towards the cursor, Alt + right drag to dolly, and Focus that glides in and frames the selection at 70% of the view.",
+    },
+    Feature {
+        id: crate::transform::NEXT_GEN_DRAGGERS_BETA_ID,
+        name: "Next-Gen Draggers",
+        description: "Move and Rotate handles in the look of Studio's beta of the same name: its colours, smaller and thinner handles, positive arrows only with a square to drag along each plane, and rings drawn on their near half inside a white view ring, with a trackball inside them for a free turn.",
+    },
+    Feature {
+        id: crate::explorer::insert::UI_PARTICLES_BETA_ID,
+        name: "UI Particles",
+        description: "Lists ParticleEmitter2D in the Explorer's insert picker and the UI Editor's +, like Studio's beta of the same name. Particles draw on screen, on the UI Editor canvas and on BillboardGuis and SurfaceGuis whether this is on or not, and scripts can Emit and Clear them.",
+    },
+    Feature {
+        id: crate::shell::UGC_VISUAL_BETA_ID,
+        name: "Visualizing UGC Validation",
+        description: "Click a finding in Check Avatar Item and the 3D view draws where it failed on the item, in Studio's colours: open edges of a mesh that isn't watertight, and the vertices of a cage whose UVs moved off the template. Other checks have no spot to point at and draw nothing, as in Studio.",
+    },
+    Feature {
+        id: crate::properties::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID,
+        name: "MaterialVariant Alpha Mode",
+        description: "Lists AlphaMode on a MaterialVariant and draws each mode the way Studio's beta of the same name does: Overlay shows the part colour where the colour map is clear, TintMask tints only where it is opaque, and Transparency cuts the surface out below half alpha. Off, the alpha is ignored, as in Studio, but the property still saves.",
+    },
+    Feature {
+        id: crate::shell::VIDEO_UPLOADS_BETA_ID,
+        name: "Video Uploads",
+        description: "Import takes .mp4 and .mov, like Studio's beta of the same name: Roblox's limits (5 minutes, 4096x2160, 3.75 GB) are checked first, the 2,000 Robux price is asked before anything goes up, and the video lands as a VideoFrame. Roblox takes videos only from 13+ ID-verified accounts.",
+    },
+    Feature {
+        id: crate::shell::AUTO_REIMPORT_BETA_ID,
+        name: "Auto-Reimport",
+        description: "Reimport for imported 3D models, like Studio's beta of the same name: the Explorer's menu can reimport a model from its file, pick the file, and turn on Auto-Reimport, which reimports whenever the file is saved, for this session. Each reimport uploads the file again, so the meshes get new asset ids.",
     },
     Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,
@@ -182,6 +222,10 @@ pub(crate) fn features() -> Vec<Feature> {
     all
 }
 
+/// Studio's "Luau Exports and Cyclic Requires" beta, see
+/// `rbx_lua::set_luau_exports`.
+pub(crate) const LUAU_EXPORTS_BETA_ID: &str = "luau-exports";
+
 /// Reads `beta.json` once, at launch; later calls do nothing. Before it
 /// runs, every feature is off.
 pub(crate) fn init() {
@@ -189,6 +233,10 @@ pub(crate) fn init() {
         .map(|path| Choices::load(&path))
         .unwrap_or_default();
     rbx_lua::set_if_local(choices.is_on(IF_LOCAL_BETA_ID));
+    rbx_lua::set_luau_exports(choices.is_on(LUAU_EXPORTS_BETA_ID));
+    rbx_viewer::set_variant_alpha_modes(
+        choices.is_on(crate::properties::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID),
+    );
     let _ = LAUNCH.set(choices);
 }
 

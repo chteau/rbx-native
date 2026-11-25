@@ -7028,8 +7028,11 @@ name = "rbx_audit"
 version = "0.1.0"
 dependencies = [
  "full_moon",
+ "rbx_assets",
  "rbx_dom",
  "rbx_loren",
+ "rbx_mesh",
+ "rbx_reflection",
  "rbx_xml",
 ]
 
@@ -7089,6 +7092,7 @@ dependencies = [
  "glam 0.33.7",
  "rbx_materials",
  "rbx_mesh",
+ "ruzstd",
 ]
 
 [[package]]
@@ -7209,8 +7213,10 @@ name = "rbx_parser_cli"
 version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
+ "rbx_assets",
  "rbx_audit",
  "rbx_binary",
+ "rbx_cloud",
  "rbx_dom",
  "rbx_loren",
  "rbx_lua",
@@ -7316,7 +7322,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_studio"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

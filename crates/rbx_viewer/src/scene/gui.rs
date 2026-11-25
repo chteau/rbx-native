@@ -35,7 +35,7 @@ mod wheel;
 pub use layout::SafeInsets;
 pub(crate) use layout::{
     overflows, resolve_canvas_with, resolve_inset, screen_frame, Element, GradientPx, Grouped,
-    ImageScale, Painted, PixelRect, Rect, ShadowPx, StrokePx, TextMeasure, Typeset,
+    ImageScale, Painted, ParticlesPx, PixelRect, Rect, ShadowPx, StrokePx, TextMeasure, Typeset,
 };
 #[cfg(test)]
 pub(crate) use layout::{resolve, resolve_canvas, resolve_on_device, resolve_with};

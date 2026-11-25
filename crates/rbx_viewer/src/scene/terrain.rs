@@ -13,7 +13,7 @@ use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 use rbx_terrain::{ChunkKey, Material, MaterialColors, VoxelGrid, VOXEL_STUDS};
 
-use super::material::{Catalog, Kind, Slot};
+use super::material::{Catalog, Kind, Slot, VariantAlpha};
 use super::props::{bool_or, float_or, linear_color_or, vector3_or, Properties};
 use super::Bounds;
 
@@ -187,6 +187,7 @@ impl Terrain {
             layer: 0,
             kind: Kind::Water,
             studs_per_tile: rbx_materials::DEFAULT_STUDS_PER_TILE,
+            alpha: VariantAlpha::Ignored,
         }
     }
 

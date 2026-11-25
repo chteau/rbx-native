@@ -41,6 +41,7 @@ pub struct Options {
     elapsed: std::time::Duration,
     quality: QualityLevel,
     orthographic: bool,
+    variant_alpha_modes: bool,
 }
 
 impl Options {
@@ -69,6 +70,7 @@ impl Options {
         let mut elapsed = std::time::Duration::ZERO;
         let mut quality = QualityLevel::default();
         let mut orthographic = false;
+        let mut variant_alpha_modes = false;
 
         let mut args = args.into_iter();
         while let Some(arg) = args.next() {
@@ -96,6 +98,7 @@ impl Options {
                 "--elapsed" => elapsed = parse_seconds(&value(&mut args, &arg)?)?,
                 "--quality" => quality = value(&mut args, &arg)?.parse()?,
                 "--orthographic" => orthographic = true,
+                "--variant-alpha-modes" => variant_alpha_modes = true,
                 flag if flag.starts_with('-') => return Err(format!("unknown option '{flag}'")),
                 positional if path.is_none() => path = Some(PathBuf::from(positional)),
                 extra => return Err(format!("unexpected extra argument '{extra}'")),
@@ -134,6 +137,7 @@ impl Options {
             elapsed,
             quality,
             orthographic,
+            variant_alpha_modes,
         })
     }
 
@@ -146,7 +150,7 @@ impl Options {
              \x20              [--no-gui] [--show-development-gui]\n\
              \x20              [--orbit] [--speed <studs/s>] [--sensitivity <deg/px>]\n\
              \x20              [--clock-time <hours>] [--quality <auto|1..21>]\n\
-             \x20              [--orthographic] [--elapsed <seconds>]\n\
+             \x20              [--orthographic] [--elapsed <seconds>] [--variant-alpha-modes]\n\
              \x20       {program} <dir> --batch <out-dir> [same framing/quality flags]\n\
              \x20 --screenshot  render a single frame offscreen to a PNG and exit\n\
              \x20 --batch       render every .rbxl/.rbxm/.rbxlx/.rbxmx file under the input\n\
@@ -195,7 +199,11 @@ impl Options {
              \x20               framed at the same apparent scale (screenshots only)\n\
              \x20 --elapsed     seconds into the animation clock to draw the frame at\n\
              \x20               (default 0), so a script can step through a moving\n\
-             \x20               ForceField frame by frame (screenshots only)",
+             \x20               ForceField frame by frame (screenshots only)\n\
+             \x20 --variant-alpha-modes\n\
+             \x20               honour each MaterialVariant's AlphaMode, like Studio's\n\
+             \x20               MaterialVariant Alpha Mode beta; without it a variant's\n\
+             \x20               colour map alpha is ignored, as with that beta off",
             DEFAULT_SIZE.0,
             DEFAULT_SIZE.1,
             DEFAULT_SPEED,
@@ -315,6 +323,10 @@ impl Options {
 
     pub(crate) fn orthographic(&self) -> bool {
         self.orthographic
+    }
+
+    pub fn variant_alpha_modes(&self) -> bool {
+        self.variant_alpha_modes
     }
 
     pub(crate) fn title(&self) -> String {

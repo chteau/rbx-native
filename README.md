@@ -93,7 +93,7 @@ That builds everything. The binaries you get:
 |---|---|---|
 | `rbxdump` | `rbx_parser_cli` | Prints the instance tree of a `.rbxm`/`.rbxl`/`.rbxlx`/`.rbxmx` file. `--roundtrip <file>` writes the file back out and diffs it against the original. |
 | `rbxlua` | `rbx_parser_cli` | Runs a Luau script against a place file (`rbxlua place.rbxl script.luau [--out out.rbxl] [--print-changes]`), or runs the place's TestEZ specs (`rbxlua test place.rbxl [--junit out.xml]`, see [`docs/testing.md`](docs/testing.md)). |
-| `rbxaudit` | `rbx_parser_cli` | Checks a place's scripts for remote security problems (`rbxaudit place.rbxl`). Prints one line per finding and exits 1 if any is High, so you can use it in CI. |
+| `rbxaudit` | `rbx_parser_cli` | Checks a place's scripts for remote security problems (`rbxaudit place.rbxl`), or runs the whole [pre-publish check](docs/prepublish-check.md) (`rbxaudit --prepublish [--offline] [--json] place.rbxl`). Prints one line per finding (or JSON) and exits 1 if any is High, so you can use it in CI. |
 | `rbxview` | `rbx_viewer` | A standalone 3D viewer (`rbxview place.rbxl [--screenshot out.png]`), and the server for the browser build (`rbxview --serve`, see below). |
 | `rbxstudio` | `rbx_studio` | The editor (`rbxstudio [--select <name-or-path>] [--run <script.luau>] [--verbose] <place>`, `--help` for the rest). |
 | `rbxcloud` | `rbx_cloud` | A small Open Cloud CLI (`whoami`, `list`, `download`, `asset`). |
@@ -324,11 +324,17 @@ include, how to report a bug, and the rules about Roblox assets.
   features.
 - [CONTRIBUTING.md](CONTRIBUTING.md): how to propose a change.
 - [CHANGELOG.md](CHANGELOG.md): a log of what landed and why.
+- [CREDITS.md](CREDITS.md): who made the third-party assets and ideas
+  RbxNative uses, and their licences.
 - [BENCHMARKS.md](BENCHMARKS.md): load, reload and frame timings, the
   machine they were measured on, and how `./scripts/bench.sh` reproduces
   them.
 
 ## Thanks
+
+[CREDITS.md](CREDITS.md) has the full list of fonts, icons, models, data and
+programs RbxNative uses, with their owners and licences. The app shows it
+under Help › About RbxNative.
 
 - **MaximumADHD** for [Roblox-Client-Tracker](https://github.com/MaximumADHD/Roblox-Client-Tracker)
   (Roblox's shader sources, which I studied to reproduce its lighting),

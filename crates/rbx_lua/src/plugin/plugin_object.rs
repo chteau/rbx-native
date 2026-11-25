@@ -646,7 +646,7 @@ fn solid_modeling(lua: &Lua, name: &str, objects: &Value) -> Result<Value> {
                         .map_err(mlua::Error::runtime)?,
                 ]
             }
-            "Negate" => crate::csg::negate_in_place(&mut dom, db, &objects),
+            "Negate" => crate::csg::negate_operations_in_place(&mut dom, db, &objects),
             _ => crate::csg::separate_in_place(&mut dom, db, &objects),
         }
     };

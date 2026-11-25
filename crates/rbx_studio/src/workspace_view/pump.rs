@@ -81,12 +81,20 @@ enum Command {
     Fullbright(bool),
     /// How the free camera responds, see `Headless::set_camera_feel`.
     CameraFeel(CameraFeel),
+    /// Focus with Studio's beta camera: see `Headless::focus_on`.
+    FocusOn {
+        eye: [f32; 3],
+        target: [f32; 3],
+    },
     /// Puts the camera at `eye` looking at `target`: see `Headless::open_at`.
     LookAt {
         eye: [f32; 3],
         target: [f32; 3],
         fov: f32,
     },
+    /// The place camera's orthographic span, `None` once it is perspective:
+    /// see `Headless::set_ortho_span` and `set_place_orthographic`.
+    PlaceOrtho(Option<(f32, rbx_viewer::OrthoAxis)>),
     /// The renderer's tuned constants, see `Headless::set_calibration`.
     Calibration(Calibration),
     /// Draws only these instances on a plain backdrop, or everything again
@@ -169,6 +177,8 @@ pub(super) struct Ready {
     pub(super) pixels: Option<Vec<u8>>,
     pub(super) size: (u32, u32),
     pub(super) speed: f32,
+    /// The beta camera's speed multiplier, see `Headless::speed_multiplier`.
+    pub(super) multiplier: Option<f32>,
     pub(super) level: u8,
     pub(super) pose: Option<Pose>,
     /// The camera this frame was actually drawn from, on every message rather
@@ -284,8 +294,16 @@ impl Pump {
         let _ = self.commands.send(Command::CameraFeel(feel));
     }
 
+    pub(super) fn focus_on(&self, eye: [f32; 3], target: [f32; 3]) {
+        let _ = self.commands.send(Command::FocusOn { eye, target });
+    }
+
     pub(super) fn look_at(&self, eye: [f32; 3], target: [f32; 3], fov: f32) {
         let _ = self.commands.send(Command::LookAt { eye, target, fov });
+    }
+
+    pub(super) fn place_ortho(&self, span: Option<(f32, rbx_viewer::OrthoAxis)>) {
+        let _ = self.commands.send(Command::PlaceOrtho(span));
     }
 
     pub(super) fn isolation(&self, roots: Option<Vec<rbx_dom::Ref>>) {
@@ -491,6 +509,7 @@ fn run(
     let mut owed = true;
     let mut ticked = Instant::now();
     let mut speed = viewer.speed();
+    let mut multiplier = viewer.speed_multiplier();
     let mut idle = false;
     let mut due = Instant::now();
     let mut shown = viewer.quality().resolved();
@@ -566,6 +585,11 @@ fn run(
             owed = true;
         }
 
+        // A script's `ParticleEmitter2D:Emit`/`Clear`, from the Command Bar,
+        // a plugin or a running game: queued by the VM, played by the GUI pass.
+        for (emitter, burst) in rbx_lua::take_particle_bursts() {
+            rbx_viewer::gui_particle_burst(emitter, burst);
+        }
         let now = Instant::now();
         let changed = viewer.tick(step(now.duration_since(ticked), interval));
         ticked = now;
@@ -584,8 +608,10 @@ fn run(
         }
 
         let current = viewer.speed();
-        let told = (current - speed).abs() > f32::EPSILON;
+        let told =
+            (current - speed).abs() > f32::EPSILON || viewer.speed_multiplier() != multiplier;
         speed = current;
+        multiplier = viewer.speed_multiplier();
         let cost = frame.as_ref().map(|frame| frame.cost);
         if let Some(frame) = &frame {
             shown = frame.level;
@@ -627,6 +653,7 @@ fn run(
                     pixels: frame.map(|frame| frame.pixels),
                     size,
                     speed,
+                    multiplier,
                     level: shown,
                     pose,
                     view,
@@ -939,9 +966,12 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Wheel { at, scroll, camera } => {
             match rendering.viewer.gui_scroll_target(at, scroll.axis) {
                 Some(target) => rendering.scrolls.push(Scroll::of(target, scroll)),
-                None => rendering
-                    .viewer
-                    .input(CameraInput::Wheel { notches: camera }),
+                None => {
+                    rendering.viewer.set_cursor(Some(at));
+                    rendering
+                        .viewer
+                        .input(CameraInput::Wheel { notches: camera });
+                }
             }
         }
         Command::Size(new) => *rendering.size = new,
@@ -958,6 +988,13 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::CameraFeel(feel) => rendering.viewer.set_camera_feel(feel),
         // Studio's own default field of view.
         Command::LookAt { eye, target, fov } => rendering.viewer.open_at(eye, target, fov),
+        Command::FocusOn { eye, target } => rendering.viewer.focus_on(eye, target),
+        Command::PlaceOrtho(span) => {
+            rendering.viewer.set_place_orthographic(span.is_some());
+            if let Some((size, axis)) = span {
+                rendering.viewer.set_ortho_span(size, axis);
+            }
+        }
         Command::Isolation(roots) => rendering.viewer.set_isolation(roots),
         Command::LayerFilter(only, hidden) => rendering.viewer.set_layer_filter(only, hidden),
         Command::Calibration(calibration) => rendering.viewer.set_calibration(calibration),

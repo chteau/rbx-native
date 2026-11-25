@@ -23,6 +23,9 @@ const PLAYTESTS: usize = 7;
 /// A dynamic head's eye and mouth landmarks (see `shell::ugc`'s Face
 /// Preview).
 const FACE_LANDMARKS: usize = 8;
+/// A failed avatar item check drawn on the model (see `shell::ugc`'s
+/// Check Avatar Item).
+const UGC_VALIDATION: usize = 9;
 
 impl WorkspaceView {
     /// Forwards the Explorer's selection, forcing one frame even at rest.
@@ -94,6 +97,12 @@ impl WorkspaceView {
     /// them.
     pub(crate) fn set_face_landmarks(&mut self, segments: Vec<Segment>) {
         self.pump.lines(FACE_LANDMARKS, segments);
+    }
+
+    /// Check Avatar Item's drawing of the picked finding. An empty list
+    /// clears it.
+    pub(crate) fn set_ugc_validation(&mut self, segments: Vec<Segment>) {
+        self.pump.lines(UGC_VALIDATION, segments);
     }
 
     /// Replayed playtests' lines and dots, and the heat map's cells. Empty

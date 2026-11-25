@@ -148,6 +148,57 @@ fn a_wrap_layer_gives_an_inner_and_an_outer_cage() {
 }
 
 #[test]
+fn a_wrap_layer_cage_is_measured_where_the_handle_draws_it() {
+    let mut dom = WeakDom::new();
+    let acc = dom.new_instance("Accessory", "Jacket", None);
+    let handle = mesh_part(&mut dom, "Handle", acc, 1);
+    let wrap = dom.new_instance("WrapLayer", "Wrap", Some(handle));
+    set(&mut dom, wrap, "ReferenceMeshId", uri(3));
+    set(&mut dom, wrap, "CageMeshId", uri(4));
+    set(
+        &mut dom,
+        wrap,
+        "CageOrigin",
+        Variant::CFrame(CFrameData {
+            position: Vector3Data {
+                x: 0.0,
+                y: 1.0,
+                z: 0.0,
+            },
+            rotation: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        }),
+    );
+    let got = resolve(&plan(&dom, acc, ItemKind::default()).unwrap(), &fetch);
+    let m = got.item.cages[1].to_mesh;
+    let at = |p: [f32; 3]| -> [f32; 3] {
+        std::array::from_fn(|r| {
+            m[r] + m[3 + 3 * r] * p[0] + m[4 + 3 * r] * p[1] + m[5 + 3 * r] * p[2]
+        })
+    };
+    // The handle draws the 4 stud file at half size; the cage is drawn the
+    // same way, after its origin's stud up.
+    assert_eq!(
+        got.item.parts[0].geometry.as_ref().unwrap().positions[1],
+        [1.0; 3]
+    );
+    assert_eq!(at([2.0; 3]), [1.0, 1.5, 1.0]);
+}
+
+#[test]
+fn a_wrap_layer_saved_with_content_properties_still_has_cages() {
+    let mut dom = WeakDom::new();
+    let acc = dom.new_instance("Accessory", "Jacket", None);
+    let handle = mesh_part(&mut dom, "Handle", acc, 1);
+    let wrap = dom.new_instance("WrapLayer", "Wrap", Some(handle));
+    set(&mut dom, wrap, "ReferenceMeshContent", uri(3));
+    set(&mut dom, wrap, "CageMeshContent", uri(4));
+    let p = plan(&dom, acc, ItemKind::default()).unwrap();
+    assert_eq!(p.cages.len(), 2);
+    assert_eq!(p.cages[0].mesh, Key::Id(3));
+    assert_eq!(p.cages[1].mesh, Key::Id(4));
+}
+
+#[test]
 fn cage_named_mesh_parts_in_a_model_become_cages() {
     let mut dom = WeakDom::new();
     let model = dom.new_instance("Model", "Vest", None);
@@ -229,4 +280,88 @@ fn a_renamed_handle_is_named_like_studio() {
     let p = plan(&dom, acc, kind(AssetType::Hat)).unwrap();
     assert!(p.notes.iter().any(|f| f.rule == Rule::Schema
         && f.message == "Could not find required MeshPart called Handle inside of Cap"));
+}
+
+/// Roblox's "Leather Jacket - Black" (7192549218) saved by Studio as
+/// `JacketLeatherBlack`, its outer cage pushed forward by `CageOrigin` the
+/// way the Studio runs were.
+#[test]
+#[ignore = "needs RBX_UGC_FIT_FIXTURE, a Studio-saved place with Roblox's leather jacket"]
+fn the_leather_jacket_fits_its_cage_like_studio_measures() {
+    let path = std::env::var("RBX_UGC_FIT_FIXTURE")
+        .expect("set RBX_UGC_FIT_FIXTURE to a Studio-saved place");
+    let mut dom = rbx_viewer::read_place(std::path::Path::new(&path)).expect("read fixture");
+    let mut stack = dom.root_refs().to_vec();
+    let mut acc = None;
+    while let Some(r) = stack.pop() {
+        let inst = dom.get(r).unwrap();
+        if inst.name() == "JacketLeatherBlack" {
+            acc = Some(r);
+        }
+        stack.extend_from_slice(inst.children());
+    }
+    let acc = acc.expect("JacketLeatherBlack in the place");
+    let handle = dom.get(acc).unwrap().children()[0];
+    let wrap = *dom
+        .get(handle)
+        .unwrap()
+        .children()
+        .iter()
+        .find(|&&c| dom.get(c).unwrap().class() == "WrapLayer")
+        .unwrap();
+    let Some(Variant::CFrame(origin)) = dom
+        .get(wrap)
+        .unwrap()
+        .properties()
+        .get("CageOrigin")
+        .cloned()
+    else {
+        panic!("no CageOrigin");
+    };
+    // Studio 0.748: CageOrigin push, share of the mesh outside the cage,
+    // farthest moved cage vertex, share of moved cage vertices inside (not
+    // asserted: ours comes out lower, see rbx_ugc's fit rules).
+    let studio = [
+        (0.0, 0.0, None),
+        (0.05, 43.0, Some((0.105, 40.3))),
+        (0.1, 56.4, Some((0.152, 42.6))),
+        (0.25, 75.1, Some((0.299, 32.8))),
+        (0.5, 92.1, Some((0.545, 14.5))),
+        (1.0, 100.0, Some((1.039, 0.0))),
+    ];
+    for (shift, outside_share, distance) in studio {
+        let mut moved = origin;
+        moved.position.z += shift;
+        set(&mut dom, wrap, "CageOrigin", Variant::CFrame(moved));
+        let got = resolve(
+            &plan(&dom, acc, kind(AssetType::Jacket)).unwrap(),
+            &super::fetch_cached,
+        );
+        let findings = rbx_ugc::validate(&got.item);
+        let text = |prefix: &str| {
+            findings
+                .iter()
+                .find(|f| f.message.contains(prefix))
+                .map(|f| f.message.clone())
+        };
+        let number = |message: &str, after: &str| -> f32 {
+            let rest = &message[message.find(after).unwrap() + after.len()..];
+            rest.split(|c: char| !(c.is_ascii_digit() || c == '.'))
+                .next()
+                .unwrap()
+                .parse()
+                .unwrap()
+        };
+        match text("of mesh vertices are outside the outer cage") {
+            Some(m) => assert!((number(&m, "") - outside_share).abs() <= 2.0, "{m}"),
+            None => assert_eq!(outside_share, 0.0),
+        }
+        match (text("Outer cage does not closely follow"), distance) {
+            (Some(m), Some((max, _))) => {
+                assert!((number(&m, "mesh is ") - max).abs() < 0.0015, "{m}");
+            }
+            (None, None) => {}
+            (m, d) => panic!("shift {shift}: {m:?} against Studio's {d:?}"),
+        }
+    }
 }

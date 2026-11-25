@@ -31,9 +31,10 @@ pub(super) enum AfterClose {
 
 impl Shell {
     /// Edits since the last save, including typing still on the script
-    /// editor's debounce.
+    /// editor's debounce. Never in a repro, whose place is a throwaway copy.
     pub(super) fn has_unsaved_changes(&self) -> bool {
-        self.recovery.unsaved() || self.scripts.open.values().any(|open| open.pending)
+        self.playtests.repro.is_none()
+            && (self.recovery.unsaved() || self.scripts.open.values().any(|open| open.pending))
     }
 
     pub(crate) fn close_place(&mut self, cx: &mut Context<Self>) {

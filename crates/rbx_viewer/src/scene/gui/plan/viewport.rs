@@ -134,6 +134,13 @@ pub(in crate::scene::gui) fn read(
 /// the `ViewportFrame` internally", and a saved place carries those two as
 /// the hidden `CameraCFrame` and `CameraFieldOfView` (the latter in radians,
 /// unlike the `Camera`'s own property).
+///
+/// Always a perspective view, whatever the camera's `ProjectionType`: in
+/// Studio 0.748 with its "Orthographic Camera" beta on, a frame looking
+/// through an orthographic `Camera` (under the frame or in `Workspace`) still
+/// draws it in perspective at its `FieldOfView`, and `OrthographicSize` and
+/// `OrthographicMode` change nothing there; only the 3D view and the Play
+/// client honour them.
 fn camera(
     dom: &WeakDom,
     database: &ReflectionDatabase,

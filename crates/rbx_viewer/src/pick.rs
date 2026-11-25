@@ -18,6 +18,8 @@ mod mesh;
 mod shape;
 mod surface;
 
+use std::collections::HashMap;
+
 use glam::{Mat4, Vec2, Vec3};
 use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 use rbx_reflection::ReflectionDatabase;
@@ -429,33 +431,31 @@ pub fn selection(dom: &WeakDom, database: &ReflectionDatabase, referents: &[Ref]
         .map(|&referent| Selected::read(dom, database, referent))
         .collect();
 
+    // Each part's widest owner, the earliest among equals. Two entries' part
+    // sets are a node's drawable descendants (or a lone part), so they nest
+    // or are disjoint: an entry is covered by another exactly when its own
+    // first part has a different owner. Asking every pair instead is
+    // quadratic, which a selection of thousands of parts pays on every drag
+    // step.
+    let mut owner: HashMap<Ref, usize> = HashMap::new();
+    for (index, entry) in entries.iter().enumerate() {
+        for &part in &entry.parts {
+            owner
+                .entry(part)
+                .and_modify(|best| {
+                    if entries[*best].parts.len() < entry.parts.len() {
+                        *best = index;
+                    }
+                })
+                .or_insert(index);
+        }
+    }
     entries
-        .iter()
+        .into_iter()
         .enumerate()
-        .filter(|&(index, entry)| {
-            !entries.iter().enumerate().any(|(other, candidate)| {
-                other != index
-                    && covers(candidate, entry)
-                    // Equal coverage is a tie only position can break.
-                    && (candidate.parts.len() > entry.parts.len() || other < index)
-            })
-        })
-        .map(|(_, entry)| entry.clone())
+        .filter(|(index, entry)| entry.parts.first().is_none_or(|part| owner[part] == *index))
+        .map(|(_, entry)| entry)
         .collect()
-}
-
-/// Whether every part `inner` covers is one `outer` covers too.
-///
-/// Both sets are a node's drawable descendants (or a lone part), and two such
-/// sets in a tree are nested or disjoint, never partly overlapping. So one
-/// shared part already settles which way round they nest, and the sizes settle
-/// which of the two is the container.
-fn covers(outer: &Selected, inner: &Selected) -> bool {
-    inner.parts.len() <= outer.parts.len()
-        && inner
-            .parts
-            .first()
-            .is_some_and(|part| outer.parts.contains(part))
 }
 
 /// The matrix one `BasePart` in `dom` is drawn with, or `None` for anything

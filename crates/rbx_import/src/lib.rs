@@ -3,8 +3,8 @@
 //! `creator-docs` `art/modeling/specifications.md`; Studio's importer
 //! decimates it to exactly that many instead, and so does this), and the one
 //! self-contained file to upload. The API takes `.fbx`, `.gltf` and
-//! `.glb` (`cloud/guides/usage-assets.md`); `.obj` is rewritten as glTF and a
-//! `.gltf` has its side files inlined.
+//! `.glb` (`cloud/guides/usage-assets.md`); `.obj` is rewritten as glTF, a
+//! `.gltf` has its side files inlined and a `.glb` its image files.
 
 mod decimate;
 mod fbx;
@@ -127,7 +127,7 @@ pub fn prepare(path: &Path) -> Result<(Report, Upload), String> {
 }
 
 /// [`prepare`] on bytes already read; `dir` is where a `.gltf`'s side files
-/// are looked for.
+/// and a `.glb`'s image files are looked for.
 pub fn prepare_bytes(
     format: Format,
     stem: &str,
@@ -156,6 +156,7 @@ pub fn prepare_bytes(
             Ok((report, upload))
         }
         Format::Glb => {
+            let bytes = gltf_file::inline_glb_images(bytes, dir)?;
             let (bytes, meshes, decimated) = gltf_within_limit(bytes)?;
             let upload = Upload {
                 file_name: format!("{stem}.glb"),

@@ -16,6 +16,8 @@ cp "$bin" "$app/Contents/MacOS/RbxNative"
 cp .github/release/RbxNative.icns "$app/Contents/Resources/RbxNative.icns"
 chmod 755 "$app/Contents/MacOS/RbxNative"
 sed "s/@VERSION@/$version/g" .github/release/Info.plist > "$app/Contents/Info.plist"
+# The disk image holds only the app, so its credits travel inside it.
+.github/release/notices.sh "$app/Contents/Resources"
 # RbxNative's own certificate (ad-hoc without the secrets): the same
 # identity every release keeps Keychain and Accessibility grants.
 .github/release/macos-sign.sh "$app"

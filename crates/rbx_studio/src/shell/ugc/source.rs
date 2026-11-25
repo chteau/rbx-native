@@ -41,6 +41,7 @@ pub(super) fn item_from_file(path: &Path, kind: ItemKind) -> Result<Collected, S
                 name: mesh.name,
                 geometry,
                 template: None,
+                to_mesh: rbx_ugc::IDENTITY,
             }),
             None => parts.push(Part {
                 name: mesh.name,
@@ -94,6 +95,7 @@ pub(super) fn item_from_file(path: &Path, kind: ItemKind) -> Result<Collected, S
         notes,
         from_file: true,
         head: None,
+        places: Vec::new(),
     })
 }
 

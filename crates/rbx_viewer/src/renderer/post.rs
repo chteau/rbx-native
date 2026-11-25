@@ -23,7 +23,7 @@ use crate::quality::QualityProfile;
 use pipelines::{attachment, blur_layout, fullscreen, sample_layout};
 use samples::supported;
 use targets::Sources;
-pub(super) use targets::Targets;
+pub(super) use targets::{Targets, ADORNMENT_LAYER_FORMAT};
 
 /// Half floats, not 8-bit: the whole point of the offscreen target is the range
 /// above 1 the threshold compares against.

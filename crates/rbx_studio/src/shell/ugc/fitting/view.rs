@@ -26,7 +26,7 @@ impl FittingWindow {
         let (hint, body): (String, AnyElement) = match &self.check.run {
             Run::Done(done) => (
                 report::summary(&done.findings),
-                report::findings_view("ugc-fit-report", &done.findings, &subject),
+                report::findings_view("ugc-fit-report", &done.findings, &subject, None),
             ),
             Run::Running => (
                 "Checking\u{2026}".into(),

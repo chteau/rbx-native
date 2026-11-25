@@ -248,7 +248,7 @@ fn finding_row(index: usize, finding: &Finding, cx: &mut Context<Shell>) -> impl
 
 /// A finding's message with its `code` spans set in the code font and their
 /// backticks dropped.
-fn message(text: &str) -> StyledText {
+pub(super) fn message(text: &str) -> StyledText {
     let (plain, spans) = code_spans(text);
     let runs = spans
         .into_iter()

@@ -89,8 +89,9 @@ fn without_its_cages_the_garment_is_left_alone() {
     assert!(deform(&wrap(0.0), Mat4::IDENTITY, &garment, &HashMap::new()).is_none());
 }
 
-#[test]
-fn a_worn_layered_garment_asks_for_its_cages() {
+/// The meshes a jacket worn on a one-part rig asks for, with its cages saved
+/// under `cage` (the body's) and `reference` (the jacket's).
+fn worn_garment_wants(cage: &str, reference: &str) -> Vec<AssetRef> {
     use rbx_dom::{CFrameData, Instance, Vector3Data};
     let mut dom = WeakDom::new();
     let add =
@@ -135,7 +136,7 @@ fn a_worn_layered_garment_asks_for_its_cages() {
         4,
         "WrapTarget",
         Some(torso),
-        &[("CageMeshId", content(11))],
+        &[(cage, content(11))],
     );
     let jacket = add(&mut dom, 5, "Accessory", Some(rig), &[]);
     let handle = add(&mut dom, 6, "MeshPart", Some(jacket), &mesh_part(20));
@@ -144,13 +145,28 @@ fn a_worn_layered_garment_asks_for_its_cages() {
         7,
         "WrapLayer",
         Some(handle),
-        &[("ReferenceMeshId", content(21))],
+        &[(reference, content(21))],
     );
 
     let database = ReflectionDatabase::embedded();
     let wrap = of(&dom, &database, handle).unwrap();
-    let wanted: Vec<_> = wrap.meshes().cloned().collect();
-    assert_eq!(wanted, vec![id(21), id(11), id(10)]);
+    wrap.meshes().cloned().collect()
+}
+
+#[test]
+fn a_worn_layered_garment_asks_for_its_cages() {
+    assert_eq!(
+        worn_garment_wants("CageMeshId", "ReferenceMeshId"),
+        vec![id(21), id(11), id(10)]
+    );
+}
+
+#[test]
+fn cages_saved_as_content_properties_are_read_too() {
+    assert_eq!(
+        worn_garment_wants("CageMeshContent", "ReferenceMeshContent"),
+        vec![id(21), id(11), id(10)]
+    );
 }
 
 #[test]

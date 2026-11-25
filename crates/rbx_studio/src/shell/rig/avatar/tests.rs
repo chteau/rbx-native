@@ -934,3 +934,21 @@ fn a_package_parts_hidden_surface_data_reaches_the_rigs_wrap_target() {
         Some(&blob)
     );
 }
+
+#[test]
+fn a_package_cage_saved_as_cage_mesh_content_is_read() {
+    let avatar = avatar_r15();
+    let (_, _, mut options) = rig_of(&avatar);
+    let mut package = package(&[("Head", 777, &["NeckRigAttachment"])]);
+    let part = package.root_refs()[0];
+    let part = package.get(part).unwrap().children()[0];
+    let target = package.new_instance("WrapTarget", "HeadWrapTarget", Some(part));
+    set(
+        &mut package,
+        target,
+        "CageMeshContent",
+        uri("rbxassetid://778"),
+    );
+    apply_packages(&mut options, &[worn_asset(10, 27, package)]);
+    assert_eq!(options.pieces["Head"].cage.map(|(id, _)| id), Some(778));
+}

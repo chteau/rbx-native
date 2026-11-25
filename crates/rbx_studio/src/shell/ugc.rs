@@ -20,9 +20,11 @@ mod source;
 mod upload;
 mod upload_window;
 mod validator_window;
+mod visual;
 
 pub(crate) use fitting::strip_preview;
 pub(crate) use source::check_file;
+pub(crate) use visual::BETA_ID as VISUAL_BETA_ID;
 
 /// The asset type an item is checked and uploaded as, and the body scale
 /// its rigid size table is read for.
@@ -80,6 +82,9 @@ pub(crate) struct Collected {
     pub(crate) from_file: bool,
     /// The dynamic head checked alongside, for a `DynamicHead` item.
     pub(crate) head: Option<Box<rbx_ugc::head::Head>>,
+    /// Where each part's and cage's vertices sit in the place, for drawing
+    /// a finding on them; empty for a source file.
+    pub(crate) places: Vec<visual::Place>,
 }
 
 impl Collected {

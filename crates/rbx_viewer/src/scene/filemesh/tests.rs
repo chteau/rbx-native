@@ -90,6 +90,30 @@ fn a_mesh_part_reads_mesh_id_wrapped_in_content() {
 }
 
 #[test]
+fn a_mesh_part_with_an_empty_mesh_id_reads_mesh_content() {
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(9000);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    let referent = Ref::new(1);
+    let mut instance = Instance::new(referent, "MeshPart", "Barrel");
+    let properties = instance.properties_mut();
+    properties.insert("MeshId".to_string(), Variant::String(String::new()));
+    properties.insert(
+        "MeshContent".to_string(),
+        Variant::Content(rbx_dom::Content::Uri("rbxassetid://77".to_string())),
+    );
+    properties.insert("size".to_string(), vector3_variant(2.0, 3.0, 2.0));
+    properties.insert("CFrame".to_string(), cframe_at(0.0, 0.0, 0.0));
+    dom.insert(instance);
+    dom.set_parent(referent, Some(workspace));
+
+    let plan = planned(&dom);
+
+    assert_eq!(plan.entries[0].mesh, AssetRef::Id(77));
+}
+
+#[test]
 fn mesh_part_scale_fits_size_over_initial_size() {
     let mut dom = WeakDom::new();
     let workspace = Ref::new(9000);

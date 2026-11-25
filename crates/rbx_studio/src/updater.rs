@@ -73,6 +73,25 @@ impl Blocked {
     }
 }
 
+/// Whether this copy runs inside a Flatpak sandbox, where `flatpak run`
+/// starts it from outside.
+pub(crate) fn sandboxed() -> bool {
+    install::in_flatpak(std::env::var_os("FLATPAK_ID"), Path::new("/.flatpak-info"))
+}
+
+/// The file that starts this copy again from outside it: the AppImage it
+/// runs from (its own executable sits in a mount that goes away), or the
+/// executable itself.
+pub(crate) fn launchable() -> std::io::Result<PathBuf> {
+    let exe = std::env::current_exe()?;
+    Ok(install::appimage_of(
+        &exe,
+        std::env::var_os("APPIMAGE"),
+        std::env::var_os("APPDIR"),
+    )
+    .unwrap_or_else(|| install::running_path(exe)))
+}
+
 /// Whether, and why not, this copy can update itself. Found once: none of
 /// it changes while the editor runs, and Settings asks on every frame.
 pub(crate) fn blocked() -> Option<Blocked> {
@@ -84,7 +103,7 @@ fn find_blocked() -> Option<Blocked> {
     if current().is_none() {
         return Some(Blocked::DevBuild);
     }
-    if install::in_flatpak(std::env::var_os("FLATPAK_ID"), Path::new("/.flatpak-info")) {
+    if sandboxed() {
         return Some(Blocked::Flatpak);
     }
     if release::TARGET.is_none() {

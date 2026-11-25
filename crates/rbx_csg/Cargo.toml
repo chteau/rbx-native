@@ -10,3 +10,4 @@ description = "Solid modeling for unions, negations and intersections: a BSP-tre
 glam = "0.33"
 rbx_mesh = { path = "../rbx_mesh" }
 rbx_materials = { path = "../rbx_materials" }
+ruzstd = "0.9"

@@ -46,7 +46,7 @@ mod view;
 
 pub(super) use dialog::{Dialog, Failure};
 pub(super) use place::upload_file;
-use place::{after_pick, confirm, confirmed, link, pick_landed};
+use place::{after_pick, confirm, confirmed, link, past_check, pick_landed};
 use upload::{not_updated, outcome, upload, verb};
 
 const MOCK_VARIABLE: &str = "RBX_STUDIO_PUBLISH_MOCK";
@@ -267,14 +267,72 @@ impl Shell {
         cx.notify();
     }
 
+    /// Opens `dialog`, or first the pre-publish check before a
+    /// confirmation, unless that place opted out of it.
     fn ask_to_upload(&mut self, dialog: Dialog, cx: &mut Context<Self>) {
+        let dialog = match dialog {
+            Dialog::Confirm { mode, target, name } if self.prepublish_asks(target.place_id) => {
+                Dialog::Check {
+                    mode,
+                    target,
+                    name,
+                    dont_ask: false,
+                }
+            }
+            other => other,
+        };
+        let checking = matches!(dialog, Dialog::Check { .. });
         self.roblox.dialog = Some(dialog);
         self.roblox.focus_pending = true;
+        if checking {
+            self.check_before_upload(cx);
+        }
         cx.notify();
+    }
+
+    /// The check's dialog goes on to the confirmation by itself when the
+    /// check it waited on found nothing worse than notes.
+    pub(super) fn prepublish_landed(&mut self, cx: &mut Context<Self>) {
+        let worrying = self
+            .prepublish
+            .findings
+            .iter()
+            .any(|finding| finding.severity != rbx_audit::Severity::Low);
+        if !worrying {
+            self.continue_past_check(cx);
+        }
+    }
+
+    /// The check's Continue and Skip, and Enter while it is open.
+    pub(super) fn continue_past_check(&mut self, cx: &mut Context<Self>) {
+        if let Some(stop_asking) = past_check(&mut self.roblox.dialog) {
+            if let Some(place) = stop_asking {
+                self.set_prepublish_asks(place, false, cx);
+            }
+            self.roblox.focus_pending = true;
+            cx.notify();
+        }
+    }
+
+    /// The check's Review: the findings in the dock, the upload dropped.
+    pub(super) fn review_prepublish(&mut self, cx: &mut Context<Self>) {
+        self.roblox.dialog = None;
+        self.set_panel_open(super::layout::Panel::PrePublish, true, cx);
+        cx.notify();
+    }
+
+    pub(super) fn toggle_prepublish_dont_ask(&mut self, cx: &mut Context<Self>) {
+        if let Some(Dialog::Check { dont_ask, .. }) = &mut self.roblox.dialog {
+            *dont_ask = !*dont_ask;
+            cx.notify();
+        }
     }
 
     /// The confirmation's Save/Publish button, and Enter while it is open.
     pub(super) fn confirm_roblox_upload(&mut self, cx: &mut Context<Self>) {
+        if matches!(self.roblox.dialog, Some(Dialog::Check { .. })) {
+            return self.continue_past_check(cx);
+        }
         if let Some((target, mode)) = confirmed(&mut self.roblox.dialog) {
             self.start_upload(target, mode, cx);
         }

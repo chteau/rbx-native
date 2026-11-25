@@ -3,7 +3,7 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Vec3;
 
-use crate::scene::{Part, Slot};
+use crate::scene::{Part, ShapeKind, Slot};
 
 const INSTANCE_ATTRIBUTES: [wgpu::VertexAttribute; 9] = wgpu::vertex_attr_array![
     2 => Float32x4,
@@ -51,6 +51,19 @@ const INSTANCE_ATTRIBUTES_AFTER_TANGENT: [wgpu::VertexAttribute; 9] = wgpu::vert
 ///
 /// The material triple sits exactly where the padding to 16 bytes used to, so
 /// the stride still matches WGSL's default layout for `InstanceInput`.
+/// Where `material_kind` keeps the variant alpha mode, past the kind's byte.
+const VARIANT_ALPHA_SHIFT: u32 = 8;
+/// Set in `material_kind` for every part shape but a truss, whose material
+/// tiles from a corner of each face rather than from the part's centre (see
+/// `material.wgsl`'s `anchored_face`).
+const FACE_ANCHORED: u32 = 1 << 10;
+/// With [`FACE_ANCHORED`], for a ball or a cylinder: the face is picked by
+/// the normal's main axis and pushed out onto the round side.
+const FACE_CURVED: u32 = 1 << 11;
+/// Where `material_kind` keeps a block's packed `scene::Part::surfaces`
+/// (three bits a face), above everything else.
+const SURFACES_SHIFT: u32 = 12;
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub(super) struct InstanceRaw {
@@ -61,22 +74,36 @@ pub(super) struct InstanceRaw {
     /// Layer of every material texture array (see `renderer::material`).
     material_layer: u32,
     studs_per_tile: f32,
-    /// `scene::Kind` as its discriminant in the low byte (`material.wgsl` names
-    /// the same values), and above it a block's packed `scene::Part::surfaces`.
+    /// `scene::Kind` as its discriminant in the low byte,
+    /// `scene::VariantAlpha` in the next two bits, the `FACE_*` bits above
+    /// them and a block's packed `scene::Part::surfaces` from
+    /// [`SURFACES_SHIFT`] up; `material.wgsl` names the same values and
+    /// splits them apart again (`KIND_MASK`, `VARIANT_ALPHA_SHIFT`,
+    /// `VARIANT_ALPHA_MASK`, `FACE_ANCHORED`, `FACE_CURVED`,
+    /// `SURFACES_SHIFT`).
     material_kind: u32,
 }
 
 impl InstanceRaw {
     pub(super) fn from_part(part: &Part) -> Self {
-        let mut raw = Self::new(
+        let mut instance = Self::new(
             part.transform.to_cols_array_2d(),
             part.color,
             part.alpha,
             part.reflectance,
             part.material,
         );
-        raw.material_kind |= part.surfaces << 8;
-        raw
+        match part.kind {
+            ShapeKind::Box | ShapeKind::Wedge | ShapeKind::CornerWedge => {
+                instance.material_kind |= FACE_ANCHORED;
+            }
+            ShapeKind::Ball | ShapeKind::CylinderX | ShapeKind::CylinderY => {
+                instance.material_kind |= FACE_ANCHORED | FACE_CURVED;
+            }
+            ShapeKind::Truss { .. } => {}
+        }
+        instance.material_kind |= part.surfaces << SURFACES_SHIFT;
+        instance
     }
 
     /// Used directly by `renderer::filemesh`, which has no `Part`: its model
@@ -95,7 +122,7 @@ impl InstanceRaw {
             reflectance,
             material_layer: material.layer,
             studs_per_tile: material.studs_per_tile,
-            material_kind: material.kind as u32,
+            material_kind: material.kind as u32 | (material.alpha as u32) << VARIANT_ALPHA_SHIFT,
         }
     }
 
@@ -135,13 +162,14 @@ impl InstanceRaw {
 mod tests {
     use super::super::pipeline::{APPEARANCE_SHADER, BOX_SHADER, FILEMESH_SHADER};
     use super::*;
-    use crate::scene::Kind;
+    use crate::scene::{Kind, VariantAlpha};
 
     fn plastic() -> Slot {
         Slot {
             layer: 0,
             kind: Kind::Plastic,
             studs_per_tile: 10.0,
+            alpha: VariantAlpha::Ignored,
         }
     }
 
@@ -151,12 +179,45 @@ mod tests {
             layer: 3,
             kind: Kind::Neon,
             studs_per_tile: 4.0,
+            alpha: VariantAlpha::Ignored,
         };
         let instance = InstanceRaw::new([[0.0; 4]; 4], [1.0; 3], 1.0, 0.0, material);
 
         assert_eq!(instance.material_layer, 3);
         assert_eq!(instance.studs_per_tile, 4.0);
         assert_eq!(instance.material_kind, 2);
+    }
+
+    #[test]
+    fn a_variant_alpha_mode_rides_above_the_kind() {
+        let material = Slot {
+            layer: 1,
+            kind: Kind::Textured,
+            studs_per_tile: 4.0,
+            alpha: VariantAlpha::TintMask,
+        };
+        let instance = InstanceRaw::new([[0.0; 4]; 4], [1.0; 3], 1.0, 0.0, material);
+
+        assert_eq!(instance.material_kind & 0xff, Kind::Textured as u32);
+        assert_eq!(
+            instance.material_kind >> VARIANT_ALPHA_SHIFT,
+            VariantAlpha::TintMask as u32
+        );
+        // The shaders split the word with the same two numbers.
+        for shader in [BOX_SHADER, FILEMESH_SHADER] {
+            assert!(shader.contains("const KIND_MASK: u32 = 0xffu;"));
+            assert!(shader.contains("const VARIANT_ALPHA_SHIFT: u32 = 8u;"));
+            assert!(shader.contains("const VARIANT_ALPHA_MASK: u32 = 0x3u;"));
+            assert!(shader.contains("const FACE_ANCHORED: u32 = 0x400u;"));
+            assert!(shader.contains("const FACE_CURVED: u32 = 0x800u;"));
+            assert!(shader.contains("const SURFACES_SHIFT: u32 = 12u;"));
+        }
+        assert_eq!(
+            (FACE_ANCHORED, FACE_CURVED, SURFACES_SHIFT),
+            (0x400, 0x800, 12)
+        );
+        // Six faces of three bits each still fit above the flags.
+        assert!(SURFACES_SHIFT + 18 <= 32);
     }
 
     /// The `@location(n)` list of the `InstanceInput` struct one shader

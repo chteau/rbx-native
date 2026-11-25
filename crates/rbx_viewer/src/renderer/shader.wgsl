@@ -6,6 +6,8 @@
 struct VertexInput {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
+    // White but on a union painted in its pieces' colours.
+    @location(15) color: vec4<f32>,
 }
 
 struct InstanceInput {
@@ -37,6 +39,14 @@ struct VertexOutput {
     @location(11) @interpolate(flat) extent: vec3<f32>,
 }
 
+// A vertex colour is stored sRGB, like a part's; the instance colour
+// arrives already linear.
+fn vertex_tint(srgb: vec3<f32>) -> vec3<f32> {
+    let low = srgb / 12.92;
+    let high = pow((srgb + 0.055) / 1.055, vec3<f32>(2.4));
+    return select(high, low, srgb <= vec3<f32>(0.04045));
+}
+
 @vertex
 fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     let model = mat4x4<f32>(
@@ -52,22 +62,22 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     // Parts only ever carry an axis-aligned scale, so rotating the normal by the model
     // matrix and renormalizing gives the same direction as the inverse transpose would.
     out.normal = (model * vec4<f32>(vertex.normal, 0.0)).xyz;
-    out.color = instance.color;
+    out.color = vec4<f32>(instance.color.rgb * vertex_tint(vertex.color.rgb), instance.color.a);
     out.world_position = world.xyz;
     out.reflectance = instance.reflectance;
     // The material is projected in object space, in studs: the column lengths
     // are the part's own size, since the only scale a part carries is its own.
-    out.object_studs = vertex.position * model_extent(model);
+    out.extent = model_extent(model);
+    out.object_studs = vertex.position * out.extent;
     out.object_normal = vertex.normal;
     out.axis_x = normalize(model[0].xyz);
     out.axis_y = normalize(model[1].xyz);
     out.axis_z = normalize(model[2].xyz);
     out.material = vec3<u32>(
         instance.material_layer,
-        instance.material_kind & 0xffu,
-        instance.material_kind >> 8u,
+        instance.material_kind & ((1u << SURFACES_SHIFT) - 1u),
+        instance.material_kind >> SURFACES_SHIFT,
     );
-    out.extent = model_extent(model);
     out.studs_per_tile = instance.studs_per_tile;
     return out;
 }
@@ -84,8 +94,11 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     input.reflectance = in.reflectance;
     input.layer = in.material.x;
     input.studs_per_tile = in.studs_per_tile;
+    input.kind = in.material.y & KIND_MASK;
+    input.variant_alpha = (in.material.y >> VARIANT_ALPHA_SHIFT) & VARIANT_ALPHA_MASK;
     input.extent = in.extent;
-    input.kind = in.material.y;
+    input.anchored = (in.material.y & FACE_ANCHORED) != 0u;
+    input.curved = (in.material.y & FACE_CURVED) != 0u;
     surface_relief(&input, in.material.z, in.extent);
 
     // Straight (non-premultiplied) alpha: the translucent pipeline pairs this

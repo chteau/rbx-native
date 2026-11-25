@@ -5,6 +5,7 @@ mod mirror;
 // Refs are small integers handed out in order: Fx hashes them in a couple
 // of instructions where SipHash was a fifth of a big place's load.
 use rustc_hash::{FxHashMap as HashMap, FxHashSet as HashSet};
+use std::sync::Arc;
 
 use crate::change::Change;
 use crate::error::DomError;
@@ -20,7 +21,10 @@ pub use mirror::Snapshot;
 /// maintains both forward (children) and reverse (parent) edges.
 #[derive(Debug, Clone, Default)]
 pub struct WeakDom {
-    instances: HashMap<Ref, Instance>,
+    // Shared, copy-on-write: a clone of the whole DOM (an undo snapshot, the
+    // render thread's copy, an autosave) copies one pointer per instance, and
+    // only the instances written afterwards are ever duplicated.
+    instances: HashMap<Ref, Arc<Instance>>,
     root_refs: Vec<Ref>,
     // Instances a script parented to nil. Alive and reachable by `Ref`, but in
     // no tree: a root would be written to the place file and listed in the
@@ -49,7 +53,7 @@ impl WeakDom {
     pub fn insert(&mut self, instance: Instance) {
         let referent = instance.referent();
         self.next_ref = self.next_ref.max(referent.value().saturating_add(1));
-        self.instances.insert(referent, instance);
+        self.instances.insert(referent, Arc::new(instance));
         self.root_refs.push(referent);
         self.log(Change::Added(referent));
     }
@@ -81,6 +85,7 @@ impl WeakDom {
         let instance = self
             .instances
             .get_mut(&referent)
+            .map(Arc::make_mut)
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.properties_mut().insert(name.to_string(), value);
         // Writing back what was already there changes nothing, so it must not
@@ -108,6 +113,7 @@ impl WeakDom {
         let instance = self
             .instances
             .get_mut(&referent)
+            .map(Arc::make_mut)
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.properties_mut().remove(name);
         if old.is_some() {
@@ -126,6 +132,7 @@ impl WeakDom {
         let instance = self
             .instances
             .get_mut(&referent)
+            .map(Arc::make_mut)
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.name().to_string();
         // Like `set_property`: the same name again is no edit.
@@ -149,6 +156,7 @@ impl WeakDom {
         let instance = self
             .instances
             .get_mut(&referent)
+            .map(Arc::make_mut)
             .ok_or(DomError::UnknownInstance(referent))?;
         let old = instance.class().to_string();
         instance.set_class(class);
@@ -252,14 +260,14 @@ impl WeakDom {
     }
 
     pub fn get(&self, referent: Ref) -> Option<&Instance> {
-        self.instances.get(&referent)
+        self.instances.get(&referent).map(Arc::as_ref)
     }
 
     // Raw escape hatch: edits made through the returned `&mut Instance` (e.g. via
     // `properties_mut`/`set_name`) bypass the change log, since `Instance` has no
     // link back to it. Prefer `set_property`/`set_name` for tracked live edits.
     pub fn get_mut(&mut self, referent: Ref) -> Option<&mut Instance> {
-        self.instances.get_mut(&referent)
+        self.instances.get_mut(&referent).map(Arc::make_mut)
     }
 
     pub fn root_refs(&self) -> &[Ref] {
@@ -288,7 +296,9 @@ impl WeakDom {
         match parent {
             Some(parent_ref) => {
                 self.parents.insert(child, parent_ref);
-                if let Some(parent_instance) = self.instances.get_mut(&parent_ref) {
+                if let Some(parent_instance) =
+                    self.instances.get_mut(&parent_ref).map(Arc::make_mut)
+                {
                     parent_instance.children_mut().push(child);
                 }
             }
@@ -328,7 +338,9 @@ impl WeakDom {
             match parent {
                 Some(parent_ref) => {
                     self.parents.insert(child, parent_ref);
-                    if let Some(parent_instance) = self.instances.get_mut(&parent_ref) {
+                    if let Some(parent_instance) =
+                        self.instances.get_mut(&parent_ref).map(Arc::make_mut)
+                    {
                         parent_instance.children_mut().push(child);
                     }
                 }
@@ -390,7 +402,7 @@ impl WeakDom {
             return;
         }
         let siblings = match parent {
-            Some(parent) => match self.instances.get_mut(&parent) {
+            Some(parent) => match self.instances.get_mut(&parent).map(Arc::make_mut) {
                 Some(instance) => instance.children_mut(),
                 None => return,
             },
@@ -407,7 +419,9 @@ impl WeakDom {
     fn detach(&mut self, child: Ref) {
         match self.parents.remove(&child) {
             Some(old_parent) => {
-                if let Some(parent_instance) = self.instances.get_mut(&old_parent) {
+                if let Some(parent_instance) =
+                    self.instances.get_mut(&old_parent).map(Arc::make_mut)
+                {
                     remove_one(parent_instance.children_mut(), child);
                 }
             }
@@ -569,5 +583,32 @@ mod tests {
     fn parent_of_an_unknown_referent_is_none() {
         let dom = WeakDom::new();
         assert_eq!(dom.parent(Ref::new(7)), None);
+    }
+
+    // A copy shares its instances until one side writes: every way of
+    // writing must leave the other side as it was, an undo snapshot most of
+    // all.
+    #[test]
+    fn a_copy_never_sees_the_original_written_or_the_reverse() {
+        let mut dom = WeakDom::new();
+        let model = dom.new_instance("Model", "Model", None);
+        let part = dom.new_instance("Part", "Part", Some(model));
+        let copy = dom.clone();
+
+        dom.set_property(part, "Transparency", Variant::Float32(1.0))
+            .unwrap();
+        dom.set_name(part, "Renamed").unwrap();
+        dom.set_class(part, "WedgePart").unwrap();
+        dom.get_mut(part).unwrap().properties_mut().clear();
+        dom.set_parent(part, None);
+
+        let before = copy.get(part).unwrap();
+        assert_eq!((before.name(), before.class()), ("Part", "Part"));
+        assert!(before.properties().is_empty());
+        assert_eq!(copy.get(model).unwrap().children(), [part]);
+
+        let mut copy = copy;
+        copy.set_name(model, "Elsewhere").unwrap();
+        assert_eq!(dom.get(model).unwrap().name(), "Model");
     }
 }
