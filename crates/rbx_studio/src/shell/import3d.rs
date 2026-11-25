@@ -74,6 +74,9 @@ pub(crate) struct Imported {
 impl Shell {
     /// The file picker behind both Import menu items.
     pub(crate) fn choose_import(&mut self, kind: ImportKind, cx: &mut Context<Self>) {
+        if self.import_offline(cx) {
+            return;
+        }
         let prompt = cx.prompt_for_paths(PathPromptOptions {
             files: true,
             directories: false,
@@ -108,6 +111,9 @@ impl Shell {
         kind: ImportKind,
         cx: &mut Context<Self>,
     ) {
+        if self.import_offline(cx) {
+            return;
+        }
         for path in paths {
             if is_image(&path) {
                 self.import_image(path, cx);
@@ -126,6 +132,12 @@ impl Shell {
                 );
             }
         }
+    }
+
+    /// Every import is an upload, so none starts offline (unless the
+    /// upload is mocked).
+    fn import_offline(&mut self, cx: &mut Context<Self>) -> bool {
+        std::env::var_os(MOCK_VARIABLE).is_none() && self.offline_refuses("Import", cx)
     }
 
     fn import_model(

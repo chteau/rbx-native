@@ -141,22 +141,15 @@ impl Shell {
                     })
                     .on_click(cx.listener(|shell, _, _, cx| shell.open_ugc_validator(None, None, cx)))
                     .into_any_element(),
-                    tile(
+                    cloud_tile(
                         &self.ribbon_nav,
                         "ribbon-upload-item",
                         IconName::CloudUpload,
                         "Upload Item",
+                        "Upload Item \u{2014} upload an avatar item and finish it on the Creator Hub",
+                        |shell, cx| shell.open_ugc_upload(None, None, cx),
                         cx,
-                    )
-                    .tooltip(|window, cx| {
-                        super::tooltip::text(
-                            "Upload Item \u{2014} upload an avatar item and finish it on the Creator Hub",
-                            window,
-                            cx,
-                        )
-                    })
-                    .on_click(cx.listener(|shell, _, _, cx| shell.open_ugc_upload(None, None, cx)))
-                    .into_any_element(),
+                    ),
                     tile(
                         &self.ribbon_nav,
                         "ribbon-face-preview",
@@ -616,38 +609,24 @@ impl Shell {
 
     fn settings_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let mut tiles = vec![
-            tile(
+            cloud_tile(
                 &self.ribbon_nav,
                 "ribbon-game-settings",
                 IconName::Settings,
                 "Game Settings",
+                "Game Settings — the experience's settings and this place's own",
+                |shell, cx| RibbonCommand::GameSettings.run(shell, cx),
                 cx,
-            )
-            .tooltip(|window, cx| {
-                super::tooltip::text(
-                    "Game Settings — the experience's settings and this place's own",
-                    window,
-                    cx,
-                )
-            })
-            .on_click(cx.listener(|shell, _, _, cx| RibbonCommand::GameSettings.run(shell, cx)))
-            .into_any_element(),
-            tile(
+            ),
+            cloud_tile(
                 &self.ribbon_nav,
                 "ribbon-data-stores",
                 IconName::Database,
                 "Data Stores",
+                "Data Stores — browse and edit the experience's data stores",
+                |shell, cx| RibbonCommand::DataStores.run(shell, cx),
                 cx,
-            )
-            .tooltip(|window, cx| {
-                super::tooltip::text(
-                    "Data Stores — browse and edit the experience's data stores",
-                    window,
-                    cx,
-                )
-            })
-            .on_click(cx.listener(|shell, _, _, cx| RibbonCommand::DataStores.run(shell, cx)))
-            .into_any_element(),
+            ),
         ];
         if crate::beta::enabled(crate::update_planning::BETA_ID) {
             tiles.push(
@@ -1679,6 +1658,29 @@ pub(super) fn tile(
 ///
 /// Offering the click and doing nothing is the worst of the options, which
 /// is what this exists to stop.
+/// A tile whose command needs Roblox: greyed out with "You're offline"
+/// while offline (and out of the roving group, as [`unavailable_tile`]),
+/// an ordinary [`tile`] with `tip` otherwise.
+fn cloud_tile(
+    nav: &Roving,
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    tip: &'static str,
+    run: fn(&mut Shell, &mut Context<Shell>),
+    cx: &mut Context<Shell>,
+) -> AnyElement {
+    if crate::offline::blocked() {
+        return base_tile(id, icon, label, false)
+            .tooltip(|window, cx| super::tooltip::text(crate::offline::TIP, window, cx))
+            .into_any_element();
+    }
+    tile(nav, id, icon, label, cx)
+        .tooltip(move |window, cx| super::tooltip::text(tip, window, cx))
+        .on_click(cx.listener(move |shell, _, _, cx| run(shell, cx)))
+        .into_any_element()
+}
+
 pub(super) fn unavailable_tile(
     id: impl Into<ElementId>,
     icon: IconName,

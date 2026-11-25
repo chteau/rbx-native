@@ -119,6 +119,14 @@ pub(in crate::shell) enum RibbonCommand {
 }
 
 impl RibbonCommand {
+    /// Whether this needs Roblox's servers, and so greys out offline.
+    pub(in crate::shell) fn needs_roblox(self) -> bool {
+        matches!(
+            self,
+            RibbonCommand::GameSettings | RibbonCommand::DataStores
+        )
+    }
+
     pub(in crate::shell) fn run(self, shell: &mut Shell, cx: &mut Context<Shell>) {
         match self {
             RibbonCommand::Insert(item) => match item.shape {

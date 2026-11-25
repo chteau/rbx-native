@@ -234,6 +234,15 @@ impl Shell {
         let item = |label: &'static str, kind: ImportKind| {
             menu::item(label).on_click(move |shell, cx| shell.choose_import(kind, cx))
         };
+        if crate::offline::blocked() {
+            return vec![
+                super::base_tile("ribbon-import", IconName::Import, "Import", false)
+                    .tooltip(|window, cx| {
+                        super::super::tooltip::text(crate::offline::TIP, window, cx)
+                    })
+                    .into_any_element(),
+            ];
+        }
         let trigger = tile(
             &self.ribbon_nav,
             "ribbon-import",
