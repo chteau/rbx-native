@@ -134,10 +134,10 @@ pub(crate) fn udim(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "new",
-        lua.create_function(|_, (scale, offset): (Option<f32>, Option<i32>)| {
+        lua.create_function(|_, (scale, offset): (Option<f32>, Option<f64>)| {
             Ok(LuaUDim(UDim {
                 scale: scale.unwrap_or_default(),
-                offset: offset.unwrap_or_default(),
+                offset: offset.unwrap_or_default() as i32,
             }))
         })?,
     )?;
@@ -205,15 +205,17 @@ pub(crate) fn udim2(lua: &Lua) -> Result<Table> {
     )?;
     table.set(
         "fromOffset",
-        lua.create_function(|_, (x, y): (i32, i32)| {
+        // Any number goes, cut to an integer the way `UDim2.new` cuts it
+        // (a NaN or an infinity from a script's maths doesn't throw).
+        lua.create_function(|_, (x, y): (f64, f64)| {
             Ok(LuaUDim2(UDim2 {
                 x: UDim {
                     scale: 0.0,
-                    offset: x,
+                    offset: x as i32,
                 },
                 y: UDim {
                     scale: 0.0,
-                    offset: y,
+                    offset: y as i32,
                 },
             }))
         })?,

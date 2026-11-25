@@ -9,6 +9,8 @@
 mod compat;
 pub mod csg;
 mod ctx;
+mod editable;
+pub use editable::set_asset_source;
 mod datatypes;
 mod debugger;
 mod defaults;

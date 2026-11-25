@@ -3528,6 +3528,18 @@ goldens. Plan and status in `docs/research/local-run/PLAN.md`.
   per-frame hash, so a replay that drifts says where.
 - [x] **Offline**: Test › Offline packs a place's meshes, textures,
   sounds, animations and packages; with them a run needs no network.
+- [x] **`EditableMesh` and `EditableImage`**: every `AssetService`
+  constructor (`CreateEditableMesh`/`Image`, the `Async` ones from an asset
+  id, an object or DataModel content, `CreateMeshPartAsync`, which stays
+  local, and `CreateDataModelContentAsync`), every vertex, face, normal, UV,
+  colour, bone and FACS method, the batch calls, queries and raycasts,
+  EditableImage's pixel buffers and draw calls with every supported
+  `ImageCombineType`, and the client memory budget. Ids, error messages and
+  results checked against goldens from a real Roblox server and client. The
+  viewport redraws what a script changes, in Play (local) and in the command
+  bar and plugins (no beta needed there, Studio has them in Edit too, and
+  fixed-size meshes grow in Edit like Studio's). OpenArena's MD3 models
+  render and animate.
 - [ ] 📋 **Still open**: the off conformance rows (buoyancy, pathfinding,
   terrain edges, BallSocket drift, jump apex), plugins inside a run,
   `CollectionService:CreateCollection`, `ControllerManager` character
@@ -3715,13 +3727,6 @@ goldens. Plan and status in `docs/research/local-run/PLAN.md`.
   not a default this project should ship opinionated about.
 
 ### Editor
-- [ ] 📋 **`EditableMesh` and `EditableImage` in the Luau runtime**: right
-  now scripts can't make them at all. Needs `AssetService:CreateEditableMesh`,
-  `CreateEditableImage` and `CreateMeshPartAsync`, the vertex/face/UV
-  methods, and the viewport drawing the result live, in Edit and in Play.
-  Found while porting OpenArena: its player and weapon models are
-  vertex-animated MD3s that get rebuilt every frame through `EditableMesh`,
-  so none of them show up in our editor yet (real Roblox runs them fine).
 - [ ] 📋 **The MCP server's AI generation tools and the package flag**:
   `generate_mesh`, `generate_material`, `generate_procedural_model`,
   `segment_mesh` and `generate_texture` are listed with Studio's schemas

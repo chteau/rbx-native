@@ -317,7 +317,7 @@ fn fragment_part(
     let mesh = local.to_mesh();
     let positions: Vec<[f32; 3]> = mesh.vertices.iter().map(|v| v.position).collect();
     let triangles = mesh.indices.as_chunks::<3>().0.to_vec();
-    super::meshes::bind(lua, ctx, referent, &positions, &triangles)?;
+    crate::editable::bind(lua, ctx, referent, &positions, &triangles)?;
     physics.register_mesh(referent, positions, triangles);
     new_instance(lua, ctx, referent)
 }

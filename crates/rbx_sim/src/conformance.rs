@@ -634,6 +634,41 @@ pub const TESTS: &[Test] = &[
         tolerance: &[],
     },
     Test {
+        name: "EditableMeshTopology",
+        source: include_str!("../conformance/tests/EditableMeshTopology.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "EditableMeshQuery",
+        source: include_str!("../conformance/tests/EditableMeshQuery.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "EditableMeshBatch",
+        source: include_str!("../conformance/tests/EditableMeshBatch.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "EditableMeshBones",
+        source: include_str!("../conformance/tests/EditableMeshBones.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "EditableImageDraw",
+        source: include_str!("../conformance/tests/EditableImageDraw.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "EditableAssets",
+        source: include_str!("../conformance/tests/EditableAssets.luau"),
+        tolerance: &[],
+    },
+    Test {
+        name: "EditableBudget",
+        source: include_str!("../conformance/tests/EditableBudget.luau"),
+        tolerance: &[],
+    },
+    Test {
         name: "DragDetectorApi",
         source: include_str!("../conformance/tests/DragDetectorApi.luau"),
         tolerance: &[],
@@ -760,6 +795,10 @@ pub const CLIENT_FOLDER: &str = "ConformanceClient";
 /// Client modules, by name: `Shared` and each test's client half.
 const CLIENT_MODULES: &[(&str, &str)] = &[
     ("Shared", include_str!("../conformance/client/Shared.luau")),
+    (
+        "EditableBudget",
+        include_str!("../conformance/client/EditableBudget.luau"),
+    ),
     (
         "CameraInput",
         include_str!("../conformance/client/CameraInput.luau"),
@@ -1410,6 +1449,50 @@ impl Drop for WebCache {
 /// one pass (each stalls for 3 s of real time).
 const SCRIPT_PACED: &[&str] = &["FrameOverrun"];
 
+/// The user who owns the sandbox place goldens are recorded in.
+const SANDBOX_OWNER: u64 = 925308243;
+
+/// A mesh and an image that user made, for the editables tests: private
+/// assets the anonymous route can't download.
+const FIXTURES: &[(u64, &[u8])] = &[
+    (
+        122810350731801,
+        include_bytes!("../conformance/assets/122810350731801.mesh"),
+    ),
+    (
+        126400952100520,
+        include_bytes!("../conformance/assets/126400952100520.png"),
+    ),
+];
+
+/// The fixtures, then `fetcher` if there is one (an offline run has none,
+/// and finds nothing else).
+struct Fixtures(Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>);
+
+impl rbx_assets::AssetFetcher for Fixtures {
+    fn fetch_id(&self, id: u64) -> Result<Vec<u8>, rbx_assets::FetchError> {
+        if let Some((_, bytes)) = FIXTURES.iter().find(|(f, _)| *f == id) {
+            return Ok(bytes.to_vec());
+        }
+        match &self.0 {
+            Some(fetcher) => fetcher.fetch_id(id),
+            None => Err(rbx_assets::FetchError::NotFound(id)),
+        }
+    }
+
+    fn fetch_thumb(&self, spec: &str) -> Result<Vec<u8>, rbx_assets::FetchError> {
+        match &self.0 {
+            Some(fetcher) => fetcher.fetch_thumb(spec),
+            // Offline, the one thumbnail the editables tests ask for is a
+            // flat stand-in of its size: what they check is the size.
+            None if spec.ends_with("&w=150&h=150") => Ok(OFFLINE_THUMB.to_vec()),
+            None => Err(rbx_assets::FetchError::NotFound(0)),
+        }
+    }
+}
+
+const OFFLINE_THUMB: &[u8] = include_bytes!("../conformance/assets/thumb-150.png");
+
 fn run_session(
     limit: f64,
     only: &[String],
@@ -1423,9 +1506,13 @@ fn run_session(
     dom.take_changes();
     let mut session = Session::new(dom)?;
     session.set_network(network);
+    // Before the services, which download models through it.
+    session.set_fetcher(std::sync::Arc::new(Fixtures(fetcher)));
     let web = WebCache::seeded();
     session.set_services(rbx_lua::server::Services {
         cache_dir: Some(web.0.clone()),
+        // The sandbox place's owner, whose assets the editables tests open.
+        asset_owners: vec![SANDBOX_OWNER],
         ..Default::default()
     });
     // A test's verdict mustn't hang on how loaded the machine is.
@@ -1433,9 +1520,6 @@ fn run_session(
         session.set_pacing(crate::Pacing::Scripts);
     } else {
         session.set_script_timeout(std::time::Duration::from_secs(86_400));
-    }
-    if let Some(fetcher) = fetcher {
-        session.set_fetcher(fetcher);
     }
     session.set_join_after(crate::JOIN_AFTER);
     session.start();

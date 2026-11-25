@@ -2368,6 +2368,14 @@ fn stat_number(v: f64) -> String {
     format!("{sign}{body}{suffix}")
 }
 
+/// What `AssetService` downloads through outside a run (the editor's
+/// command bar and plugins), the same way a run does.
+pub fn asset_source(
+    fetcher: std::sync::Arc<dyn rbx_assets::AssetFetcher>,
+) -> std::sync::Arc<dyn rbx_lua::server::AssetSource> {
+    std::sync::Arc::new(Models(fetcher))
+}
+
 /// `AssetService:LoadAssetAsync`'s models and `ContentProvider`'s
 /// preloads: the asset cache first (an offline pack, an earlier run), else
 /// the asset fetcher, kept.
@@ -2393,6 +2401,10 @@ impl rbx_lua::server::AssetSource for Models {
             let _ = cache.put_id(id, &bytes);
         }
         Ok(bytes)
+    }
+
+    fn fetch_thumb(&self, spec: &str) -> Result<Vec<u8>, String> {
+        self.0.fetch_thumb(spec).map_err(|e| e.to_string())
     }
 
     /// Content shipped with the client (`rbxasset://`) and thumbnails are
