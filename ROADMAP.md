@@ -3069,6 +3069,23 @@ both the plain fetch failure and the silent fall back to a default
     at all, even a raw XTest click sent by hand, while Chee was using the
     PC. That's delivery, not mapping, and I haven't pinned it down.
 
+- [x] **Unified agentic permission** (Creator Roadmap, Late 2026): one
+  permission model (`rbx_permissions`) for MCP clients and every kind of
+  plugin (Roblox, rbx-native Luau, WASM), and one page, Settings ›
+  Permissions, to see and change it per agent. Capabilities: Look at your
+  game, Edit your game, Script injection, Selection, Run code & playtest,
+  Connect to the internet (per host), Publish & manage assets, Files on
+  this computer. MCP clients get Studio 0.748's MCP Permissions shape
+  (Safe / Balanced / Full access, Custom once changed, Deny/Allow per
+  capability, never a prompt; Balanced by default, so uploads and file
+  access start off). Plugins get Studio's plugin manager rules: a Roblox
+  plugin is asked for each new HTTP host and for Script Injection the first
+  time it changes a script in the place; an rbx-native plugin's
+  `plugin.toml` sets its defaults. Every older check (the `dom.write`
+  guard, `hasPermission`, the debugger API, HttpService hosts, the WASM
+  grants) reads the one store now. Studio keeps MCP permissions per game on
+  the Roblox account; ours are local and global, and OCALE (Open Cloud
+  Luau Execution) has no caller here yet to gate.
 - [x] **Require-by-string and case-only script names over MCP.** Edit's
   `execute_luau`, the command bar and plugins now take
   `require("./Sibling")`, `require("../Up")`, `require("@self/Child")` and
@@ -4228,11 +4245,6 @@ there. What each does live, and where it stands here:
   it needs a way to list everything in a user's or a group's inventory
   over Open Cloud, which is what decides whether a panel like it can be
   built here.
-- [ ] 📋 **Unified agentic permission** (Late 2026): one control over what
-  Assistant, MCP, plugins and OCALE may access and do. This project plans
-  both an MCP server (above) and a plugin API (see Plugins above). They should
-  share one permission model from the start rather than each getting its
-  own and being reconciled later.
 - [ ] ⚠️ **Scene generation and a new texture generator** (Late 2026)
   belong under [AI content generation](#ai-content-generation) below. They
   have the same backend-agnostic shape, and a generated scene is, in the

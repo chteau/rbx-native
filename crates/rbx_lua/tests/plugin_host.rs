@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 use rbx_dom::{Change, Ref, Variant, Vector3Data, WeakDom};
 use rbx_lua::plugin::{
-    Answer, Context, GuiEvent, GuiEventKind, HandleEvent, HandleEventKind, Input, LayoutBox,
-    Manifest, Origin, Outcome, OutputKind, Permission, PluginHost, PluginSource, PromptKind,
-    Request, SourceBody,
+    Answer, Capability, Context, GuiEvent, GuiEventKind, HandleEvent, HandleEventKind, Input,
+    LayoutBox, Manifest, Origin, Outcome, OutputKind, Permission, PluginHost, PluginSource,
+    PromptKind, Request, SourceBody,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -255,7 +255,9 @@ fn native_plugin_with_dom_write_renames_part() {
     dom.take_changes();
     let dir = tempdir::Dir::new("guard_allowed");
     let mut host = PluginHost::new(ReflectionDatabase::embedded(), Some(dir.0.clone()));
-    host.add(native_source(vec![Permission::DomWrite]));
+    host.add(native_source(vec![Permission::Capability(
+        Capability::EditPlace,
+    )]));
     let ctx = Context {
         now: 100.0,
         ..Context::default()
@@ -286,6 +288,100 @@ fn native_source(permissions: Vec<Permission>) -> PluginSource {
             },
         },
     }
+}
+
+/// A Roblox plugin that injects a script when its button is clicked, over
+/// `store`; returns the fixture and the button.
+fn injector(tag: &str, store: rbx_permissions::Shared) -> (Fixture, u32) {
+    let src = r#"
+        local tb = plugin:CreateToolbar("Tools")
+        local btn = tb:CreateButton("inject", "Inject", "", "Inject")
+        btn.Click:Connect(function()
+            local ok, err = pcall(function()
+                local s = Instance.new("Script")
+                s.Name = "Injected"
+                s.Source = "print('hi')"
+                s.Parent = workspace
+            end)
+            print(ok and "injected" or err)
+        end)
+    "#;
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let part = dom.new_instance("Part", "Part", Some(workspace));
+    dom.take_changes();
+    let dir = tempdir::Dir::new(tag);
+    let mut host = PluginHost::new(ReflectionDatabase::embedded(), Some(dir.0.clone()));
+    host.set_permissions(store);
+    host.add(roblox(src));
+    let mut f = Fixture {
+        host,
+        dom,
+        part,
+        workspace,
+        now: 100.0,
+        _dir: dir,
+    };
+    f.send(Input::Start);
+    let button = f.host.ui().toolbars[0].buttons[0].id;
+    (f, button)
+}
+
+#[test]
+fn script_injection_asks_once_and_the_answer_is_stored() {
+    let store = rbx_permissions::Store::default().shared();
+    let (mut f, button) = injector("inject", store.clone());
+    let out = f.send(Input::ButtonClicked(button));
+    assert!(texts(&out, OutputKind::Print)[0].contains("Script injection"));
+    let prompt = out
+        .requests
+        .iter()
+        .find_map(|r| match r {
+            Request::Prompt {
+                id,
+                kind: PromptKind::Permission(Permission::Capability(Capability::EditScripts)),
+                ..
+            } => Some(*id),
+            _ => None,
+        })
+        .expect("script injection prompt");
+    // A second refusal while the prompt is up asks nothing more.
+    let again = f.send(Input::ButtonClicked(button));
+    assert!(!again
+        .requests
+        .iter()
+        .any(|r| matches!(r, Request::Prompt { .. })));
+
+    f.send(Input::PromptAnswered(prompt, Answer::Allow(true)));
+    assert_eq!(
+        store
+            .borrow()
+            .policy()
+            .stored("TestPlugin", Capability::EditScripts),
+        Some(rbx_permissions::Decision::Allow)
+    );
+    let out = f.send(Input::ButtonClicked(button));
+    assert_eq!(texts(&out, OutputKind::Print), vec!["injected".to_string()]);
+}
+
+#[test]
+fn edit_your_game_can_be_taken_from_a_roblox_plugin() {
+    let mut policy = rbx_permissions::Policy::default();
+    policy.set(
+        "TestPlugin",
+        Capability::EditPlace,
+        Some(rbx_permissions::Decision::Deny),
+    );
+    policy.set(
+        "TestPlugin",
+        Capability::EditScripts,
+        Some(rbx_permissions::Decision::Allow),
+    );
+    let store = rbx_permissions::Store::in_memory(policy).shared();
+    let (mut f, button) = injector("revoked", store);
+    let out = f.send(Input::ButtonClicked(button));
+    assert!(texts(&out, OutputKind::Print)[0].contains("Edit your game"));
+    assert!(out.requests.is_empty());
 }
 
 #[test]

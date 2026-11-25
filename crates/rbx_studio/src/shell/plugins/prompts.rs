@@ -1,13 +1,13 @@
 //! What a plugin asks the user: a Color3 (`plugin:PromptColor3`), a
 //! BrickColor (`plugin:PromptBrickColor`), whether it may reach an HTTP
-//! host, or which item of a `PluginMenu`.
+//! host or inject scripts, or which item of a `PluginMenu`.
 
 use std::rc::Rc;
 
 use gpui_kit::component::color_picker::{ColorPicker, ColorPickerState};
 use gpui_kit::component::v_flex;
 use gpui_kit::*;
-use rbx_lua::plugin::{Answer, Input, MenuItem, PluginId, PromptKind, UiId};
+use rbx_lua::plugin::{Answer, Input, MenuItem, Permission, PluginId, PromptKind, UiId};
 
 use crate::launcher::ui::{self, Weight};
 use crate::shell::brick_color::BrickTarget;
@@ -139,7 +139,7 @@ impl Shell {
 
     /// The front prompt as an overlay: a dialog with a colour picker (Color3)
     /// or the BrickColor palette (BrickColor) and OK/Cancel; an Allow/Deny
-    /// dialog naming the plugin and host (HTTP); a menu at the cursor
+    /// dialog naming the plugin and what it asks for (a permission); a menu at the cursor
     /// (Menu). Answering sends `Input::PromptAnswered` and shows the next.
     pub(super) fn plugin_prompt_overlay(
         &mut self,
@@ -150,7 +150,7 @@ impl Shell {
         Some(match kind {
             PromptKind::Color3 { initial } => self.color_prompt(initial, window, cx),
             PromptKind::BrickColor { initial } => self.brick_prompt(initial, cx),
-            PromptKind::HttpPermission { host } => self.http_prompt(plugin, &host, cx),
+            PromptKind::Permission(permission) => self.permission_prompt(plugin, &permission, cx),
             PromptKind::Menu { title, items } => self.menu_prompt(&title, &items, window, cx),
             // The system's own file chooser, never queued (`plugin_prompt`).
             PromptKind::OpenFiles { .. } | PromptKind::SaveFile { .. } => return None,
@@ -239,21 +239,48 @@ impl Shell {
         )
     }
 
-    fn http_prompt(&mut self, plugin: PluginId, host: &str, cx: &mut Context<Self>) -> AnyElement {
+    /// Studio's two plugin prompts: HTTP to a new host, and Script
+    /// Injection, worded as Studio's plugin manager explains them.
+    fn permission_prompt(
+        &mut self,
+        plugin: PluginId,
+        permission: &Permission,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let name = self
             .plugins
             .host
             .as_ref()
             .and_then(|h| h.plugins().into_iter().find(|p| p.id == plugin))
             .map_or_else(|| "A plugin".to_owned(), |p| p.name);
+        let (glyph, title, body) = match permission {
+            Permission::Host(host) => (
+                "globe",
+                format!("Allow {name} to reach {host}?"),
+                format!(
+                    "{name} wants to send HTTP requests to {host}. A plugin can use them to \
+                     send information about your machine or your game\u{2019}s scripts. Your \
+                     answer is remembered in Settings \u{203a} Permissions."
+                ),
+            ),
+            Permission::Capability(_) => (
+                "code",
+                format!("Allow {name} to inject scripts?"),
+                format!(
+                    "{name} wants to insert or change scripts in your game. Scripts can do \
+                     pretty much anything once the game runs. Your answer is remembered in \
+                     Settings \u{203a} Permissions."
+                ),
+            ),
+        };
         div()
             .absolute()
             .inset_0()
             .child(ui::dialog(
                 440.,
-                ui::dialog_glyph("globe", ui::accent(), ui::wash()),
-                format!("Allow {name} to reach {host}?"),
-                format!("{name} wants to send HTTP requests to {host}. Your answer is remembered."),
+                ui::dialog_glyph(glyph, ui::accent(), ui::wash()),
+                title,
+                body,
                 None,
                 vec![
                     ui::button("plugin-prompt-deny", "Deny", Weight::Secondary, false)

@@ -56,6 +56,13 @@ impl PluginHost {
         }
     }
 
+    /// Points every permission check at the editor's store. Call before
+    /// the plugins start: each one's write guard keeps the store it
+    /// started with.
+    pub fn set_permissions(&mut self, store: rbx_permissions::Shared) {
+        self.shared.borrow_mut().permissions = store;
+    }
+
     /// Registers a plugin; it starts on the next [`Input::Start`].
     pub fn add(&mut self, source: PluginSource) -> PluginId {
         let id = PluginId::try_from(self.plugins.len() + 1).unwrap_or(PluginId::MAX);

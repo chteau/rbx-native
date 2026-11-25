@@ -71,10 +71,11 @@ pub(in crate::shell) fn toggle(
 /// A segmented control: `items` as `(label, selected, on_click)`, items
 /// `h` tall (26, or 24 beside a slider).
 pub(in crate::shell) fn segmented(
-    id: &'static str,
+    id: impl Into<SharedString>,
     h: f32,
     items: Vec<(&'static str, bool, OnPick)>,
 ) -> Div {
+    let id: SharedString = id.into();
     h_flex()
         .flex_none()
         .gap(px(2.))
@@ -89,7 +90,7 @@ pub(in crate::shell) fn segmented(
                 .enumerate()
                 .map(|(i, (label, selected, on_click))| {
                     h_flex()
-                        .id((id, i))
+                        .id((id.clone(), i))
                         .h(px(h))
                         .px(px(11.))
                         .items_center()

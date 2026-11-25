@@ -102,8 +102,14 @@ from a plain `.rbxm`: its window over the 3D view, the direction buttons,
 runs a plugin headless; `RUN_PLUGIN_SELECT=<name>` selects a part and
 `RUN_PLUGIN_CLICK=<text>` clicks a widget element by its text.
 
-The first HTTP request from a Roblox plugin to a host asks the user for
-permission; the answer is remembered in the plugin's settings.
+What a plugin may do comes from one permission store, shared with MCP
+clients and shown in Settings › Permissions (`<config>/permissions.json`).
+A Roblox plugin may do what Studio lets one do, with Studio's two prompts:
+the first HTTP request to a host, and the first time it changes a script in
+the place or parents one into it (Script Injection). The write that set off
+the script prompt is refused; once allowed, the next one goes through. Both
+answers are remembered, and the page can change them, forget a host, or
+take Edit your game, Selection or the debugger away from a plugin.
 
 ## Community plugins
 
@@ -215,11 +221,16 @@ module. Unknown permissions are rejected when the manifest is read.
 
 | Permission | Allows |
 | --- | --- |
-| `dom.read` | reading the place |
+| `dom.read` | reading the place (WASM; a Luau plugin always can, as in Studio) |
 | `dom.write` | editing the place |
+| `scripts` | changing a script in the place, or parenting one into it |
 | `selection` | reading and changing the selection |
 | `http:<host>` | HTTP to that host; `http:*` for any |
 | `debugger` | breakpoints, watches, stepping |
+
+These are a native plugin's defaults: what it lists is allowed, the rest is
+refused (an unlisted host too, without a prompt). Settings › Permissions can
+change any of them afterwards, and the change applies to the next call.
 
 ## WASM ABI
 
@@ -239,7 +250,7 @@ request `{"method": "...", "params": {...}}`. The host answers
 | `command.register {id, text, tooltip?}` | none |
 | `selection.get`, `selection.set {refs}` | `selection` |
 | `instance.roots`, `instance.get {ref}`, `instance.find {path}`, `instance.property {ref, name}` | `dom.read` |
-| `instance.set_property {ref, name, value}`, `instance.new {class, parent?, name?}`, `instance.set_parent {ref, parent}`, `instance.destroy {ref}` | `dom.write` |
+| `instance.set_property {ref, name, value}`, `instance.new {class, parent?, name?}`, `instance.set_parent {ref, parent}`, `instance.destroy {ref}` | `dom.write` (and `scripts` to change a script or put one in the place) |
 
 Refs are JSON numbers. `instance.get` returns `{ref, name, class, parent,
 children}`; `instance.find` takes a path like `"Workspace.Model.Part"`.

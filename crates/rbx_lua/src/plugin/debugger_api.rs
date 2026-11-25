@@ -8,20 +8,21 @@ use mlua::{
 };
 use rbx_dom::Ref;
 
-use super::api::{Arg, DebuggerRequest, DebuggerView, Permission, Request};
+use super::api::{Arg, Capability, DebuggerRequest, DebuggerView, Request};
 use super::env::env;
 use super::native;
 use crate::engine::signal::{fire, fire_values, LuaSignal, Owner, SignalKey};
 use crate::instance::LuaInstance;
 
-const DENIED: &str = "this plugin lacks the 'debugger' permission";
+const DENIED: &str =
+    "this plugin lacks the 'Run code & playtest' permission (Settings \u{203a} Permissions)";
 
 struct LuaManager;
 
 struct LuaScriptDebugger(Ref);
 
 fn check(lua: &Lua) -> Result<()> {
-    if native::allowed(lua, &Permission::Debugger) {
+    if native::allowed(lua, Capability::RunCode) {
         Ok(())
     } else {
         Err(mlua::Error::runtime(DENIED))
@@ -273,8 +274,8 @@ impl UserData for LuaScriptDebugger {
 /// signals (`Owner::Instance(script)` keys) `EncounteredBreak(line)`,
 /// `Resuming`, `BreakpointAdded(bp)`, `BreakpointRemoved(bp)`,
 /// `WatchAdded(w)`, `WatchRemoved(w)`. Every action is a
-/// `Request::Debugger`; reads come from `Context::debugger`. A native
-/// plugin without `Permission::Debugger` gets an error.
+/// `Request::Debugger`; reads come from `Context::debugger`. A plugin
+/// without `Capability::RunCode` gets an error.
 pub(crate) fn manager(lua: &Lua) -> Result<Value> {
     check(lua)?;
     lua.create_userdata(LuaManager).map(Value::UserData)

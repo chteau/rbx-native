@@ -1,7 +1,7 @@
 //! rbx-native's own WASM plugins: a module described by a `plugin.toml`,
 //! run under `wasmtime` with a fuel budget and a memory cap, reaching the
 //! editor only through one JSON host call whose methods are gated by the
-//! manifest's permissions.
+//! editor's permission store (the manifest's permissions are its defaults).
 //!
 //! # ABI
 //!
@@ -26,7 +26,8 @@
 //!   `instance.property {ref, name}` → value [`dom.read`];
 //! - `instance.set_property {ref, name, value}`, `instance.new {class,
 //!   parent?, name?}` → ref, `instance.set_parent {ref, parent}`,
-//!   `instance.destroy {ref}` [`dom.write`].
+//!   `instance.destroy {ref}` [`dom.write`; changing a script, or putting
+//!   one in the place, also needs `scripts`].
 //!
 //! Refs are JSON numbers (the DOM's referent value). Property values:
 //! bool, number, string, `{"x","y","z"}` Vector3, `{"x","y"}` Vector2,
@@ -41,31 +42,13 @@ mod runner;
 pub use dom_host::DomHost;
 pub use runner::{WasmPlugin, FUEL_PER_CALL, MEMORY_LIMIT};
 
-/// What a WASM plugin may do (from its `plugin.toml` permissions, as
-/// strings: `dom.read`, `dom.write`, `selection`, `debugger`,
-/// `http:<host>`).
+/// What a WASM plugin may do right now, as the editor's permission store
+/// answers for it before each call into the plugin.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Grants {
     pub dom_read: bool,
     pub dom_write: bool,
     pub selection: bool,
-}
-
-impl Grants {
-    /// From manifest permission strings; unknown ones are ignored here
-    /// (the manifest parser already rejected them).
-    pub fn from_permissions<S: AsRef<str>>(permissions: &[S]) -> Self {
-        let mut grants = Grants::default();
-        for permission in permissions {
-            match permission.as_ref() {
-                "dom.read" => grants.dom_read = true,
-                "dom.write" => grants.dom_write = true,
-                "selection" => grants.selection = true,
-                _ => {}
-            }
-        }
-        grants
-    }
 }
 
 /// What the editor provides to a WASM plugin. `method`/`params` are the

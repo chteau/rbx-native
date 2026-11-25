@@ -73,7 +73,10 @@ fn command_registers_then_calls_selection() {
         reg.len(),
         sel.len()
     ));
-    let grants = Grants::from_permissions(&["selection"]);
+    let grants = Grants {
+        selection: true,
+        ..Grants::default()
+    };
     let mut plugin = load(&wat, grants).unwrap();
     let mut host = MockHost::default();
     let effects = plugin.start(&mut host).unwrap();

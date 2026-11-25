@@ -26,6 +26,8 @@ rbx_csg = { path = "../rbx_csg" }
 # `CreateEditableMeshAsync`/`CreateMeshPartAsync` load mesh assets.
 rbx_mesh = { path = "../rbx_mesh" }
 rbx_xml = { path = "../rbx_xml" }
+# What plugins may do: the editor's one permission model.
+rbx_permissions = { path = "../rbx_permissions" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
