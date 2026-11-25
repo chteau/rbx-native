@@ -214,7 +214,10 @@ fn build_once(
                     color: stroke.color,
                     alpha: stroke.alpha,
                     band: stroke.band,
-                    gradient: None,
+                    gradient: stroke
+                        .gradient
+                        .as_ref()
+                        .map(|gradient| (rows.row(gradient), gradient)),
                 };
                 let shape = Shape {
                     join: stroke.join,
@@ -231,6 +234,26 @@ fn build_once(
         // object outlines the glyphs like `TextStrokeColor3` does, at its
         // own `Thickness`.
         if let Some(typeset) = &element.text {
+            // `ClipsDescendants` text, or the `TextBox` being typed in,
+            // stops at the object's own box. Any other text spills past
+            // it, a resting `TextBox`'s text and placeholder included, as
+            // the real client draws them (the `text_boxes` fidelity scene).
+            let editing = fonts
+                .edit
+                .as_ref()
+                .is_some_and(|edit| edit.referent == element.referent);
+            let scissor = match typeset.text.clipped || editing {
+                true => {
+                    let own = element
+                        .clip
+                        .map_or(element.rect, |c| c.intersect(&element.rect));
+                    match self::scissor(&own, target) {
+                        Some(s) => Some(s),
+                        None => continue,
+                    }
+                }
+                false => scissor,
+            };
             let mut strokes = text::strokes(&typeset.text);
             for stroke in &element.strokes {
                 if stroke.on_text && stroke.alpha > 0.0 {

@@ -1,0 +1,102 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "_event_rtt_beats": 3,
+      "_event_rtt_ms": 49,
+      "_invoke_client_beats": 3,
+      "_invoke_client_ms": 50,
+      "_invoke_server_beats": 3,
+      "_invoke_server_ms": 49,
+      "c2s_order": "A1 B1 A2 B2 A3 B3 U1 U2 U3",
+      "invoke_client": 42,
+      "invoke_server": 42,
+      "s2c_arrival_beats": 1,
+      "s2c_order": "A1 B1 A2 B2 A3 B3 Av=4 Ainst:MadeThisFrame U1 U2 U3",
+      "s2c_values": "4"
+    },
+    {
+      "_event_rtt_beats": 6,
+      "_event_rtt_ms": 49,
+      "_invoke_client_beats": 3,
+      "_invoke_client_ms": 49,
+      "_invoke_server_beats": 6,
+      "_invoke_server_ms": 49,
+      "c2s_order": "A1 B1 A2 B2 A3 B3 U1 U2 U3",
+      "invoke_client": 42,
+      "invoke_server": 42,
+      "s2c_arrival_beats": 1,
+      "s2c_order": "A1 B1 A2 B2 A3 B3 Av=4 Ainst:MadeThisFrame U1 U2 U3",
+      "s2c_values": "4"
+    },
+    {
+      "_event_rtt_beats": 12,
+      "_event_rtt_ms": 66,
+      "_invoke_client_beats": 3,
+      "_invoke_client_ms": 49,
+      "_invoke_server_beats": 9,
+      "_invoke_server_ms": 49,
+      "c2s_order": "A1 B1 A2 B2 A3 B3 U1 U2 U3",
+      "invoke_client": 42,
+      "invoke_server": 42,
+      "s2c_arrival_beats": 1,
+      "s2c_order": "A1 B1 A2 B2 A3 B3 Av=4 Ainst:MadeThisFrame U1 U2 U3",
+      "s2c_values": "4"
+    },
+    {
+      "_event_rtt_beats": 12,
+      "_event_rtt_ms": 49,
+      "_invoke_client_beats": 3,
+      "_invoke_client_ms": 49,
+      "_invoke_server_beats": 12,
+      "_invoke_server_ms": 49,
+      "c2s_order": "A1 B1 A2 B2 A3 B3 U1 U2 U3",
+      "invoke_client": 42,
+      "invoke_server": 42,
+      "s2c_arrival_beats": 1,
+      "s2c_order": "A1 B1 A2 B2 A3 B3 Av=4 Ainst:MadeThisFrame U1 U2 U3",
+      "s2c_values": "4"
+    },
+    {
+      "_event_rtt_beats": 10,
+      "_event_rtt_ms": 33,
+      "_invoke_client_beats": 3,
+      "_invoke_client_ms": 49,
+      "_invoke_server_beats": 15,
+      "_invoke_server_ms": 49,
+      "c2s_order": "A1 B1 A2 B2 A3 B3 U1 U2 U3",
+      "invoke_client": 42,
+      "invoke_server": 42,
+      "s2c_arrival_beats": 1,
+      "s2c_order": "A1 B1 A2 B2 A3 B3 Av=4 Ainst:MadeThisFrame U1 U2 U3",
+      "s2c_values": "4"
+    }
+  ],
+  "result": {
+    "_event_rtt_beats": 10.0,
+    "_event_rtt_ms": 49.0,
+    "_invoke_client_beats": 3.0,
+    "_invoke_client_ms": 49.0,
+    "_invoke_server_beats": 9.0,
+    "_invoke_server_ms": 49.0,
+    "c2s_order": "A1 B1 A2 B2 A3 B3 U1 U2 U3",
+    "invoke_client": 42.0,
+    "invoke_server": 42.0,
+    "s2c_arrival_beats": 1.0,
+    "s2c_order": "A1 B1 A2 B2 A3 B3 Av=4 Ainst:MadeThisFrame U1 U2 U3",
+    "s2c_values": "4"
+  },
+  "source": "real Roblox server, place 3086963177 version 541, joined with Sober",
+  "spread": {
+    "_event_rtt_beats": 9.0,
+    "_event_rtt_ms": 33.0,
+    "_invoke_client_beats": 0.0,
+    "_invoke_client_ms": 1.0,
+    "_invoke_server_beats": 12.0,
+    "_invoke_server_ms": 0.0,
+    "invoke_client": 0.0,
+    "invoke_server": 0.0,
+    "s2c_arrival_beats": 0.0
+  },
+  "status": "recorded"
+}

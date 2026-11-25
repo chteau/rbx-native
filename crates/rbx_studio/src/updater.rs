@@ -344,7 +344,7 @@ const MAX_PACKAGE: u64 = 512 << 20;
 /// `timeout_global`: a connection that stalls mid-body would otherwise hold
 /// the check (and its "Checking…" row) for the rest of the session.
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
+    rbx_net::config()
         .user_agent(concat!("rbxstudio/", env!("CARGO_PKG_VERSION")))
         .timeout_connect(Some(Duration::from_secs(10)))
         .timeout_recv_response(Some(Duration::from_secs(30)))

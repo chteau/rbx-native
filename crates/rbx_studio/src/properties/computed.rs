@@ -32,7 +32,6 @@ use super::edit::pivot::{pivot, ORIGIN};
 use super::Properties;
 
 mod assembly;
-mod materials;
 
 pub(super) use assembly::{moves_joints, Assembly, Joints};
 
@@ -184,7 +183,7 @@ impl Properties {
                 return Some(custom);
             }
         }
-        materials::MATERIALS
+        rbx_materials::physics::PHYSICS
             .iter()
             .find(|(name, _)| *name == material)
             .map(|(_, physics)| *physics)

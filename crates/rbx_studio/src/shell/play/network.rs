@@ -10,6 +10,10 @@
 //! editor's live view, which reaches the editor from the game server
 //! through the tunnel.
 //!
+//! Local Run (and Play (local)) takes the same applied values for the link
+//! between its server and clients (`rbx_sim::link`), Off being no added
+//! latency: inbound is what reaches a client, outbound what it sends.
+//!
 //! One deliberate difference: Studio's default is Ideal Fiber (8 ms each
 //! way), but its playtest server is local. Here the server is a real
 //! Roblox server across the internet, so the default is **Off**: Play
@@ -295,7 +299,9 @@ impl Shell {
     pub(in crate::shell) fn network_apply(&mut self, cx: &mut Context<Self>) {
         self.play.network.commit();
         let applied = self.play.network.applied.clone();
-        let status = if !self.play.network.shaped_client {
+        let status = if self.local_run_set_network(&applied.conditions) {
+            None
+        } else if !self.play.network.shaped_client {
             (self.play.session.is_some() && applied.choice != Choice::Off).then(|| {
                 "Applies at the next Play: this test started without simulation.".to_owned()
             })

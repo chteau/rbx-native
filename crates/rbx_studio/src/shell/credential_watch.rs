@@ -49,8 +49,17 @@ impl Shell {
             let from_env = fixture.as_deref() == Some("env") || key_from_env();
             self.credential_watch.notice = Some(merged(None, reports, from_env));
         }
+        let mut net = rbx_net::status();
         self.credential_watch.poll = Some(cx.spawn(async move |this, cx| loop {
             cx.background_executor().timer(POLL).await;
+            // The title bar's Offline pill follows the network the same way.
+            let now = rbx_net::status();
+            if now != net {
+                net = now;
+                if this.update(cx, |_, cx| cx.notify()).is_err() {
+                    return;
+                }
+            }
             let reports = rbx_cloud::expiry::take_reports();
             if !(reports.key || reports.session) {
                 continue;

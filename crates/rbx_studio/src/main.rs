@@ -334,6 +334,7 @@ fn main() {
         verbose,
         configure: None,
         settings_only: false,
+        test_peer: false,
         repro: None,
     };
 

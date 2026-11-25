@@ -11,7 +11,7 @@ use rbx_dom::{Ref, Variant};
 use super::api::OutputKind;
 use super::env::{env, Env};
 use super::events::PluginHooks;
-use super::{debugger_api, native, plugin_object, services};
+use super::{debugger_api, native, plugin_object};
 use crate::engine::scheduler;
 use crate::hooks::HookSlot;
 use crate::instance::tree::full_name;
@@ -25,19 +25,21 @@ const TIMEOUT: &str = "Script timeout: exhausted allowed execution time";
 /// to `Shared::output` as the plugin's `Print` lines), plus `warn`
 /// (`Warn`), `require`, `typeof`-compatible datatypes,
 /// `engine::install`, `plugin_object::install`,
-/// `services::install_settings`, `debugger_api::install`,
+/// `studio::install`, `debugger_api::install`,
 /// `native::install`; `Env` as app data and `crate::hooks::HookSlot(
 /// PluginHooks)`; compiled with `game`/`workspace`/`Workspace`/`script`
-/// mutable; an interrupt that errors with "Script timeout: exhausted
+/// and `pcall`/`xpcall` mutable (see `Runtime::build`); an interrupt that errors with "Script timeout: exhausted
 /// allowed execution time" once `Shared::deadline` has passed. Sandboxed
 /// last.
 pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
-    let lua = Lua::new();
+    let lua = crate::luau::new_vm();
     lua.set_compiler(Compiler::new().set_mutable_globals([
         "game",
         "workspace",
         "Workspace",
         "script",
+        "pcall",
+        "xpcall",
     ]));
     lua.set_app_data(env.clone());
     lua.set_app_data(HookSlot(Rc::new(PluginHooks)));
@@ -53,7 +55,7 @@ pub(crate) fn build(env: Rc<Env>) -> Result<Lua> {
 
     crate::engine::install(&lua, env.engine.clone())?;
     plugin_object::install(&lua)?;
-    services::install_settings(&lua)?;
+    crate::studio::install(&lua, &env.ctx)?;
     debugger_api::install(&lua)?;
     native::install(&lua)?;
 
@@ -122,12 +124,7 @@ pub(crate) fn compile(lua: &Lua, script: Ref) -> Result<Option<mlua::Function>> 
     meta.set("__index", lua.globals())?;
     scope.set_metatable(Some(meta))?;
 
-    match lua
-        .load(source)
-        .set_name(format!("={name}"))
-        .set_environment(scope)
-        .into_function()
-    {
+    match crate::luau::load_scoped(lua, source, format!("={name}"), scope) {
         Ok(function) => Ok(Some(function)),
         Err(error) => {
             env.shared

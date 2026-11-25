@@ -140,6 +140,7 @@ fn apply_properties(
 }
 
 fn apply_parents(dom: &mut WeakDom, chunks: &[Chunk]) -> Result<(), BinaryError> {
+    let mut links = Vec::new();
     for chunk in chunks_named(chunks, "PRNT") {
         for link in prnt::parse(&chunk.data)? {
             let Some(child) = u32::try_from(link.child).ok().map(Ref::new) else {
@@ -160,9 +161,10 @@ fn apply_parents(dom: &mut WeakDom, chunks: &[Chunk]) -> Result<(), BinaryError>
                     .filter(|parent| dom.get(*parent).is_some())
             };
 
-            dom.set_parent(child, parent);
+            links.push((child, parent));
         }
     }
+    dom.set_parents(&links);
 
     Ok(())
 }

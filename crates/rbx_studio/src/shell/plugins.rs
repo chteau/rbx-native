@@ -199,6 +199,8 @@ impl Shell {
         };
         if commit_before {
             self.commit_plugin_step();
+            // A plugin reading a `ScriptDocument` reads the text as typed.
+            self.flush_script_edits(cx);
         }
         let context = self.plugin_context();
         // Everything logged so far was already reflected; the host reports
@@ -297,6 +299,12 @@ impl Shell {
                 .view_bounds
                 .get()
                 .map(|b| [f32::from(b.size.width), f32::from(b.size.height)]),
+            theme: match crate::theme::active().mode {
+                gpui_kit::component::ThemeMode::Light => "Light",
+                _ => "Dark",
+            }
+            .to_owned(),
+            scripts: self.scripts.tabs.all().to_vec(),
         }
     }
 

@@ -74,7 +74,7 @@ fn redirect_allowed(url: &Url) -> bool {
 
 /// Reads `url`, which [`allowed`] accepted.
 pub(crate) fn get(url: &Url) -> Result<Fetched, String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = rbx_net::config()
         .timeout_global(Some(TIMEOUT))
         .max_redirects(0)
         .max_redirects_will_error(false)

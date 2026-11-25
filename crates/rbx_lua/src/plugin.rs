@@ -23,19 +23,21 @@ pub(crate) mod arg;
 mod debugger_api;
 pub(crate) mod env;
 mod events;
+mod file;
 mod guard;
 mod host;
-mod http;
+pub(crate) mod http;
 mod input;
-mod loader;
+pub(crate) mod loader;
 mod lot;
 mod native;
 mod plugin_object;
 mod require;
+mod script_document;
 mod services;
 mod undo;
 mod vm;
-mod world;
+pub(crate) mod world;
 
 #[cfg(test)]
 pub(crate) mod testing;

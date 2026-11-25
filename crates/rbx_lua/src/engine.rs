@@ -11,6 +11,7 @@ pub(crate) mod collection;
 pub(crate) mod edit;
 pub(crate) mod events;
 pub(crate) mod json;
+pub(crate) mod parallel;
 pub(crate) mod require;
 pub(crate) mod scheduler;
 pub(crate) mod signal;
@@ -34,6 +35,25 @@ pub(crate) trait Host {
     /// Told the time `scheduler::tick` runs at.
     fn set_now(&self, _now: f64) {}
 
+    /// Whether the clock only moves from frame to frame (a local Run). A
+    /// timer is then never over in the frame it was set in, so
+    /// `task.wait(0)` waits for the next frame, as in Roblox.
+    fn frame_clock(&self) -> bool {
+        false
+    }
+
+    /// Whether a signal calls its newest connection first, as a real
+    /// server does with immediate signals (`Wait`s count as connections).
+    fn newest_first(&self) -> bool {
+        false
+    }
+
+    /// Whether `SignalBehavior` `Default` means `Deferred` here (live
+    /// servers since late 2026; Studio's edit runtime keeps `Immediate`).
+    fn default_deferred(&self) -> bool {
+        false
+    }
+
     /// A fresh id, for an await and for anything else the host numbers.
     fn next_id(&self) -> u32;
 
@@ -43,6 +63,18 @@ pub(crate) trait Host {
     /// runner (a script's main chunk, a raw coroutine that waited).
     fn thread_failed(&self, _thread: &Thread, error: mlua::Error) {
         self.output(LineKind::Error, error.to_string());
+    }
+
+    /// The signals the host adds to a reparenting (see
+    /// `server::Physics::reparented`).
+    fn reparented(
+        &self,
+        _child: Ref,
+        _old: Option<Ref>,
+        _new: Option<Ref>,
+        _after: bool,
+    ) -> Vec<(Ref, String, Vec<crate::plugin::api::Arg>)> {
+        Vec::new()
     }
 
     /// Whether a root of the DOM belongs to the host rather than to the
@@ -89,5 +121,6 @@ pub(crate) fn engine(lua: &Lua) -> Rc<Engine> {
 /// before sandboxing.
 pub(crate) fn install(lua: &Lua, engine: Rc<Engine>) -> mlua::Result<()> {
     lua.set_app_data(engine);
-    scheduler::install(lua)
+    scheduler::install(lua)?;
+    parallel::install(lua)
 }

@@ -57,6 +57,30 @@ fn ui_padding_shrinks_the_box_children_resolve_against() {
 }
 
 #[test]
+fn ui_padding_under_a_screen_gui_pads_the_screen() {
+    let (mut dom, gui) = screen_gui();
+    let pad = component(&mut dom, gui, "UIPadding");
+    dom.set_property(pad, "PaddingBottom", udim(0.02, 0))
+        .unwrap();
+    frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 1.0, -20),
+        udim2(0.0, 10, 0.0, 20),
+    );
+    // 2% of 600 off the bottom: the frame ends at 588, not 600.
+    assert_eq!(
+        rects(&dom)[0],
+        Rect {
+            x: 0.0,
+            y: 568.0,
+            width: 10.0,
+            height: 20.0,
+        }
+    );
+}
+
+#[test]
 fn ui_padding_scale_is_a_fraction_of_the_padded_elements_own_size() {
     let (mut dom, gui) = screen_gui();
     let parent = frame(
@@ -152,6 +176,23 @@ fn ui_scale_multiplies_the_size_and_so_every_descendant_with_it() {
     );
     assert_eq!(rects[1].width, 50.0);
     assert_eq!(rects[1].height, 50.0);
+}
+
+#[test]
+fn a_collapsed_ui_scale_hides_offset_sized_descendants() {
+    let (mut dom, gui) = screen_gui();
+    let parent = frame(&mut dom, gui, udim2(0.5, 0, 0.5, 0), udim2(0.5, 0, 0.5, 0));
+    let scale = component(&mut dom, parent, "UIScale");
+    dom.set_property(scale, "Scale", Variant::Float32(1e-7))
+        .unwrap();
+    frame(
+        &mut dom,
+        parent,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 300, 0.0, 40),
+    );
+
+    assert_eq!(rects(&dom).len(), 1);
 }
 
 /// One frame with an aspect ratio constraint, sized `size` against the
@@ -461,4 +502,60 @@ fn automatic_size_under_a_fill_flex_list_takes_the_items_own_sizes() {
 
     let rect = rects(&dom)[0];
     assert_eq!((rect.width, rect.height), (160.0, 48.0));
+}
+
+/// A list under a frame growing with `AutomaticSize` Y measures its
+/// scale-sized items against the frame's parent, then lays them out in the
+/// size that comes to: a `(1, 0.25)` item under a 276 px parent counts 69,
+/// plus a 30 px item makes 99, and the item ends up 0.25 x 99 (GuiLayout
+/// golden, `auto_list_*`). A frame without a layout still ignores a
+/// scale-sized child (`auto_scale_*`: 130, from the offset child alone).
+#[test]
+fn automatic_size_measures_layout_items_against_the_parent() {
+    let (mut dom, gui) = screen_gui();
+    let root = frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 166, 0.0, 276),
+    );
+    let grown = frame(&mut dom, root, udim2(0.0, 0, 0.0, 0), udim2(1.0, 0, 0.1, 0));
+    dom.set_property(grown, "AutomaticSize", Variant::Enum(2))
+        .unwrap();
+    dom.new_instance("UIListLayout", "UIListLayout", Some(grown));
+    frame(
+        &mut dom,
+        grown,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(1.0, 0, 0.25, 0),
+    );
+    frame(
+        &mut dom,
+        grown,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 50, 0.0, 30),
+    );
+    let plain = frame(
+        &mut dom,
+        root,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 200, 0.0, 50),
+    );
+    dom.set_property(plain, "AutomaticSize", Variant::Enum(2))
+        .unwrap();
+    frame(
+        &mut dom,
+        plain,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(1.0, 0, 0.5, 0),
+    );
+    frame(
+        &mut dom,
+        plain,
+        udim2(0.0, 0, 0.0, 10),
+        udim2(0.0, 100, 0.0, 120),
+    );
+
+    let heights: Vec<f32> = rects(&dom).iter().map(|rect| rect.height).collect();
+    assert_eq!(heights, [276.0, 99.0, 24.75, 30.0, 130.0, 65.0, 120.0]);
 }

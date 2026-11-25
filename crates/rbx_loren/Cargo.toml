@@ -12,6 +12,7 @@ regex = "1"
 # `loren add` downloads a GitHub repository's zipball (the Node CLI uses
 # degit's tarball); both already in Cargo.lock.
 ureq = "3"
+rbx_net = { path = "../rbx_net" }
 zip = { version = "8", default-features = false, features = ["deflate"] }
 # A Loren project read into a place (Home's "Loren project" template).
 rbx_dom = { path = "../rbx_dom" }

@@ -107,3 +107,25 @@ fn part_queries_and_non_models() {
     assert!(out[1].starts_with("false"));
     assert!(out[1].contains("GetBoundingBox is not a valid member of Part"));
 }
+
+#[test]
+fn text_scaled_and_text_wrapped_move_together() {
+    let out = lines(
+        r#"
+        local label = Instance.new("TextLabel")
+        label.TextScaled = true
+        print(label.TextWrapped)
+        label.TextWrapped = false
+        print(label.TextScaled)
+        label.TextWrapped = true
+        label.TextScaled = true
+        label.TextScaled = false
+        print(label.TextWrapped)
+        label.TextWrapped = false
+        label.TextWrapped = true
+        print(label.TextScaled)
+        "#,
+    );
+    // The real client's answers (`gui_text_scaled` fidelity recording).
+    assert_eq!(out, ["true", "false", "true", "false"]);
+}

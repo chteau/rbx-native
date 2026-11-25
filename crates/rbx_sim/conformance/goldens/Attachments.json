@@ -1,0 +1,80 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "after_axis_write": "0,1,0",
+      "after_world_write": "1.5,2.598,0",
+      "axis": "1,0,0",
+      "orientation": "45,0,0",
+      "position": "1,0.5,0",
+      "secondary": "0,0.707,0.707",
+      "world_axis": "0,0.5,-0.866",
+      "world_orientation": "37.76,116.57,39.23",
+      "world_position": "0,0.933,-0.616",
+      "world_secondary": "0.707,0.612,0.354"
+    },
+    {
+      "after_axis_write": "0,1,0",
+      "after_world_write": "1.5,2.598,0",
+      "axis": "1,0,0",
+      "orientation": "45,0,0",
+      "position": "1,0.5,0",
+      "secondary": "0,0.707,0.707",
+      "world_axis": "0,0.5,-0.866",
+      "world_orientation": "37.76,116.57,39.23",
+      "world_position": "0,0.933,-0.616",
+      "world_secondary": "0.707,0.612,0.354"
+    },
+    {
+      "after_axis_write": "0,1,0",
+      "after_world_write": "1.5,2.598,0",
+      "axis": "1,0,0",
+      "orientation": "45,0,0",
+      "position": "1,0.5,0",
+      "secondary": "0,0.707,0.707",
+      "world_axis": "0,0.5,-0.866",
+      "world_orientation": "37.76,116.57,39.23",
+      "world_position": "0,0.933,-0.616",
+      "world_secondary": "0.707,0.612,0.354"
+    },
+    {
+      "after_axis_write": "0,1,0",
+      "after_world_write": "1.5,2.598,0",
+      "axis": "1,0,0",
+      "orientation": "45,0,0",
+      "position": "1,0.5,0",
+      "secondary": "0,0.707,0.707",
+      "world_axis": "0,0.5,-0.866",
+      "world_orientation": "37.76,116.57,39.23",
+      "world_position": "0,0.933,-0.616",
+      "world_secondary": "0.707,0.612,0.354"
+    },
+    {
+      "after_axis_write": "0,1,0",
+      "after_world_write": "1.5,2.598,0",
+      "axis": "1,0,0",
+      "orientation": "45,0,0",
+      "position": "1,0.5,0",
+      "secondary": "0,0.707,0.707",
+      "world_axis": "0,0.5,-0.866",
+      "world_orientation": "37.76,116.57,39.23",
+      "world_position": "0,0.933,-0.616",
+      "world_secondary": "0.707,0.612,0.354"
+    }
+  ],
+  "result": {
+    "after_axis_write": "0,1,0",
+    "after_world_write": "1.5,2.598,0",
+    "axis": "1,0,0",
+    "orientation": "45,0,0",
+    "position": "1,0.5,0",
+    "secondary": "0,0.707,0.707",
+    "world_axis": "0,0.5,-0.866",
+    "world_orientation": "37.76,116.57,39.23",
+    "world_position": "0,0.933,-0.616",
+    "world_secondary": "0.707,0.612,0.354"
+  },
+  "source": "real Roblox server, place 3086963177 version 537, joined with Sober",
+  "spread": {},
+  "status": "recorded"
+}

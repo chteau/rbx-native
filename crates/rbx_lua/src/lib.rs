@@ -16,7 +16,9 @@ mod engine;
 mod game;
 mod hooks;
 mod instance;
+pub mod leaks;
 mod lua_enum;
+mod luau;
 mod not_creatable;
 mod output;
 mod particles;
@@ -24,12 +26,19 @@ pub mod pattern;
 pub mod pivot;
 pub mod plugin;
 mod printed;
+pub mod profiler;
 mod property;
 pub use property::clock;
 mod runtime;
+pub mod server;
+mod studio;
+pub mod tape;
 pub mod test_runner;
 
 pub use debugger::{Breakpoint, Frame, Paused, Resume, Variable, STOPPED};
+pub use luau::{
+    linked_version as luau_linked_version, set_if_local, IF_LOCAL_FFLAGS, LUAU_VERSION,
+};
 pub use mlua::Error as LuaError;
 pub use output::{LineKind, Output};
 pub use particles::take_particle_bursts;
@@ -46,10 +55,19 @@ pub fn set_luau_exports(on: bool) {
     engine::require::EXPORTS.store(on, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// Studio's "Orthographic Camera" beta for scripts: off, a running game's
+/// `Camera.ProjectionType` writes are ignored, as Studio's own are.
+pub fn set_orthographic_camera(on: bool) {
+    ORTHOGRAPHIC_CAMERA.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) static ORTHOGRAPHIC_CAMERA: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Whether `source` compiles as Luau (nothing runs). `Err` is the
 /// compiler's message, e.g. a syntax error or "too many upvalues".
 pub fn compile_check(source: &str, name: &str) -> Result<(), String> {
-    mlua::Lua::new()
+    luau::new_vm()
         .load(source)
         .set_name(name)
         .into_function()

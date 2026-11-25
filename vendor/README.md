@@ -107,7 +107,7 @@ repainting the window forever (about 10% idle CPU). Tested from
 Unmodified crates.io 0.3.4 source (its `examples/`, `tests/` and `docs/`
 dropped, and their `[[example]]`/`[[test]]` entries with them), patched in
 through the root `Cargo.toml`'s `[patch.crates-io]`, plus hover styles that
-ease instead of snapping and one window fix, each piece marked "rbx-native
+ease instead of snapping and two window fixes, each piece marked "rbx-native
 addition":
 
 - `src/hover_transition.rs` (new): the `HoverTransition` global (a
@@ -128,6 +128,13 @@ addition":
 - `src/window.rs`: `Window::new` maps the platform window only when
   `WindowOptions::show` asks for it. X11 and Wayland mapped every window
   regardless, so Home's hidden Settings host flashed over the screen.
+- `src/window.rs`: `prepaint_tooltip` drops a tooltip asked for by the
+  element tree when it would overlap anything drawn in the deferred
+  layers (menus, popovers, pickers). The tooltip layer is painted over
+  all of them, so a tooltip still waiting out its delay when its trigger
+  opened a menu, or one shown again over a trigger the menu leaves
+  uncovered, sat on top of the open menu. Tooltips from inside those layers
+  are kept. Tested in `rbx_studio`'s `shell/tooltip.rs`.
 
 GPUI has no property transitions of its own, so this is what lets every
 `hover`/`group_hover` style in the editor — and in `gpui-base`'s widgets —
@@ -191,3 +198,53 @@ a plain top-level window, so a torn-out plugin dock went behind the editor
 the moment the editor was clicked. Owned, it stays above the editor, hides
 with it when minimized and has no taskbar button of its own.
 
+
+## `luau0-src` (0.24.1+luau748, MIT, `mlua-rs/luau-src-rs`)
+
+luau0-src 0.24.0+luau747 (its `testcrate` dropped, and its `[workspace]`
+with it) with the Luau sources under `luau/` (`Ast`, `Bytecode`, `CodeGen`,
+`Common`, `Compiler`, `Config`, `Inliner`, `Require`, `VM`) replaced by
+upstream `luau-lang/luau`'s 0.748 release, unmodified, and the version
+raised to 0.24.1+luau748 so mlua-sys's `luau0-src = "0.24.0"` takes it.
+`luau/Custom` (mlua's `luau_setfflag` and two helpers) is luau0-src's own.
+One patch, marked `rbx-native patch` in `Compiler/src/Compiler.cpp`: the
+fast `pcall`/`xpcall` call is only compiled for a global left out of
+`mutableGlobals`. Scripts run in a safe environment, where the fast call
+goes straight to the builtin; `rbx_lua` lists `pcall`/`xpcall` as mutable
+so a call reaches its own `pcall`, which hands scripts a binding error's
+message rather than its error object. Re-apply it on a bump.
+Patched in through the root `Cargo.toml`, which also takes `mlua` and
+`mlua-sys` from mlua's master at a pinned commit: no mlua release has the
+Luau 0.747 C API yet (the `integer` type is gone, so the type tags moved),
+and 0.747 to 0.748 changed no public header.
+
+Why: scripts must parse and run as on live Roblox, the day Roblox turns a
+feature on. `rbx_lua::LUAU_VERSION` records the Luau live Roblox runs, and
+`luau::tests::the_linked_luau_is_not_behind_roblox` fails when this build
+links an older one.
+
+Finding Roblox's version: every fast flag a Luau release adds is in the
+Studio binary that ships it and every flag it removes is gone, so compare
+`strings RobloxStudioBeta.exe` against each release's
+`LUAU_FASTFLAGVARIABLE`s (Studio 0.748 matches 0.748 exactly). The flags
+Roblox has on are in `https://clientsettingscdn.roblox.com/v2/settings/application/PCStudioApp`.
+
+Bumping:
+
+1. Download the release
+   (`https://codeload.github.com/luau-lang/luau/tar.gz/refs/tags/0.NNN`) and
+   replace each of the nine directories above with its `include` and `src`.
+2. Raise the version here and in `vendor/luau0-src/Cargo.toml`
+   (`+luauNNN`; keep it semver-compatible with what mlua-sys asks for),
+   then `cargo update -p luau0-src`.
+3. If the release changed `VM/include` or `Compiler/include`, mlua-sys's
+   bindings must change with it: move the `mlua`/`mlua-sys` pin to an mlua
+   commit that bumped to that Luau, or back to crates.io once a release has.
+4. Raise `rbx_lua::LUAU_VERSION`, and refresh `ROBLOX_FFLAGS` in
+   `crates/rbx_lua/src/luau.rs` from the live settings (the flags Luau's
+   VM, compiler and code generator define that Roblox has on).
+5. Run `cargo test -p rbx_lua luau::` and `-p rbx_bytecode` (the Bytecode
+   dock's shim compiles against these headers).
+
+Once an mlua release bundles a Luau at least as new as Roblox's, drop this
+directory and the three patch lines.

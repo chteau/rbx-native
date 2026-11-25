@@ -11,6 +11,7 @@ const MAP_WRITE: &str = "memory-store.sorted-map:write";
 const QUEUE_ADD: &str = "memory-store.queue:add";
 const QUEUE_READ: &str = "memory-store.queue:dequeue";
 const QUEUE_DISCARD: &str = "memory-store.queue:discard";
+const MESSAGING_PUBLISH: &str = "universe-messaging-service:publish";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum SortKey {
@@ -264,5 +265,22 @@ impl Client {
         });
         let response = self.send_json(Method::Post, &url, Some(&body))?;
         Ok(parse_queue_item(&answer(&url, response, QUEUE_ADD)?))
+    }
+
+    /// MessagingService's `PublishAsync`, to every live server of the
+    /// experience subscribed to `topic`.
+    pub fn publish_message(
+        &self,
+        universe_id: u64,
+        topic: &str,
+        message: &str,
+    ) -> Result<(), CloudError> {
+        let url = self.apis_url(&format!(
+            "/messaging-service/v1/universes/{universe_id}/topics/{}",
+            segment(topic)
+        ));
+        let body = json!({ "message": message });
+        let response = self.send_json(Method::Post, &url, Some(&body))?;
+        answer(&url, response, MESSAGING_PUBLISH).map(|_| ())
     }
 }

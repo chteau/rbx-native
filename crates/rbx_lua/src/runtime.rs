@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod edit_tests;
-mod globals;
+pub(crate) mod globals;
 mod host;
 mod report;
 mod resume;
@@ -29,8 +29,8 @@ use crate::hooks::HookSlot;
 use crate::output::{LineKind, Output};
 use crate::LuaError;
 
-pub(crate) use globals::{install_globals, install_shared};
-pub(crate) use host::compile_in;
+pub(crate) use globals::{install_globals, install_shared, printidentity};
+pub(crate) use host::{compile_in, install_require};
 use host::{CommandBar, CommandBarHooks};
 pub use report::Reported;
 
@@ -115,17 +115,27 @@ impl Runtime {
         let output = Rc::new(RefCell::new(Output::default()));
         let ctx = Ctx::new(dom.clone(), Rc::new(database), output.clone());
         let host = Rc::new(CommandBar::new(output.clone()));
-        let lua = Lua::new();
+        let lua = crate::luau::new_vm();
         // Luau's import optimization resolves and caches `a.b.c` chains rooted at a
         // global once per chunk, which would make `workspace.Part.Size` return a
         // stale value after a script wrote to it. Declaring the DOM-backed globals
         // mutable turns that caching off for them, exactly as Roblox does.
-        lua.set_compiler(Compiler::new().set_mutable_globals(["game", "workspace", "Workspace"]));
+        // `pcall`/`xpcall` too: in a safe environment a call to the imported
+        // builtin skips the global that hands scripts a binding error's
+        // message rather than its error object (`globals::install_error_strings`).
+        lua.set_compiler(Compiler::new().set_mutable_globals([
+            "game",
+            "workspace",
+            "Workspace",
+            "pcall",
+            "xpcall",
+        ]));
         lua.set_app_data(HookSlot(Rc::new(CommandBarHooks)));
 
         install_globals(&lua, &ctx)?;
         lua.globals()
             .set("printidentity", globals::printidentity(&lua, &ctx, 4)?)?;
+        crate::studio::install(&lua, &ctx)?;
         engine::install(&lua, Engine::new(ctx, host.clone()))?;
         lua.set_app_data(selection::Selection::default());
         host::install_require(&lua)?;
@@ -147,6 +157,11 @@ impl Runtime {
     /// What `Selection:Get` answers until a run sets its own.
     pub fn set_selection(&mut self, refs: Vec<rbx_dom::Ref>) {
         selection::load(&self.lua, refs);
+    }
+
+    /// The editor's theme, "Light" or "Dark", for `settings().Studio.Theme`.
+    pub fn set_theme(&mut self, name: &str) {
+        let _ = crate::studio::set_theme(&self.lua, name);
     }
 
     /// The selection a run set since the last call, if it set one.

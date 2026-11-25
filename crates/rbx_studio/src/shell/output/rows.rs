@@ -150,7 +150,7 @@ fn game_row(
     };
     let context = message.context;
     let tag_color = match context {
-        game::Context::Server => tokens::output_server(),
+        game::Context::Server | game::Context::LocalRun => tokens::output_server(),
         game::Context::Client => tokens::output_client(),
     };
 
@@ -177,7 +177,8 @@ fn game_row(
         row = row.child(
             div()
                 .flex_none()
-                .w(px(44.))
+                .min_w(px(44.))
+                .whitespace_nowrap()
                 .text_xs()
                 .font_weight(FontWeight::SEMIBOLD)
                 .text_color(tag_color)

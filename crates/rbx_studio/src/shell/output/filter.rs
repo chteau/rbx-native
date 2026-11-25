@@ -81,8 +81,15 @@ impl ContextFilter {
         match self {
             ContextFilter::All => true,
             ContextFilter::Edit => entry.context().is_none() && !entry.is_plugin(),
-            ContextFilter::Server => entry.context() == Some(game::Context::Server),
-            ContextFilter::Client => entry.context() == Some(game::Context::Client),
+            // A local run is both sides at once.
+            ContextFilter::Server => matches!(
+                entry.context(),
+                Some(game::Context::Server | game::Context::LocalRun)
+            ),
+            ContextFilter::Client => matches!(
+                entry.context(),
+                Some(game::Context::Client | game::Context::LocalRun)
+            ),
             ContextFilter::UserPlugin => entry.is_plugin(),
         }
     }

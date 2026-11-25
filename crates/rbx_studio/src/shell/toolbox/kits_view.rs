@@ -121,7 +121,7 @@ impl Shell {
             Load::Failed(err) => centred(
                 div()
                     .text_color(tokens::text_error())
-                    .child(format!("Couldn\u{2019}t reach Poly Haven: {err}")),
+                    .child(super::view::unreachable("Poly Haven", err)),
             ),
             Load::Ready if cards.is_empty() => centred(
                 div()

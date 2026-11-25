@@ -17,11 +17,12 @@ import {
   type Refusal,
 } from "./contracts.js";
 import { OpLog, type OpStore, type OpsMeta } from "./ops.js";
+import { PlayHub, parsePid } from "./play.js";
 import { Room } from "./room.js";
 import { parseFill, parseSealed, parseSealedOps } from "./validate.js";
 
 const SWEEP_MS = 5_000;
-const ROUTE = /^\/v1\/rooms\/([0-9a-f]{32})\/(state|poll|ws|journal|ops|ops\/fill)$/;
+const ROUTE = /^\/v1\/rooms\/([0-9a-f]{32})\/(state|poll|ws|play|journal|ops|ops\/fill)$/;
 
 interface Poll {
   since: number;
@@ -100,6 +101,8 @@ export class RoomObject implements DurableObject {
   private readonly ops: OpLog;
   /** Long-polls on the op log, woken by the next post or fill. */
   private opsPolls = new Set<Poll>();
+  /** Local Run play sockets, by end. */
+  private readonly play = new PlayHub<WebSocket>();
 
   constructor(
     private readonly state: DurableObjectState,
@@ -121,7 +124,8 @@ export class RoomObject implements DurableObject {
       (route === "journal" && method === "GET") ||
       (route === "ops" && (method === "POST" || method === "GET")) ||
       (route === "ops/fill" && method === "POST") ||
-      (route === "ws" && method === "GET");
+      (route === "ws" && method === "GET") ||
+      (route === "play" && method === "GET");
     if (!allowed) return new Response("method not allowed", { status: 405 });
 
     const userId = Number(request.headers.get(USER_HEADER));
@@ -163,6 +167,7 @@ export class RoomObject implements DurableObject {
     if (route === "state") return this.handleDelete(userId, url);
     if (route === "poll") return this.handlePoll(url);
     if (route === "journal") return this.handleJournal(url, now);
+    if (route === "play") return this.handlePlay(request, url);
     return this.handleSocket(request, userId);
   }
 
@@ -304,6 +309,40 @@ export class RoomObject implements DurableObject {
     server.addEventListener("error", gone);
 
     server.send(JSON.stringify(this.room.snapshot()));
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /** Forwards sealed play messages between ends; keeps and reads nothing. */
+  private handlePlay(request: Request, url: URL): Response {
+    const pid = parsePid(url.searchParams.get("pid"));
+    if (pid === null) return refuse({ status: 400, error: "schema" });
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return new Response("expected websocket", { status: 426 });
+    }
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+    server.accept();
+    const old = this.play.join(pid, server, Date.now());
+    try {
+      old?.close(1000, "replaced");
+    } catch {
+      // Already gone.
+    }
+    server.addEventListener("message", (event) => {
+      if (typeof event.data === "string") return;
+      const data = new Uint8Array(event.data as ArrayBuffer);
+      for (const [socket, bytes] of this.play.route(pid, data, Date.now())) {
+        try {
+          socket.send(bytes);
+        } catch {
+          // Closing; its close event lets it go.
+        }
+      }
+    });
+    const gone = () => this.play.leave(pid, server);
+    server.addEventListener("close", gone);
+    server.addEventListener("error", gone);
     return new Response(null, { status: 101, webSocket: client });
   }
 

@@ -219,9 +219,10 @@ impl Shell {
     /// on a background one. `save::save` writes through a temp file, so a
     /// copy is never left half-written.
     fn write_recovery(&mut self, cx: &mut Context<Self>) {
-        // The live game's tree is not the place; the next write after Play
-        // has it back.
-        if self.live_shown() {
+        // The live game's tree is not the place, nor is a Local Run's (whose
+        // GUI carries run-time values such as `AbsolutePosition` that a
+        // place file can't hold); the next write after Play has it back.
+        if self.live_shown() || self.local_run_shown() {
             return;
         }
         let state = &self.recovery;

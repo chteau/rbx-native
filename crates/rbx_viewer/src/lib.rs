@@ -33,6 +33,8 @@ mod changes;
 mod cli;
 mod controller;
 pub mod export;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod fidelity;
 mod fonts;
 mod fps;
 pub mod gizmo;
@@ -83,13 +85,14 @@ pub use lighting::Calibration;
 pub use load::{parse_place, read_place};
 pub use quality::{valid_band_ends, FrameRateManager, QualityLevel, TUNED_BAND_ENDS};
 pub use renderer::{
-    gui_particle_burst, Fill, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap, OverlayColors, Segment,
-    ISOLATION_BACKDROP,
+    gui_particle_burst, measure_text, particle_burst, Fill, GuiBox, GuiTextEdit, GuiTextLine,
+    GuiTextMap, OverlayColors, Segment, ISOLATION_BACKDROP,
 };
 pub use scene::perf;
 pub use scene::{
-    pseudo_localize, resolved_shape_label, rich_runs, set_variant_alpha_modes, shows_screen,
-    GuiScrolls, PseudoLocale, RichRun, SafeInsets, ScrollTarget, ThumbGrab, STAGE_REACH,
+    player_gui, pseudo_localize, resolved_shape_label, rich_runs, set_player_gui,
+    set_variant_alpha_modes, shows_screen, GuiScrolls, PseudoLocale, RichRun, SafeInsets,
+    ScrollTarget, ThumbGrab, STAGE_REACH,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};

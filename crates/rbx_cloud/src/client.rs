@@ -47,7 +47,7 @@ type GetBuilder = ureq::RequestBuilder<ureq::typestate::WithoutBody>;
 
 impl Client {
     pub fn new(api_key: Option<ApiKey>) -> Self {
-        let config = ureq::Agent::config_builder()
+        let config = rbx_net::config()
             .user_agent(USER_AGENT)
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(30)))

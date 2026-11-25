@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 # Error enum for the mutation API (DomError); already in Cargo.lock via sibling crates.
 thiserror = "2"
+# Fast hashing for the Ref-keyed maps (MIT/Apache-2.0).
+rustc-hash = "2"
 
 [dev-dependencies]
 # Loads assets/tests/TestPlace.rbxl to test fresh-Ref uniqueness against a real file.

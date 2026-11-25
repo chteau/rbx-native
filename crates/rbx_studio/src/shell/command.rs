@@ -262,6 +262,11 @@ impl Shell {
             self.live_reflect(changes, cx);
             return;
         }
+        // During a local run the edits go to the simulation, not the place.
+        if self.local_run_shown() {
+            self.local_run_reflect(changes, cx);
+            return;
+        }
         self.plugins_dom_changed(changes, cx);
         if touches_place(&self.dom, changes) {
             self.recovery.changed();

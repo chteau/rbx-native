@@ -1,5 +1,5 @@
 //! `Vector2int16` and `Vector3int16`: integer vectors, wrapping at 16 bits
-//! as Roblox's do.
+//! as Roblox's do; `Region3int16`, a box of them (terrain cells).
 
 use mlua::{Lua, MetaMethod, Result, Table, UserData, UserDataFields, UserDataMethods, Value};
 
@@ -55,6 +55,31 @@ macro_rules! int_vector {
 int_vector!(LuaVector2int16, "Vector2int16", 2, ["X" => 0, "Y" => 1]);
 int_vector!(LuaVector3int16, "Vector3int16", 3, ["X" => 0, "Y" => 1, "Z" => 2]);
 
+/// `Region3int16`: the cells from `Min` to `Max`, both included.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct LuaRegion3int16 {
+    pub(crate) min: [i16; 3],
+    pub(crate) max: [i16; 3],
+}
+
+impl UserData for LuaRegion3int16 {
+    fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
+        fields.add_meta_field(MetaMethod::Type, "Region3int16");
+        fields.add_field_method_get("Min", |_, this| Ok(LuaVector3int16(this.min)));
+        fields.add_field_method_get("Max", |_, this| Ok(LuaVector3int16(this.max)));
+    }
+
+    fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_meta_method(MetaMethod::Eq, |_, this, other: mlua::UserDataRef<Self>| {
+            Ok(*this == *other)
+        });
+        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+            let text = |v: [i16; 3]| format!("{}, {}, {}", v[0], v[1], v[2]);
+            Ok(format!("{}; {}", text(this.min), text(this.max)))
+        });
+    }
+}
+
 pub(crate) fn register(lua: &Lua) -> Result<()> {
     let two: Table = lua.create_table()?;
     two.set(
@@ -79,5 +104,22 @@ pub(crate) fn register(lua: &Lua) -> Result<()> {
     )?;
     lua.globals().set("Vector2int16", two)?;
     lua.globals().set("Vector3int16", three)?;
+    let region: Table = lua.create_table()?;
+    region.set(
+        "new",
+        lua.create_function(
+            |_,
+             (min, max): (
+                Option<mlua::UserDataRef<LuaVector3int16>>,
+                Option<mlua::UserDataRef<LuaVector3int16>>,
+            )| {
+                Ok(LuaRegion3int16 {
+                    min: min.map_or([0; 3], |v| v.0),
+                    max: max.map_or([0; 3], |v| v.0),
+                })
+            },
+        )?,
+    )?;
+    lua.globals().set("Region3int16", region)?;
     Ok(())
 }

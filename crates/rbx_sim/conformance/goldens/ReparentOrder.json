@@ -1,0 +1,32 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "destroyed": "x.Destroying b.DescendantRemoving b.DescendantRemoving b.ChildRemoved inner.Ancestry x.Ancestry x.Changed x.Parent inner.Destroying inner.Ancestry |",
+      "moved": "a.DescendantRemoving a.DescendantRemoving a.ChildRemoved b.DescendantAdded b.DescendantAdded b.ChildAdded inner.Ancestry x.Ancestry x.Changed x.Parent |"
+    },
+    {
+      "destroyed": "x.Destroying b.DescendantRemoving b.DescendantRemoving b.ChildRemoved inner.Ancestry x.Ancestry x.Changed x.Parent inner.Destroying inner.Ancestry |",
+      "moved": "a.DescendantRemoving a.DescendantRemoving a.ChildRemoved b.DescendantAdded b.DescendantAdded b.ChildAdded inner.Ancestry x.Ancestry x.Changed x.Parent |"
+    },
+    {
+      "destroyed": "x.Destroying b.DescendantRemoving b.DescendantRemoving b.ChildRemoved inner.Ancestry x.Ancestry x.Changed x.Parent inner.Destroying inner.Ancestry |",
+      "moved": "a.DescendantRemoving a.DescendantRemoving a.ChildRemoved b.DescendantAdded b.DescendantAdded b.ChildAdded inner.Ancestry x.Ancestry x.Changed x.Parent |"
+    },
+    {
+      "destroyed": "x.Destroying b.DescendantRemoving b.DescendantRemoving b.ChildRemoved inner.Ancestry x.Ancestry x.Changed x.Parent inner.Destroying inner.Ancestry |",
+      "moved": "a.DescendantRemoving a.DescendantRemoving a.ChildRemoved b.DescendantAdded b.DescendantAdded b.ChildAdded inner.Ancestry x.Ancestry x.Changed x.Parent |"
+    },
+    {
+      "destroyed": "x.Destroying b.DescendantRemoving b.DescendantRemoving b.ChildRemoved inner.Ancestry x.Ancestry x.Changed x.Parent inner.Destroying inner.Ancestry |",
+      "moved": "a.DescendantRemoving a.DescendantRemoving a.ChildRemoved b.DescendantAdded b.DescendantAdded b.ChildAdded inner.Ancestry x.Ancestry x.Changed x.Parent |"
+    }
+  ],
+  "result": {
+    "destroyed": "x.Destroying b.DescendantRemoving b.DescendantRemoving b.ChildRemoved inner.Ancestry x.Ancestry x.Changed x.Parent inner.Destroying inner.Ancestry |",
+    "moved": "a.DescendantRemoving a.DescendantRemoving a.ChildRemoved b.DescendantAdded b.DescendantAdded b.ChildAdded inner.Ancestry x.Ancestry x.Changed x.Parent |"
+  },
+  "source": "real Roblox server, place 3086963177 version 554, joined with Sober",
+  "spread": {},
+  "status": "recorded"
+}

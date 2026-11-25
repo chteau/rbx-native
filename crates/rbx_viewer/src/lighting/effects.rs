@@ -121,17 +121,19 @@ pub(crate) struct SunRays {
 /// `ColorGradingEffect.TonemapperPreset`: how the final HDR colour is folded
 /// into the displayable range.
 ///
-/// Roblox publishes no formula for either curve, only that `Retro` "emulates
-/// the pre-2019 Roblox lighting system", so both are principled
-/// approximations, not a reproduction. `Default` is exactly this renderer's
-/// existing tonemap (a plain clamp; see `renderer::post`'s resolve shader), so
-/// a place with no `ColorGradingEffect`, or one that resolves to `Default`,
-/// looks pixel-identical to before this enum existed.
+/// `Retro` ("emulates the pre-2019 Roblox lighting system") is the Voxel
+/// look under any `Technology`: the real client's ramps under it match its
+/// Voxel ones to the step, sun and ambient scales included (the
+/// `tone_*_retro` fidelity scenes). `Default` is the Technology's own.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Tonemap {
     #[default]
     Default,
     Retro,
+    /// What `Default` resolves to under `Technology` `ShadowMap` or `Future`
+    /// (see `crate::lighting`'s `FILMIC_SUN`): the real client's own curve,
+    /// fitted to its frames.
+    Filmic,
 }
 
 /// `DepthOfFieldEffect`: where the sharp zone is, and how blurred each side of
@@ -259,7 +261,11 @@ pub(super) fn read(dom: &WeakDom, database: &ReflectionDatabase, lighting: Ref) 
         // multi-instance rule explicitly: "Only one BlurEffect can be applied
         // at once (the instance with the greatest Size takes priority)",
         // create.roblox.com/docs, BlurEffect.Size. Not "first enabled".
-        blur: strongest_blur(dom, database, lighting).map(blur),
+        // Size 0 is no blur at all (a blur a script tweens in from 0 sits
+        // there enabled until it runs).
+        blur: strongest_blur(dom, database, lighting)
+            .map(blur)
+            .filter(|blur| blur.size > 0.0),
         color_correction: enabled(dom, lighting, |instance| {
             database.is_subclass_of(instance.class(), COLOR_CORRECTION_CLASS)
         })

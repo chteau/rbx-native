@@ -45,7 +45,7 @@ pub(super) use scrolling::Inset;
 pub(super) use scrolling::Scrolling;
 pub(super) use shadow::Shadow;
 pub(super) use starter::hides_contents;
-pub use starter::shows_screen;
+pub use starter::{player_gui, set_player_gui, shows_screen};
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
 pub(crate) use text::Span as TextSpan;
@@ -157,9 +157,12 @@ fn gather(
             space: None,
             display_order: integer(properties, "DisplayOrder", 0),
             device_safe: constraints::device_safe(properties),
+            under_topbar: starter::player_gui().is_some() && constraints::under_topbar(properties),
+            in_topbar: starter::player_gui().is_some() && constraints::in_topbar(properties),
             global_z_index: constraints::global_z_index(properties),
             clip_to_safe_area: constraints::clip_to_safe_area(properties),
             list: layout_of(dom, database, styles, instance.children()),
+            padding: constraints::constraints(dom, database, styles, instance.children()).padding,
             roots,
             groups,
         });
@@ -186,9 +189,12 @@ fn gather(
             space: Some(canvas),
             display_order: 0,
             device_safe: false,
+            under_topbar: false,
+            in_topbar: false,
             global_z_index: constraints::global_z_index(properties),
             clip_to_safe_area: false,
             list: layout_of(dom, database, styles, instance.children()),
+            padding: None,
             roots,
             groups,
         });

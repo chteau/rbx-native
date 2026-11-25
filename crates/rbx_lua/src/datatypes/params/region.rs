@@ -16,6 +16,13 @@ pub(crate) struct LuaRegion3 {
     max: Vector3Data,
 }
 
+impl LuaRegion3 {
+    /// Its two corners, least and greatest.
+    pub(crate) fn bounds(&self) -> (Vector3Data, Vector3Data) {
+        (self.min, self.max)
+    }
+}
+
 impl UserData for LuaRegion3 {
     fn add_fields<F: UserDataFields<Self>>(fields: &mut F) {
         fields.add_meta_field(MetaMethod::Type, "Region3");
@@ -109,6 +116,15 @@ impl UserData for LuaFaces {
             MetaMethod::Eq,
             |_, this, other: LuaFaces| Ok(*this == other),
         );
+        methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
+            Ok(FACE_NAMES
+                .iter()
+                .zip(this.flags)
+                .filter(|(_, on)| *on)
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>()
+                .join(", "))
+        });
     }
 }
 

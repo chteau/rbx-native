@@ -104,7 +104,7 @@ impl DeviceSim {
         }
     }
 
-    fn device(&self) -> Option<Device> {
+    pub(super) fn device(&self) -> Option<Device> {
         match self.choice? {
             Choice::Builtin(index) => device_sim::devices().get(index).copied(),
             Choice::Custom => Some(self.custom.device()),

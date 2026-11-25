@@ -10,7 +10,7 @@ use super::{from_userdata, number_arg};
 pub(crate) struct LuaVector2(pub(crate) Vector2Data);
 
 impl LuaVector2 {
-    fn new(x: f32, y: f32) -> Self {
+    pub(crate) fn new(x: f32, y: f32) -> Self {
         LuaVector2(Vector2Data { x, y })
     }
 }
@@ -178,7 +178,7 @@ impl UserData for LuaNumberRange {
             Ok(*this == other)
         });
         methods.add_meta_method(MetaMethod::ToString, |_, this, ()| {
-            Ok(format!("{} {}", this.0.min, this.0.max))
+            Ok(format!("{} {} ", this.0.min, this.0.max))
         });
     }
 }

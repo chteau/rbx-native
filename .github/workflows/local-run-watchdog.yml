@@ -1,0 +1,51 @@
+name: Local Run watchdog
+
+# Daily: Roblox's latest API dump against the one COVERAGE.md was generated
+# from, the new or changed members Local Run lacks, and whether the linked
+# Luau is behind live Roblox. The report goes into one open issue labelled
+# local-run-watchdog, rewritten each run (no new issue, no comment, no PR).
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The base dump is the one at the commit that last touched COVERAGE.md.
+          fetch-depth: 0
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libfontconfig1-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check against live Roblox
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: scripts/local-run-watchdog.sh watchdog.md
+
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create local-run-watchdog --color 0E8A16 \
+            --description "Local Run behind live Roblox (API dump, Luau)" 2>/dev/null || true
+          issue=$(gh issue list --label local-run-watchdog --state open --json number --jq '.[0].number // empty')
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --body-file watchdog.md
+          else
+            gh issue create --title "Local Run watchdog: behind live Roblox" \
+              --label local-run-watchdog --body-file watchdog.md
+          fi

@@ -1,0 +1,61 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    },
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    },
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    },
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    },
+    {
+      "after_tracks": "180435571",
+      "held_shoulder": "0,0,89",
+      "held_tracks": "180435571,182393478",
+      "idle_shoulder": "0,1,0",
+      "idle_tracks": "180435571",
+      "rig": "R6"
+    }
+  ],
+  "result": {
+    "after_tracks": "180435571",
+    "held_shoulder": "0,0,89",
+    "held_tracks": "180435571,182393478",
+    "idle_shoulder": "0,1,0",
+    "idle_tracks": "180435571",
+    "rig": "R6"
+  },
+  "source": "real Roblox server, place 3086963177 version 555, joined with Sober",
+  "spread": {},
+  "status": "recorded",
+  "known_gaps": {
+    "after_tracks": "Animate picks the idle variant at random by weight (9 to 1), as Roblox's does; a run that rolls the second idle (180435792) differs from the recorded passes, which all rolled the first",
+    "held_tracks": "Animate picks the idle variant at random by weight (9 to 1), as Roblox's does; a run that rolls the second idle (180435792) differs from the recorded passes, which all rolled the first",
+    "idle_tracks": "Animate picks the idle variant at random by weight (9 to 1), as Roblox's does; a run that rolls the second idle (180435792) differs from the recorded passes, which all rolled the first"
+  }
+}

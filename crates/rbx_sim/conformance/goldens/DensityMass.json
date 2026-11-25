@@ -1,0 +1,91 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "heavy_into_light_a": 27,
+      "heavy_into_light_b": 27,
+      "light_into_heavy_a": 2.57,
+      "light_into_heavy_b": 2.58,
+      "mass_1": 0.06,
+      "mass_2": 4.2,
+      "mass_3": 42,
+      "mass_4": 600,
+      "weld_assembly": 32,
+      "weld_mass": 8
+    },
+    {
+      "heavy_into_light_a": 27,
+      "heavy_into_light_b": 27,
+      "light_into_heavy_a": 2.57,
+      "light_into_heavy_b": 2.58,
+      "mass_1": 0.06,
+      "mass_2": 4.2,
+      "mass_3": 42,
+      "mass_4": 600,
+      "weld_assembly": 32,
+      "weld_mass": 8
+    },
+    {
+      "heavy_into_light_a": 27,
+      "heavy_into_light_b": 27,
+      "light_into_heavy_a": 2.57,
+      "light_into_heavy_b": 2.58,
+      "mass_1": 0.06,
+      "mass_2": 4.2,
+      "mass_3": 42,
+      "mass_4": 600,
+      "weld_assembly": 32,
+      "weld_mass": 8
+    },
+    {
+      "heavy_into_light_a": 27,
+      "heavy_into_light_b": 27,
+      "light_into_heavy_a": 2.57,
+      "light_into_heavy_b": 2.58,
+      "mass_1": 0.06,
+      "mass_2": 4.2,
+      "mass_3": 42,
+      "mass_4": 600,
+      "weld_assembly": 32,
+      "weld_mass": 8
+    },
+    {
+      "heavy_into_light_a": 27,
+      "heavy_into_light_b": 27,
+      "light_into_heavy_a": 2.57,
+      "light_into_heavy_b": 2.58,
+      "mass_1": 0.06,
+      "mass_2": 4.2,
+      "mass_3": 42,
+      "mass_4": 600,
+      "weld_assembly": 32,
+      "weld_mass": 8
+    }
+  ],
+  "result": {
+    "heavy_into_light_a": 27.0,
+    "heavy_into_light_b": 27.0,
+    "light_into_heavy_a": 2.57,
+    "light_into_heavy_b": 2.58,
+    "mass_1": 0.06,
+    "mass_2": 4.2,
+    "mass_3": 42.0,
+    "mass_4": 600.0,
+    "weld_assembly": 32.0,
+    "weld_mass": 8.0
+  },
+  "source": "real Roblox server, place 3086963177 version 576, joined with Sober",
+  "spread": {
+    "heavy_into_light_a": 0.0,
+    "heavy_into_light_b": 0.0,
+    "light_into_heavy_a": 0.0,
+    "light_into_heavy_b": 0.0,
+    "mass_1": 0.0,
+    "mass_2": 0.0,
+    "mass_3": 0.0,
+    "mass_4": 0.0,
+    "weld_assembly": 0.0,
+    "weld_mass": 0.0
+  },
+  "status": "recorded"
+}

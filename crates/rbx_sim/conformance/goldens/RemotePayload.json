@@ -1,0 +1,50 @@
+{
+  "passes": 3,
+  "raw": [
+    {
+      "max_buffer": 996,
+      "max_dict": 142,
+      "max_numbers": 110,
+      "max_string": 997,
+      "max_vector3s": 76,
+      "max_zeros": 4000
+    },
+    {
+      "max_buffer": 996,
+      "max_dict": 142,
+      "max_numbers": 110,
+      "max_string": 997,
+      "max_vector3s": 76,
+      "max_zeros": 4000
+    },
+    {
+      "max_buffer": 996,
+      "max_dict": 142,
+      "max_numbers": 110,
+      "max_string": 997,
+      "max_vector3s": 76,
+      "max_zeros": 4000
+    }
+  ],
+  "result": {
+    "max_buffer": 996.0,
+    "max_dict": 142.0,
+    "max_numbers": 110.0,
+    "max_string": 997.0,
+    "max_vector3s": 76.0,
+    "max_zeros": 4000.0
+  },
+  "source": "real Roblox server, place 3086963177 version 659, joined with Sober",
+  "spread": {
+    "max_buffer": 0.0,
+    "max_dict": 0.0,
+    "max_numbers": 0.0,
+    "max_string": 0.0,
+    "max_vector3s": 0.0,
+    "max_zeros": 0.0
+  },
+  "status": "recorded",
+  "known_gaps": {
+    "max_zeros": "Roblox compresses a buffer before the 1000 byte check (4000 zero bytes still get through); Local Run counts its full length"
+  }
+}

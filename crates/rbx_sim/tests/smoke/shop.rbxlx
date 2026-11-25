@@ -1,0 +1,106 @@
+<roblox version="4">
+  <Item class="Workspace" referent="RBX3">
+    <Properties>
+      <string name="Name">Workspace</string>
+    </Properties>
+    <Item class="Part" referent="RBX1">
+      <Properties>
+        <string name="Name">Baseplate</string>
+        <CoordinateFrame name="CFrame"><X>0</X><Y>-10</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+        <Vector3 name="size"><X>512</X><Y>20</Y><Z>512</Z></Vector3>
+        <bool name="Anchored">true</bool>
+      </Properties>
+    </Item>
+    <Item class="SpawnLocation" referent="RBX2">
+      <Properties>
+        <string name="Name">SpawnLocation</string>
+        <CoordinateFrame name="CFrame"><X>0</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+        <Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3>
+        <bool name="Anchored">true</bool>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="ReplicatedStorage" referent="RBX5">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="RemoteFunction" referent="RBX4">
+      <Properties>
+        <string name="Name">Buy</string>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="StarterGui" referent="RBX9">
+    <Properties>
+      <string name="Name">StarterGui</string>
+    </Properties>
+    <Item class="ScreenGui" referent="RBX8">
+      <Properties>
+        <string name="Name">Shop</string>
+        <bool name="IgnoreGuiInset">true</bool>
+      </Properties>
+      <Item class="TextButton" referent="RBX6">
+        <Properties>
+          <string name="Name">BuyButton</string>
+          <Vector2 name="AnchorPoint"><X>0.5</X><Y>0.5</Y></Vector2>
+          <UDim2 name="Position"><XS>0.5</XS><XO>0</XO><YS>0.5</YS><YO>0</YO></UDim2>
+          <UDim2 name="Size"><XS>0</XS><XO>200</XO><YS>0</YS><YO>80</YO></UDim2>
+          <string name="Text">Speed coil (30)</string>
+        </Properties>
+      </Item>
+      <Item class="LocalScript" referent="RBX7">
+        <Properties>
+          <string name="Name">ShopClient</string>
+          <ProtectedString name="Source"><![CDATA[local button = script.Parent:WaitForChild("BuyButton")
+local buy = game:GetService("ReplicatedStorage"):WaitForChild("Buy")
+button.Activated:Connect(function()
+	local ok, coins = buy:InvokeServer("SpeedCoil")
+	button.Text = if ok then `Bought! {coins} left` else "Not enough coins"
+	print("shop", ok, coins)
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="RBX11">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Script" referent="RBX10">
+      <Properties>
+        <string name="Name">ShopServer</string>
+        <ProtectedString name="Source"><![CDATA[local function leaderstats(player, values)
+	local folder = Instance.new("Folder")
+	folder.Name = "leaderstats"
+	for _, entry in values do
+		local value = Instance.new("IntValue")
+		value.Name = entry[1]
+		value.Value = entry[2]
+		value.Parent = folder
+	end
+	folder.Parent = player
+	return folder
+end
+
+local PRICES = { SpeedCoil = 30 }
+
+game:GetService("Players").PlayerAdded:Connect(function(player)
+	leaderstats(player, { { "Coins", 100 }, { "Items", 0 } })
+end)
+
+game:GetService("ReplicatedStorage").Buy.OnServerInvoke = function(player, item)
+	local stats = player:FindFirstChild("leaderstats")
+	local price = PRICES[item]
+	if not stats or not price or stats.Coins.Value < price then
+		return false, stats and stats.Coins.Value
+	end
+	stats.Coins.Value -= price
+	stats.Items.Value += 1
+	return true, stats.Coins.Value
+end
+]]></ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+</roblox>

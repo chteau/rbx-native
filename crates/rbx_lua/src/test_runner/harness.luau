@@ -2,9 +2,10 @@
 -- matcher names and `.skip`/`.only` beside them. Rust passes the spec
 -- module, a loader that compiles it with `env` in front of the globals,
 -- a `report(kind, data)` callback, the run's options and `rearm()`, which
--- gives the next test a fresh time budget; see
+-- gives the next test a fresh time budget, and optionally `globals`, more
+-- names for the spec (Local Run's `LocalRun`); see
 -- `test_runner::run_file` for what each report means.
-local spec, specName, loadSpec, report, options, rearm = ...
+local spec, specName, loadSpec, report, options, rearm, globals = ...
 
 local HOOKS = { "beforeAll", "afterAll", "beforeEach", "afterEach" }
 
@@ -249,6 +250,10 @@ local env = {
 		return expectation(value, false)
 	end,
 }
+
+for name, value in globals or {} do
+	env[name] = value
+end
 
 local loaded, loadError = xpcall(function()
 	local body = loadSpec(spec, env)

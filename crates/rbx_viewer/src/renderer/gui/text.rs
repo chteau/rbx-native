@@ -26,7 +26,7 @@ pub(super) use edit::{scroll_to, SELECTED_TEXT, SELECTION};
 pub use edit::{GuiTextEdit, GuiTextLine, GuiTextMap};
 
 use crate::fonts::{Face, Family, Library};
-use crate::scene::{gui_span_face, GuiText, GuiTextMeasure};
+use crate::scene::{gui_span_face, GuiAlign, GuiText, GuiTextMeasure, GuiTextSpan};
 
 /// `Enum.FontWeight.SemiBold`: from here up a face is bold, Roblox's docs on
 /// `Font.Bold` say it "becomes `true` if the weight is `SemiBold` or thicker"
@@ -235,9 +235,11 @@ impl Typesetter {
         // No face at all: a browser has no system fonts to fall back on, and
         // until the place's own faces stream in cosmic-text would panic
         // looking for a default. The text lays out empty and is shaped
-        // again once they land (see `Typesetter::adopt`).
-        if system.db().faces().next().is_none() {
-            return Buffer::new_empty(metrics_of(&text.face, size));
+        // again once they land (see `Typesetter::adopt`). A `TextSize` of 0
+        // (or a `TextScaled` box with no room) draws nothing either, and
+        // cosmic-text can't lay out lines no pixels tall.
+        if size <= 0.0 || system.db().faces().next().is_none() {
+            return Buffer::new_empty(metrics_of(&text.face, size.max(1.0)));
         }
         // A `<font size>` scales with `TextScaled` like the base size does.
         let scale = size / text.size.max(1.0);
@@ -246,9 +248,14 @@ impl Typesetter {
         // Not cosmic-text's own hinting, which rounds an advance plainly:
         // `glyph_xs` rounds each the way Studio does (see `em`).
         buffer.set_hinting(Hinting::Disabled);
-        buffer.set_wrap(match text.wrapped || text.scaled {
-            true => Wrap::WordOrGlyph,
-            false => Wrap::None,
+        // `TextScaled` never breaks inside a word: the real client shrinks
+        // the text until its longest word fits ("Scaled" over "text" in a
+        // 110 px box, `gui_text_scaled`), where a word wider than a wrapped
+        // box is broken.
+        buffer.set_wrap(match (text.scaled, text.wrapped) {
+            (true, _) => Wrap::Word,
+            (false, true) => Wrap::WordOrGlyph,
+            (false, false) => Wrap::None,
         });
         if let Some(ellipsize) = ellipsize {
             buffer.set_ellipsize(ellipsize);
@@ -354,6 +361,56 @@ impl Typesetter {
         .embolden(size * FAKE_BOLD_EM)
         .render(&mut scaler, key.glyph_id)
     }
+}
+
+/// The typesetter `TextService` measures with, outside any renderer: it
+/// takes every face a renderer's typesetter adopts, so a script measures
+/// text with the glyphs the screen draws.
+static MEASURER: std::sync::LazyLock<std::sync::Mutex<Option<Typesetter>>> =
+    std::sync::LazyLock::new(Default::default);
+
+/// Hands the faces a renderer just adopted to [`measure_text`]'s typesetter.
+pub(super) fn share_faces(library: &Library, wanted: &[Face]) {
+    let mut measurer = MEASURER.lock().unwrap_or_else(|e| e.into_inner());
+    measurer
+        .get_or_insert_with(Typesetter::new)
+        .adopt(library, wanted);
+}
+
+/// `text` at `size` pixels in the family `family` (a `Font.Family` asset
+/// reference), wrapping at `width`, as the GUI layout would size it.
+pub fn measure_text(text: &str, size: f32, family: &str, width: Option<f32>) -> [f32; 2] {
+    let face = AssetRef::parse(family)
+        .ok()
+        .filter(|f| *f != AssetRef::Empty)
+        .map(|family| Face {
+            family,
+            weight: 400,
+            italic: false,
+        })
+        .unwrap_or_default();
+    let text = GuiText {
+        spans: vec![GuiTextSpan::plain(text)],
+        color: [1.0; 3],
+        alpha: 1.0,
+        size,
+        scaled: false,
+        wrapped: width.is_some(),
+        x_align: GuiAlign::Start,
+        y_align: GuiAlign::Start,
+        face,
+        line_height: 1.0,
+        stroke: None,
+        truncate: false,
+        max_graphemes: None,
+        automatic: [false; 2],
+        size_bounds: None,
+        clipped: false,
+    };
+    let mut measurer = MEASURER.lock().unwrap_or_else(|e| e.into_inner());
+    measurer
+        .get_or_insert_with(Typesetter::new)
+        .measure(&text, size, width)
 }
 
 impl GuiTextMeasure for Typesetter {

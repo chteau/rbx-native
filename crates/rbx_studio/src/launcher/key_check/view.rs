@@ -223,9 +223,20 @@ pub(in crate::launcher) fn result(
                 dashboard("key-dashboard", false).into_any_element(),
             ],
         ),
+        Status::Network if rbx_net::is_offline() => card(
+            ui::status_dot("wifi-off", tokens::text2(), Some(tokens::border()), 22.),
+            "You\u{2019}re offline",
+            "offline mode".into(),
+            ui::text(12., 18.)
+                .text_color(tokens::text2())
+                .child("Offline mode is on, so the key wasn\u{2019}t checked with Roblox. Nothing changed; turn offline mode off to check it.")
+                .into_any_element(),
+            vec![dashboard("key-dashboard", false).into_any_element()],
+        ),
         Status::Network => card(
             ui::status_dot("wifi-off", tokens::text2(), Some(tokens::border()), 22.),
             "Couldn\u{2019}t reach Roblox",
+
             "network error".into(),
             ui::text(12., 18.)
                 .text_color(tokens::text2())

@@ -2,9 +2,9 @@
 //! reflected properties, validated against the reflection database.
 
 pub mod clock;
-mod from_lua;
-mod pseudo;
-mod to_lua;
+pub(crate) mod from_lua;
+pub(crate) mod pseudo;
+pub(crate) mod to_lua;
 
 use mlua::{Lua, Result, Value};
 use rbx_dom::{Ref, Variant};
@@ -24,10 +24,21 @@ pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Opt
 
     let (value_type, stored) = {
         let dom = ctx.dom();
-        let instance = dom.get(referent).ok_or_else(missing_instance)?;
+        let remains = ctx.remains();
+        // A destroyed instance still reads as it was when it went.
+        let instance = dom
+            .get(referent)
+            .or_else(|| remains.get(referent))
+            .ok_or_else(missing_instance)?;
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(None);
         };
+        if descriptor.roblox_read {
+            return Err(mlua::Error::runtime(format!(
+                "The current thread cannot read '{}' (lacking capability RobloxScript)",
+                descriptor.name
+            )));
+        }
         // Whichever name the file stored it under, or the class default:
         // `part.Transparency` on a part a hand-written file left it off of
         // reads `0`, as it would in Roblox.
@@ -112,13 +123,24 @@ pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result
 
     let (value_type, key, existing) = {
         let dom = ctx.dom();
-        let instance = dom.get(referent).ok_or_else(missing_instance)?;
+        let remains = ctx.remains();
+        // A destroyed instance still reads as it was when it went.
+        let instance = dom
+            .get(referent)
+            .or_else(|| remains.get(referent))
+            .ok_or_else(missing_instance)?;
         let Some(descriptor) = ctx.database().resolve_property(instance.class(), name) else {
             return Ok(false);
         };
         if !descriptor.script_writable {
             return Err(mlua::Error::runtime(format!(
                 "The current thread cannot write '{}' (lacking capability NotAccessible)",
+                descriptor.name
+            )));
+        }
+        if descriptor.roblox_write {
+            return Err(mlua::Error::runtime(format!(
+                "The current thread cannot write '{}' (lacking capability RobloxScript)",
                 descriptor.name
             )));
         }

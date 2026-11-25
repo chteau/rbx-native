@@ -125,6 +125,9 @@ impl Shell {
     /// The two File menu commands. An unlinked file picks its game first
     /// and then asks to confirm `mode`.
     pub(crate) fn upload_to_roblox(&mut self, mode: PublishMode, cx: &mut Context<Self>) {
+        if self.offline_refuses("Publishing", cx) {
+            return;
+        }
         match home::link_of(&self.path) {
             Some(link) => {
                 let target = Target {

@@ -194,6 +194,10 @@ impl Shell {
         let search = &catalog.search;
         // Always one line, so the list doesn't jump when a search starts.
         let (caption, warn) = match (&search.load, &catalog.listing) {
+            (Load::Idle, Load::Failed(err)) if rbx_net::is_offline_message(err) => (
+                "You\u{2019}re offline; showing saved names.".to_owned(),
+                true,
+            ),
             (Load::Idle, Load::Failed(err)) => (
                 format!("Couldn't reach the Creator Store ({err}); showing saved names."),
                 true,
@@ -225,7 +229,10 @@ impl Shell {
                 .text_size(tokens::text_sm())
                 .child(ui::spinner("plugin-catalog-searching", 14.))
                 .child(format!("Searching for \u{201c}{}\u{201d}", search.text)),
-            Load::Failed(err) => notice(format!("Search failed: {err}"), true),
+            Load::Failed(err) => notice(
+                crate::shell::toolbox::unreachable("the Creator Store", err),
+                true,
+            ),
             Load::Ready if search.ids.is_empty() => notice(
                 format!("No free plugins match \u{201c}{}\u{201d}.", search.text),
                 false,

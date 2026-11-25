@@ -15,6 +15,26 @@ impl Shell {
         cx.notify();
     }
 
+    pub(in crate::shell) fn set_offline(&mut self, on: bool, cx: &mut Context<Self>) {
+        rbx_net::set_forced(on);
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Whether `what` (a feature that only works against Roblox) is
+    /// refused because the app is offline, saying why once in Output
+    /// instead of opening onto requests that can only fail.
+    pub(in crate::shell) fn offline_refuses(&mut self, what: &str, cx: &mut Context<Self>) -> bool {
+        let status = rbx_net::status();
+        if !status.offline() {
+            return false;
+        }
+        self.output
+            .push_warning(&format!("{what} needs Roblox. {}.", status.reason()));
+        cx.notify();
+        true
+    }
+
     pub(in crate::shell) fn set_output_rich_text(&mut self, on: bool, cx: &mut Context<Self>) {
         self.output_rich_text = on;
         self.save_settings();

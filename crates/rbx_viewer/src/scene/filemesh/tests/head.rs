@@ -80,7 +80,7 @@ fn a_head_ignores_its_mesh_id() {
 fn vertex_color_tints_a_textured_mesh_only() {
     let green = ("VertexColor", vector3_variant(0.0, 1.0, 0.0));
     let plain = wearing([4.0, 4.0, 4.0], HEAD_MESH, vec![green.clone()]);
-    assert_eq!(planned(&plain).entries[0].color, [1.0, 0.0, 0.0]);
+    assert_eq!(planned(&plain).entries[0].color_for(false), [1.0, 0.0, 0.0]);
 
     let textured = wearing(
         [4.0, 4.0, 4.0],
@@ -90,5 +90,9 @@ fn vertex_color_tints_a_textured_mesh_only() {
             ("TextureId", Variant::String("rbxassetid://8".to_string())),
         ],
     );
-    assert_eq!(planned(&textured).entries[0].color, [0.0, 0.0, 0.0]);
+    // The image takes the tint, not the part's red: a textured mesh is
+    // drawn in its image's own colours.
+    let entry = &planned(&textured).entries[0];
+    assert_eq!(entry.color_for(true), [0.0, 1.0, 0.0]);
+    assert_eq!(entry.color_for(false), [1.0, 0.0, 0.0]);
 }

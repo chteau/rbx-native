@@ -1,0 +1,610 @@
+{
+  "ambient_colour": {
+    "about": "Coloured Ambient, OutdoorAmbient and ColorShift, Brightness 1, no environment light",
+    "delta_e": 5.153,
+    "delta_e_p90": 8.95,
+    "ssim": 0.974,
+    "tolerance_delta_e": 0.6000000238418579,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "atmosphere": {
+    "about": "Atmosphere Density 0.45, Offset 0.3, Glare 0.6, Haze 1.5 toward a 17:00 sun",
+    "delta_e": 1.882,
+    "delta_e_p90": 4.403,
+    "ssim": 0.98,
+    "tolerance_delta_e": 0.28234121203422546,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "atmosphere_floor": {
+    "about": "Atmosphere Density 0.4, Haze 2, Glare 0.5 over a grey floor seen at a shallow angle",
+    "delta_e": 1.528,
+    "delta_e_p90": 2.841,
+    "ssim": 0.992,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "bloom_colour_correction": {
+    "about": "Bloom (threshold 0.8) on neon, ColorCorrection tint, contrast and saturation",
+    "delta_e": 3.593,
+    "delta_e_p90": 4.294,
+    "ssim": 0.952,
+    "tolerance_delta_e": 0.5389582514762878,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "blur": {
+    "about": "BlurEffect Size 10",
+    "delta_e": 1.54,
+    "delta_e_p90": 2.731,
+    "ssim": 0.984,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "custom_sky": {
+    "about": "The template's Sky skybox, looking up",
+    "delta_e": 0.891,
+    "delta_e_p90": 2.202,
+    "ssim": 0.993,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "decals_textures": {
+    "about": "A stretched Decal, a Texture tiled at 2 studs with an offset, a tinted half transparent Texture",
+    "delta_e": 1.694,
+    "delta_e_p90": 3.101,
+    "ssim": 0.988,
+    "tolerance_delta_e": 0.2541460394859314,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "default_lighting": {
+    "about": "Lighting left at its class defaults, no Sky: Roblox's own defaults",
+    "delta_e": 0.861,
+    "delta_e_p90": 1.24,
+    "ssim": 0.99,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "depth_of_field": {
+    "about": "DepthOfField focused at 15 studs, radius 6, far 0.8, near 0.6",
+    "delta_e": 1.741,
+    "delta_e_p90": 3.025,
+    "ssim": 0.97,
+    "tolerance_delta_e": 0.26107996702194214,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "evening": {
+    "about": "ClockTime 17.8: sunset colours",
+    "delta_e": 2.274,
+    "delta_e_p90": 3.512,
+    "ssim": 0.984,
+    "tolerance_delta_e": 0.34110936522483826,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "exposure": {
+    "about": "ExposureCompensation 1.5",
+    "delta_e": 1.735,
+    "delta_e_p90": 2.817,
+    "ssim": 0.978,
+    "tolerance_delta_e": 0.2602415084838867,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "fog": {
+    "about": "Linear fog: FogStart 10, FogEnd 140, FogColor warm",
+    "delta_e": 1.954,
+    "delta_e_p90": 3.667,
+    "ssim": 0.976,
+    "tolerance_delta_e": 0.2931275963783264,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_day_effects": {
+    "about": "A white path in the sun under a game's stack of effects: blue Atmosphere, saturated ColorCorrection, strong Bloom, DepthOfField",
+    "delta_e": 1.918,
+    "delta_e_p90": 2.91,
+    "ssim": 0.978,
+    "tolerance_delta_e": 0.2877194583415985,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_retro_room": {
+    "about": "A lobby's look: Voxel mid-morning, Brightness 0.6, no environment light, a grey ColorCorrection and a Retro ColorGradingEffect, inside a room with a doorway",
+    "delta_e": 1.821,
+    "delta_e_p90": 3.283,
+    "ssim": 0.783,
+    "tolerance_delta_e": 0.27318358421325684,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_voxel_night": {
+    "about": "Voxel at midnight, Brightness 0.6, no environment light: a room with a doorway, unlit",
+    "delta_e": 0.681,
+    "delta_e_p90": 1.147,
+    "ssim": 0.979,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_voxel_night_bright": {
+    "about": "game_voxel_night at Brightness 3: what the moon adds",
+    "delta_e": 0.749,
+    "delta_e_p90": 1.206,
+    "ssim": 0.971,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "game_voxel_night_dark": {
+    "about": "game_voxel_night with Ambient and OutdoorAmbient black: the moon alone",
+    "delta_e": 0.07,
+    "delta_e_p90": 0.157,
+    "ssim": 0.97,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_canvas_groups": {
+    "about": "CanvasGroup GroupTransparency 0.5 over a frame, text and an image, bare, tinted at 0.25, at 0, nested; under Global and Sibling",
+    "delta_e": 0.137,
+    "delta_e_p90": 0.347,
+    "ssim": 0.999,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_fonts": {
+    "about": "SourceSans, Builder Sans, Gotham, Arial, Roboto, Fredoka One and an italic, at 32 and 16",
+    "delta_e": 0.551,
+    "delta_e_p90": 0.0,
+    "ssim": 0.972,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_gradients": {
+    "about": "UIGradient colour and transparency sequences, Rotation, Offset, on text and a tinted frame",
+    "delta_e": 0.127,
+    "delta_e_p90": 0.368,
+    "ssim": 0.999,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_images": {
+    "about": "ImageLabel ScaleType Stretch, Tile, Fit, Crop, Slice with SliceScale, tints and ImageRect",
+    "delta_e": 0.143,
+    "delta_e_p90": 0.554,
+    "ssim": 0.999,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_stacking": {
+    "about": "Stacked half transparent frames, ZIndex, CanvasGroup, UIListLayout with UIPadding",
+    "delta_e": 0.059,
+    "delta_e_p90": 0.205,
+    "ssim": 1.0,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_strokes": {
+    "about": "UIStroke Border thicknesses with UICorner radii, line joins, transparency, Contextual on text",
+    "delta_e": 0.042,
+    "delta_e_p90": 0.0,
+    "ssim": 0.999,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_text_layout": {
+    "about": "TextScaled, wrapped lines at LineHeight 1 and 1.5, RichText, TextStroke, TextYAlignment",
+    "delta_e": 0.509,
+    "delta_e_p90": 0.0,
+    "ssim": 0.972,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "gui_text_scaled": {
+    "about": "TextScaled with and without TextWrapped, in Builder Sans and the legacy Font, in wide, tall and small boxes",
+    "delta_e": 0.285,
+    "delta_e_p90": 0.0,
+    "ssim": 0.991,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "latitude": {
+    "about": "GeographicLatitude 60 at noon",
+    "delta_e": 1.756,
+    "delta_e_p90": 3.097,
+    "ssim": 0.985,
+    "tolerance_delta_e": 0.2633912265300751,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "light_point_1": {
+    "about": "PointLight Range 16 Brightness 1 two studs over a white floor",
+    "delta_e": 1.788,
+    "delta_e_p90": 4.292,
+    "ssim": 0.74,
+    "tolerance_delta_e": 0.26817697286605835,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "light_point_1_future": {
+    "about": "PointLight Range 16 Brightness 1 two studs over a white floor",
+    "delta_e": 0.957,
+    "delta_e_p90": 3.964,
+    "ssim": 0.79,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "light_point_4": {
+    "about": "PointLight Range 16 Brightness 4 two studs over a white floor",
+    "delta_e": 1.847,
+    "delta_e_p90": 4.233,
+    "ssim": 0.704,
+    "tolerance_delta_e": 0.27705875039100647,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "light_point_4_future": {
+    "about": "PointLight Range 16 Brightness 4 two studs over a white floor",
+    "delta_e": 1.07,
+    "delta_e_p90": 3.964,
+    "ssim": 0.789,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "light_spot": {
+    "about": "SpotLight Range 16 Brightness 2 Angle 90 six studs up, facing down",
+    "delta_e": 1.005,
+    "delta_e_p90": 4.075,
+    "ssim": 0.76,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "light_spot_future": {
+    "about": "SpotLight Range 16 Brightness 2 Angle 90 six studs up, facing down",
+    "delta_e": 0.946,
+    "delta_e_p90": 4.075,
+    "ssim": 0.787,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "light_surface": {
+    "about": "SurfaceLight Range 16 Brightness 2 Angle 90 on a wall's Right face",
+    "delta_e": 1.892,
+    "delta_e_p90": 4.233,
+    "ssim": 0.722,
+    "tolerance_delta_e": 0.2837408185005188,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "light_surface_future": {
+    "about": "SurfaceLight Range 16 Brightness 2 Angle 90 on a wall's Right face",
+    "delta_e": 1.245,
+    "delta_e_p90": 4.075,
+    "ssim": 0.769,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "local_lights": {
+    "about": "Point, spot and surface lights with shadows at night",
+    "delta_e": 4.624,
+    "delta_e_p90": 7.571,
+    "ssim": 0.917,
+    "tolerance_delta_e": 0.6000000238418579,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "local_lights_future": {
+    "about": "local_lights under Technology Future",
+    "delta_e": 4.261,
+    "delta_e_p90": 4.527,
+    "ssim": 0.922,
+    "tolerance_delta_e": 0.6000000238418579,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "material_variant_anchor": {
+    "about": "The grid MaterialVariant at 4 studs on 5, 7 and 3 stud faces, two equal blocks a fraction of a tile apart",
+    "delta_e": 1.978,
+    "delta_e_p90": 3.373,
+    "ssim": 0.988,
+    "tolerance_delta_e": 0.29667988419532776,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "material_variants": {
+    "about": "MaterialVariants with a colour map: StudsPerTile 4, Organic at 8, tinted, and on Metal with a metalness map",
+    "delta_e": 2.717,
+    "delta_e_p90": 5.66,
+    "ssim": 0.957,
+    "tolerance_delta_e": 0.40759173035621643,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "materials_a": {
+    "about": "The first 20 materials on grey slabs",
+    "delta_e": 2.63,
+    "delta_e_p90": 4.113,
+    "ssim": 0.947,
+    "tolerance_delta_e": 0.3944951295852661,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "materials_b": {
+    "about": "The other 19 materials on grey slabs",
+    "delta_e": 2.428,
+    "delta_e_p90": 3.283,
+    "ssim": 0.961,
+    "tolerance_delta_e": 0.36422115564346313,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "morning": {
+    "about": "ClockTime 7 on the equator: a low sun in the east",
+    "delta_e": 1.993,
+    "delta_e_p90": 3.665,
+    "ssim": 0.972,
+    "tolerance_delta_e": 0.2990131676197052,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "night": {
+    "about": "ClockTime 0: moon, stars and the night ambient",
+    "delta_e": 1.508,
+    "delta_e_p90": 2.866,
+    "ssim": 0.976,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "noob": {
+    "about": "The classic noob up close: colours, round head and the default face",
+    "delta_e": 1.853,
+    "delta_e_p90": 3.143,
+    "ssim": 0.986,
+    "tolerance_delta_e": 0.2779427766799927,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "realistic_style": {
+    "about": "LightingStyle Realistic",
+    "delta_e": 1.537,
+    "delta_e_p90": 2.731,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "shadows_half": {
+    "about": "ShadowSoftness 0.5: poles and a floating slab",
+    "delta_e": 1.961,
+    "delta_e_p90": 2.998,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.2941027283668518,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "shadows_hard": {
+    "about": "ShadowSoftness 0: poles and a floating slab",
+    "delta_e": 1.966,
+    "delta_e_p90": 2.936,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.29492953419685364,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "shadows_soft": {
+    "about": "ShadowSoftness 1: poles and a floating slab",
+    "delta_e": 1.997,
+    "delta_e_p90": 3.068,
+    "ssim": 0.976,
+    "tolerance_delta_e": 0.2995936870574951,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "special_materials": {
+    "about": "Glass, Neon, ForceField, Reflectance, Metal, Foil and overlapping transparency",
+    "delta_e": 2.082,
+    "delta_e_p90": 3.301,
+    "ssim": 0.961,
+    "tolerance_delta_e": 0.3123437762260437,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "studio_baseplate": {
+    "about": "Studio's Baseplate template lighting with its Sky, Atmosphere, SunRays and Bloom",
+    "delta_e": 1.741,
+    "delta_e_p90": 3.623,
+    "ssim": 0.984,
+    "tolerance_delta_e": 0.2611735761165619,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "studio_future": {
+    "about": "The template's Lighting values under Technology Future",
+    "delta_e": 1.537,
+    "delta_e_p90": 2.731,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "studio_lighting": {
+    "about": "The template's Lighting values alone, default sky",
+    "delta_e": 1.537,
+    "delta_e_p90": 2.731,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "studs": {
+    "about": "Smooth, Studs, Inlet, Universal, Weld and Glue tops and fronts, and a studded plate",
+    "delta_e": 2.094,
+    "delta_e_p90": 3.481,
+    "ssim": 0.943,
+    "tolerance_delta_e": 0.3141144812107086,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "sun_rays": {
+    "about": "SunRaysEffect Intensity 0.3, Spread 0.8 toward a 17:00 sun past pillars",
+    "delta_e": 3.296,
+    "delta_e_p90": 5.569,
+    "ssim": 0.977,
+    "tolerance_delta_e": 0.49445998668670654,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "surface_appearance": {
+    "about": "A MeshPart with its TextureID, and SurfaceAppearances: Overlay tinted, Transparency, metalness and roughness maps",
+    "delta_e": 1.974,
+    "delta_e_p90": 3.202,
+    "ssim": 0.981,
+    "tolerance_delta_e": 0.29610639810562134,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "template_spawn": {
+    "about": "The Baseplate template's textured floor and SpawnLocation decal, as Play opens",
+    "delta_e": 2.21,
+    "delta_e_p90": 4.246,
+    "ssim": 0.986,
+    "tolerance_delta_e": 0.3314419090747833,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "text_boxes": {
+    "about": "TextBoxes and TextLabels whose text overflows: placeholder, alignment, ClipsDescendants, TextTruncate",
+    "delta_e": 2.104,
+    "delta_e_p90": 3.092,
+    "ssim": 0.944,
+    "tolerance_delta_e": 0.31558558344841003,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "text_sizes": {
+    "about": "Labels in Legacy and SourceSans at TextSizes on and between Enum.FontSize's steps",
+    "delta_e": 1.467,
+    "delta_e_p90": 2.152,
+    "ssim": 0.954,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "texture_blend": {
+    "about": "Blue tinted and untinted Textures at Transparency 0, 0.25, 0.5 and 0.75 over red parts",
+    "delta_e": 1.641,
+    "delta_e_p90": 3.101,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_ambient": {
+    "about": "The ramp under white OutdoorAmbient alone",
+    "delta_e": 0.754,
+    "delta_e_p90": 1.15,
+    "ssim": 0.993,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_ambient_half": {
+    "about": "The ramp under 128 grey Ambient alone",
+    "delta_e": 0.762,
+    "delta_e_p90": 1.152,
+    "ssim": 0.995,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_ambient_voxel": {
+    "about": "tone_ambient in a place that leaves Technology and LightingStyle at their defaults",
+    "delta_e": 0.877,
+    "delta_e_p90": 1.389,
+    "ssim": 0.994,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_ambient_voxel_retro": {
+    "about": "tone_ambient_voxel under a ColorGradingEffect with TonemapperPreset Retro",
+    "delta_e": 0.877,
+    "delta_e_p90": 1.389,
+    "ssim": 0.994,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_exposure": {
+    "about": "The ramp under an overhead sun, Brightness 1, ExposureCompensation 2",
+    "delta_e": 3.548,
+    "delta_e_p90": 5.061,
+    "ssim": 0.983,
+    "tolerance_delta_e": 0.5321887731552124,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sky": {
+    "about": "The ramp under the default sky's light alone (EnvironmentDiffuseScale 1)",
+    "delta_e": 0.866,
+    "delta_e_p90": 1.258,
+    "ssim": 0.989,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_1": {
+    "about": "The ramp under an overhead sun, Brightness 1",
+    "delta_e": 0.758,
+    "delta_e_p90": 1.188,
+    "ssim": 0.996,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_15": {
+    "about": "tone_sun_2 with the sun 15 degrees up",
+    "delta_e": 0.801,
+    "delta_e_p90": 1.192,
+    "ssim": 0.989,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_2": {
+    "about": "The ramp under an overhead sun, Brightness 2",
+    "delta_e": 0.751,
+    "delta_e_p90": 1.163,
+    "ssim": 0.996,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_2_retro": {
+    "about": "tone_sun_2 under a ColorGradingEffect with TonemapperPreset Retro",
+    "delta_e": 0.879,
+    "delta_e_p90": 1.427,
+    "ssim": 0.994,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_2_voxel": {
+    "about": "tone_sun_2 in a place that leaves Technology and LightingStyle at their defaults",
+    "delta_e": 0.879,
+    "delta_e_p90": 1.427,
+    "ssim": 0.994,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_2_voxel_retro": {
+    "about": "tone_sun_2_voxel under a ColorGradingEffect with TonemapperPreset Retro",
+    "delta_e": 0.879,
+    "delta_e_p90": 1.427,
+    "ssim": 0.994,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_30": {
+    "about": "tone_sun_2 with the sun 30 degrees up",
+    "delta_e": 0.799,
+    "delta_e_p90": 1.182,
+    "ssim": 0.989,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_4": {
+    "about": "The ramp under an overhead sun, Brightness 4",
+    "delta_e": 0.836,
+    "delta_e_p90": 1.212,
+    "ssim": 0.991,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_5": {
+    "about": "tone_sun_2 with the sun 5 degrees up",
+    "delta_e": 3.021,
+    "delta_e_p90": 4.094,
+    "ssim": 0.984,
+    "tolerance_delta_e": 0.4531571567058563,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_60": {
+    "about": "tone_sun_2 with the sun 60 degrees up",
+    "delta_e": 0.775,
+    "delta_e_p90": 1.18,
+    "ssim": 0.991,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_8": {
+    "about": "The ramp under an overhead sun, Brightness 8",
+    "delta_e": 0.88,
+    "delta_e_p90": 1.255,
+    "ssim": 0.992,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  },
+  "tone_sun_8_voxel_retro": {
+    "about": "The ramp under an overhead sun, Brightness 8, Voxel, TonemapperPreset Retro",
+    "delta_e": 1.075,
+    "delta_e_p90": 1.557,
+    "ssim": 0.987,
+    "tolerance_delta_e": 0.25,
+    "tolerance_ssim": 0.019999999552965164
+  }
+}

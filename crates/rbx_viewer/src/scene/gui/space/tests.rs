@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use rbx_dom::{UDim, UDim2, Vector2Data, Vector3Data, WeakDom};
 
 use super::*;
@@ -366,6 +366,41 @@ fn a_billboard_takes_its_adornees_own_position() {
     assert_eq!(origin, Vec3::new(7.0, 0.0, -2.0));
     assert_eq!(size, [4.0, 2.0]);
     assert_eq!(world_offset, Vec3::new(0.0, 3.0, 0.0));
+}
+
+#[test]
+fn extents_offsets_count_in_half_the_adornees_size() {
+    let mut dom = WeakDom::new();
+    let part = dom.new_instance("Part", "Head", None);
+    let gui = dom.new_instance("BillboardGui", "Tag", Some(part));
+    filled(&mut dom, gui);
+    dom.set_property(gui, "Size", udim2(4.0, 0, 2.0, 0))
+        .unwrap();
+    dom.set_property(gui, "ExtentsOffsetWorldSpace", vector3_of(0.0, 2.5, 0.0))
+        .unwrap();
+    dom.set_property(gui, "ExtentsOffset", vector3_of(1.0, 0.0, 0.0))
+        .unwrap();
+    let size = Vec3::new(2.0, 1.2, 1.0);
+    let placements = HashMap::from([(
+        part,
+        Placement {
+            kind: ShapeKind::Box,
+            model: Mat4::from_scale_rotation_translation(size, Quat::IDENTITY, Vec3::Y * 4.0),
+            size,
+        },
+    )]);
+
+    let planned = planned(&dom, &placements);
+    let Anchor::Billboard {
+        view_offset,
+        world_offset,
+        ..
+    } = planned[0].anchor
+    else {
+        panic!("a BillboardGui faces the camera");
+    };
+    assert!((world_offset - Vec3::new(0.0, 1.5, 0.0)).length() < 1e-5);
+    assert!((view_offset - Vec3::new(1.0, 0.0, 0.0)).length() < 1e-5);
 }
 
 #[test]

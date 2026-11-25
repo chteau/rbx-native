@@ -205,8 +205,9 @@ impl Renderer {
         device: &wgpu::Device,
         reference: &AssetRef,
         face: &FaceInstance,
+        resolved: &Resolved,
     ) -> bool {
-        self.textured.sync(device, reference, face)
+        self.textured.sync(device, reference, face, resolved)
     }
 
     /// Drops one `Decal`/`Texture`'s projection, its part stopped drawing

@@ -1,0 +1,62 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "connect_after_destroy": true,
+      "destroyed": false,
+      "destroyed_child": false,
+      "destroying": false,
+      "nil_parent": true,
+      "nil_parent_destroyed": false,
+      "nil_parent_later": true
+    },
+    {
+      "connect_after_destroy": true,
+      "destroyed": false,
+      "destroyed_child": false,
+      "destroying": false,
+      "nil_parent": true,
+      "nil_parent_destroyed": false,
+      "nil_parent_later": true
+    },
+    {
+      "connect_after_destroy": true,
+      "destroyed": false,
+      "destroyed_child": false,
+      "destroying": false,
+      "nil_parent": true,
+      "nil_parent_destroyed": false,
+      "nil_parent_later": true
+    },
+    {
+      "connect_after_destroy": true,
+      "destroyed": false,
+      "destroyed_child": false,
+      "destroying": false,
+      "nil_parent": true,
+      "nil_parent_destroyed": false,
+      "nil_parent_later": true
+    },
+    {
+      "connect_after_destroy": true,
+      "destroyed": false,
+      "destroyed_child": false,
+      "destroying": false,
+      "nil_parent": true,
+      "nil_parent_destroyed": false,
+      "nil_parent_later": true
+    }
+  ],
+  "result": {
+    "connect_after_destroy": true,
+    "destroyed": false,
+    "destroyed_child": false,
+    "destroying": false,
+    "nil_parent": true,
+    "nil_parent_destroyed": false,
+    "nil_parent_later": true
+  },
+  "source": "real Roblox server, place 3086963177 version 660, joined with Sober",
+  "spread": {},
+  "status": "recorded"
+}
