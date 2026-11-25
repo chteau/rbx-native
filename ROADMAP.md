@@ -3543,10 +3543,13 @@ goldens. Plan and status in `docs/research/local-run/PLAN.md`.
   Games, Free kits, Rig Builder, plugins and Play (local) work from the
   cache; Creator Store searches, plugin installs and the key check say
   they're offline.
-- [ ] 📋 **Offline: grey out what can't work**: Save/Publish to Roblox,
-  Game Settings, Version History, Data Stores and Link to Roblox Place stay
-  clickable offline, where all they can do is fail. They should be
-  disabled with a reason while offline (about half a day).
+- [x] **Offline: grey out what can't work**: every command that needs
+  Roblox (Save/Publish to Roblox, Publish All, Link to Roblox Place,
+  Version History, Game Settings, Data Stores, the imports, Upload Item,
+  Reimport, and Home's downloads, New experience, Add by link, Configure
+  and Archive) is greyed out with "You're offline" in the menus, ribbon,
+  command palette, Explorer menu and Home, and the MCP tools that call
+  Roblox refuse at once. All of it comes back live with the network.
 - [x] Linux (X11), the daily-driven target.
 - [x] Windows: asset cache and settings now fall back to
   `%LOCALAPPDATA%`/`%APPDATA%` when no `XDG_*`/`HOME` is set; the
