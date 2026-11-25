@@ -196,6 +196,15 @@ impl Shell {
         else {
             return;
         };
+        // Greyed out offline: stays open, as a disabled menu row does.
+        if self
+            .palette
+            .open
+            .as_ref()
+            .is_some_and(|open| open.list()[index].cut_off())
+        {
+            return;
+        }
         let Some(mut open) = self.close_palette(window, cx) else {
             return;
         };

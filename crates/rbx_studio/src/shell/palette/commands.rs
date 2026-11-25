@@ -43,6 +43,8 @@ pub(in crate::shell) struct Command {
     /// Display text from `shortcuts::hint`, e.g. `Ctrl+S`.
     pub(in crate::shell) hint: Option<String>,
     pub(in crate::shell) run: Run,
+    /// Whether running it needs Roblox's servers: greyed out offline.
+    pub(in crate::shell) needs_roblox: bool,
     /// `name` and `label` lower-cased and split into words once, here,
     /// rather than on every keystroke for every row: Quick Open ranks every
     /// instance in the place (see `change_class::rank_split`).
@@ -72,7 +74,13 @@ impl Command {
         hint: Option<String>,
         run: Run,
     ) -> Self {
+        let needs_roblox = match &run {
+            Run::Action(action) => crate::offline::needs_roblox(action.as_ref()),
+            Run::Ribbon(command) => command.needs_roblox(),
+            _ => false,
+        };
         Self {
+            needs_roblox,
             name_key: Key::new(&name),
             label_key: Key::new(&label),
             label,
@@ -81,6 +89,11 @@ impl Command {
             hint,
             run,
         }
+    }
+
+    /// Whether the row is greyed out right now.
+    pub(in crate::shell) fn cut_off(&self) -> bool {
+        self.needs_roblox && crate::offline::blocked()
     }
 
     /// What the row reads: an instance by its name (its path is the

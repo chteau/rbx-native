@@ -70,10 +70,11 @@ fn item(owned: OwnedMenuItem) -> MenuItem {
             disabled,
         } => MenuItem::Action {
             name: name.into(),
+            disabled: disabled
+                || (crate::offline::needs_roblox(action.as_ref()) && crate::offline::blocked()),
             action,
             os_action,
             checked,
-            disabled,
         },
     }
 }

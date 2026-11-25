@@ -184,6 +184,16 @@ pub(crate) fn refresh(bar: &Entity<MenuBar>, templates: &[Template], cx: &mut Ap
     native::set(templates, cx);
 }
 
+/// The system menu bar again after the network came or went: its items
+/// that need Roblox are greyed out offline (the in-window bar reads the
+/// status each time a menu opens).
+pub(crate) fn follow_network(templates: &[Template], cx: &mut App) {
+    #[cfg(target_os = "macos")]
+    native::set(templates, cx);
+    #[cfg(not(target_os = "macos"))]
+    let _ = (templates, cx);
+}
+
 /// The menu structure itself. File and Edit hold this editor's real
 /// commands (see this module's doc comment); Model holds the two quick
 /// inserts `shell::keys` handles (unbound by default, rebindable), plus the three

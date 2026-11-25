@@ -62,6 +62,9 @@ pub(super) fn dropdown(
     // 125 %, and the anchor's snap then pushed it up over the bar itself;
     // capped here it stays under its title and scrolls instead.
     let room = window.viewport_size().height - BAR_BOTTOM;
+    // Read once as the menu opens: a command that needs Roblox reads
+    // "You're offline" under its name, greyed out.
+    let offline = crate::offline::blocked();
     PopupMenu::build(window, cx, move |menu, _, _| {
         let menu = items.iter().fold(menu, |menu, item| match item {
             OwnedMenuItem::Action {
@@ -71,10 +74,15 @@ pub(super) fn dropdown(
                 disabled,
                 ..
             } if primary_detail(name).is_some()
-                || crate::shortcuts::command_for_action(action.as_ref()).is_some() =>
+                || crate::shortcuts::command_for_action(action.as_ref()).is_some()
+                || (offline && crate::offline::needs_roblox(action.as_ref())) =>
             {
                 let (label, shortcut_action) = (name.clone(), action.boxed_clone());
-                let detail = primary_detail(name);
+                let cut_off = offline && crate::offline::needs_roblox(action.as_ref());
+                let detail = match cut_off {
+                    true => Some(crate::offline::TIP),
+                    false => primary_detail(name),
+                };
                 let row_height = if detail.is_some() {
                     tokens::primary_target()
                 } else {
@@ -115,7 +123,7 @@ pub(super) fn dropdown(
                     })
                     .action(action.boxed_clone())
                     .checked(*checked)
-                    .disabled(*disabled),
+                    .disabled(*disabled || cut_off),
                 )
             }
             OwnedMenuItem::Action {
