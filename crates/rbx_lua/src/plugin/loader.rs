@@ -108,7 +108,8 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
                 .as_str()
                 .ok_or_else(|| "`permissions` must be an array of strings".to_string())?;
             permissions.push(
-                rbx_permissions::parse_manifest(text).ok_or_else(|| format!("unknown permission `{text}`"))?,
+                rbx_permissions::parse_manifest(text)
+                    .ok_or_else(|| format!("unknown permission `{text}`"))?,
             );
         }
     }

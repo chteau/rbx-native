@@ -205,7 +205,11 @@ impl Policy {
 
     /// The decision the user stored, if any.
     pub fn stored(&self, plugin: &str, capability: Capability) -> Option<Decision> {
-        self.plugins.get(plugin)?.decisions.get(&capability).copied()
+        self.plugins
+            .get(plugin)?
+            .decisions
+            .get(&capability)
+            .copied()
     }
 
     pub fn decide(&self, profile: &PluginProfile, capability: Capability) -> Decision {

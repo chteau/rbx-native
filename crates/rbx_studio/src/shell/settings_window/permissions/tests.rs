@@ -5,9 +5,19 @@ use super::{shown, summary, Capability};
 #[test]
 fn every_capability_glyph_is_in_the_catalogue() {
     for capability in Capability::ALL {
-        assert!(crate::launcher::ui::icon_exists(capability.glyph()), "{capability:?}");
+        assert!(
+            crate::launcher::ui::icon_exists(capability.glyph()),
+            "{capability:?}"
+        );
     }
-    for glyph in ["bot", "puzzle", "chevron-down", "chevron-right", "x", "shield-check"] {
+    for glyph in [
+        "bot",
+        "puzzle",
+        "chevron-down",
+        "chevron-right",
+        "x",
+        "shield-check",
+    ] {
         assert!(crate::launcher::ui::icon_exists(glyph), "{glyph}");
     }
 }
@@ -20,9 +30,15 @@ fn a_native_plugins_hosts_never_count_as_asking() {
         kind: PluginKind::Luau,
         ..Default::default()
     };
-    assert_eq!(shown(&policy, &profile, Capability::Network), Decision::Deny);
+    assert_eq!(
+        shown(&policy, &profile, Capability::Network),
+        Decision::Deny
+    );
     profile.hosts.push("api.example.com".into());
-    assert_eq!(shown(&policy, &profile, Capability::Network), Decision::Allow);
+    assert_eq!(
+        shown(&policy, &profile, Capability::Network),
+        Decision::Allow
+    );
     let roblox = PluginProfile::roblox("Helper");
     assert_eq!(shown(&policy, &roblox, Capability::Network), Decision::Ask);
 }

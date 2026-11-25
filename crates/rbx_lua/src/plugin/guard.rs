@@ -136,9 +136,10 @@ pub(crate) fn script_prompt_answered(lua: &Lua, prompt: UiId, answer: &Answer) -
     } else {
         Decision::Deny
     };
-    let saved = shared.permissions.borrow_mut().change(|policy| {
-        policy.set(&env.profile.name, Capability::EditScripts, Some(decision))
-    });
+    let saved = shared
+        .permissions
+        .borrow_mut()
+        .change(|policy| policy.set(&env.profile.name, Capability::EditScripts, Some(decision)));
     if let Err(error) = saved {
         shared.push_output(&env.name, OutputKind::Warn, format!("permissions: {error}"));
     }
@@ -178,7 +179,9 @@ mod tests {
         let guard = writes(1, profile, Rc::default());
         assert_eq!(
             guard(&dom, inside, None),
-            Err("Tool lacks the 'Edit your game' permission (Settings \u{203a} Permissions)".into())
+            Err(
+                "Tool lacks the 'Edit your game' permission (Settings \u{203a} Permissions)".into()
+            )
         );
         assert!(guard(&dom, workspace, None).is_err());
         assert!(guard(&dom, other, None).is_ok());
@@ -205,7 +208,15 @@ mod tests {
             .borrow()
             .requests
             .iter()
-            .filter(|r| matches!(r, Request::Prompt { kind: PromptKind::Permission(_), .. }))
+            .filter(|r| {
+                matches!(
+                    r,
+                    Request::Prompt {
+                        kind: PromptKind::Permission(_),
+                        ..
+                    }
+                )
+            })
             .count();
         assert_eq!(prompts, 1);
 

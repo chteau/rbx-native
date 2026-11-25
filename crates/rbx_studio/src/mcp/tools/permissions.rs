@@ -14,8 +14,13 @@ pub(super) fn needs(name: &str, arguments: &Value) -> Vec<Capability> {
     use Capability::*;
     let has = |key: &str| text_argument(arguments, key).is_some_and(|v| !v.trim().is_empty());
     match name {
-        "search_game_tree" | "inspect_instance" | "script_read" | "script_search"
-        | "script_grep" | luau::CONSOLE_OUTPUT | luau::SCREEN_CAPTURE => vec![ReadPlace],
+        "search_game_tree"
+        | "inspect_instance"
+        | "script_read"
+        | "script_search"
+        | "script_grep"
+        | luau::CONSOLE_OUTPUT
+        | luau::SCREEN_CAPTURE => vec![ReadPlace],
         "multi_edit" => vec![EditScripts],
         luau::EXECUTE_LUAU
         | luau::START_STOP_PLAY
@@ -69,7 +74,11 @@ mod tests {
         let studio = studio();
         let mut session = Session::new(&dom, &properties, &studio);
         session.permissions = Some(policy);
-        let result = call(&json!({ "name": tool, "arguments": arguments }), &mut session).unwrap();
+        let result = call(
+            &json!({ "name": tool, "arguments": arguments }),
+            &mut session,
+        )
+        .unwrap();
         (
             result["isError"].as_bool().unwrap(),
             result["content"][0]["text"].as_str().unwrap().to_owned(),
@@ -119,7 +128,10 @@ mod tests {
         });
         let (error, text, planned) = call_with(&policy, "multi_edit", edit.clone());
         assert!(error);
-        assert!(text.contains("'Script injection' has not been granted"), "{text}");
+        assert!(
+            text.contains("'Script injection' has not been granted"),
+            "{text}"
+        );
         assert!(!planned);
 
         policy.set_mcp(Capability::EditScripts, true);

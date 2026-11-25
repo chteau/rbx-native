@@ -63,8 +63,14 @@ fn mcp_starts_balanced_and_turns_custom_when_changed() {
 fn roblox_plugins_ask_for_scripts_and_hosts_only() {
     let policy = Policy::default();
     let profile = PluginProfile::roblox("F3X");
-    assert_eq!(policy.decide(&profile, Capability::EditPlace), Decision::Allow);
-    assert_eq!(policy.decide(&profile, Capability::EditScripts), Decision::Ask);
+    assert_eq!(
+        policy.decide(&profile, Capability::EditPlace),
+        Decision::Allow
+    );
+    assert_eq!(
+        policy.decide(&profile, Capability::EditScripts),
+        Decision::Ask
+    );
     assert_eq!(policy.host(&profile, "f3xteam.com"), Decision::Ask);
 }
 

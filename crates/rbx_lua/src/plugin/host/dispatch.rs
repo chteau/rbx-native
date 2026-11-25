@@ -190,7 +190,9 @@ fn handle(host: &mut PluginHost, input: Input, debugger_before: &DebuggerView) {
             for (lua, env) in vms(host) {
                 match plugin_object::answer(&lua, id, &answer) {
                     Ok(true) => break,
-                    Ok(false) if crate::plugin::guard::script_prompt_answered(&lua, id, &answer) => {
+                    Ok(false)
+                        if crate::plugin::guard::script_prompt_answered(&lua, id, &answer) =>
+                    {
                         break
                     }
                     Ok(false) => {

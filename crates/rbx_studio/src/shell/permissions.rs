@@ -3,7 +3,7 @@
 //! and the one way that page changes what they may do.
 
 use gpui_kit::Context;
-use rbx_permissions::{Policy, PluginProfile, Store};
+use rbx_permissions::{PluginProfile, Policy, Store};
 
 use super::Shell;
 

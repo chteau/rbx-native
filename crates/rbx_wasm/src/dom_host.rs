@@ -151,7 +151,8 @@ impl DomHost<'_> {
 
     fn holds_script(&self, root: Ref) -> bool {
         self.dom.get(root).is_some_and(|i| {
-            SCRIPT_CLASSES.contains(&i.class()) || i.children().iter().any(|c| self.holds_script(*c))
+            SCRIPT_CLASSES.contains(&i.class())
+                || i.children().iter().any(|c| self.holds_script(*c))
         })
     }
 
@@ -510,7 +511,10 @@ mod tests {
             .call("instance.new", &json!({"class": "Script"}))
             .is_ok());
         assert!(host
-            .call("instance.new", &json!({"class": "Part", "parent": workspace.value()}))
+            .call(
+                "instance.new",
+                &json!({"class": "Part", "parent": workspace.value()})
+            )
             .is_ok());
     }
 }

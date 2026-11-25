@@ -5,9 +5,9 @@ use std::path::PathBuf;
 
 use rbx_dom::{Change, Ref, Variant, Vector3Data, WeakDom};
 use rbx_lua::plugin::{
-    Answer, Capability, Context, GuiEvent, GuiEventKind, HandleEvent, HandleEventKind, Input, LayoutBox,
-    Manifest, Origin, Outcome, OutputKind, Permission, PluginHost, PluginSource, PromptKind,
-    Request, SourceBody,
+    Answer, Capability, Context, GuiEvent, GuiEventKind, HandleEvent, HandleEventKind, Input,
+    LayoutBox, Manifest, Origin, Outcome, OutputKind, Permission, PluginHost, PluginSource,
+    PromptKind, Request, SourceBody,
 };
 use rbx_reflection::ReflectionDatabase;
 
@@ -255,7 +255,9 @@ fn native_plugin_with_dom_write_renames_part() {
     dom.take_changes();
     let dir = tempdir::Dir::new("guard_allowed");
     let mut host = PluginHost::new(ReflectionDatabase::embedded(), Some(dir.0.clone()));
-    host.add(native_source(vec![Permission::Capability(Capability::EditPlace)]));
+    host.add(native_source(vec![Permission::Capability(
+        Capability::EditPlace,
+    )]));
     let ctx = Context {
         now: 100.0,
         ..Context::default()

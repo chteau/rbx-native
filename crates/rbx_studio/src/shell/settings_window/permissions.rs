@@ -47,9 +47,14 @@ impl SettingsWindow {
                         ),
                     )
                 } else {
-                    page.child(v_flex().gap(px(10.)).children(
-                        profiles.iter().enumerate().map(|(i, p)| self.plugin_card(i, p, &policy, cx)),
-                    ))
+                    page.child(
+                        v_flex().gap(px(10.)).children(
+                            profiles
+                                .iter()
+                                .enumerate()
+                                .map(|(i, p)| self.plugin_card(i, p, &policy, cx)),
+                        ),
+                    )
                 }
             })
             .into_any_element()
@@ -77,7 +82,12 @@ impl SettingsWindow {
                     (decision_label(d, capability), allowed == allow, pick)
                 })
                 .collect();
-            capability_row(("mcp", i), capability, segmented(id_for(0, i), 24., choices), None)
+            capability_row(
+                ("mcp", i),
+                capability,
+                segmented(id_for(0, i), 24., choices),
+                None,
+            )
         });
         card()
             .child(card_header(
@@ -98,8 +108,16 @@ impl SettingsWindow {
     ) -> impl IntoElement {
         let open = self.permissions.open.contains(&profile.name);
         let caps = profile.capabilities();
-        let count = |d: Decision| caps.iter().filter(|c| shown(policy, profile, **c) == d).count();
-        let summary = summary(count(Decision::Allow), count(Decision::Ask), count(Decision::Deny));
+        let count = |d: Decision| {
+            caps.iter()
+                .filter(|c| shown(policy, profile, **c) == d)
+                .count()
+        };
+        let summary = summary(
+            count(Decision::Allow),
+            count(Decision::Ask),
+            count(Decision::Deny),
+        );
         let name = profile.name.clone();
         let toggle = cx.listener(move |this, _: &ClickEvent, _, cx| {
             if !this.permissions.open.remove(&name) {
@@ -117,7 +135,14 @@ impl SettingsWindow {
                 Some(format!("{} \u{b7} {summary}", profile.kind.label()).into()),
                 div()
                     .text_color(tokens::text3())
-                    .child(icon(if open { "chevron-down" } else { "chevron-right" }, 14.))
+                    .child(icon(
+                        if open {
+                            "chevron-down"
+                        } else {
+                            "chevron-right"
+                        },
+                        14.,
+                    ))
                     .into_any_element(),
             ));
         card().child(head).when(open, |card| {
@@ -161,14 +186,18 @@ impl SettingsWindow {
         let reset = policy.stored(&profile.name, capability).map(|_| {
             let name = profile.name.clone();
             let shell = self.shell.clone();
-            ghost_icon(("perm-reset", card * 100 + row), "rotate-ccw", "Back to the plugin's default")
-                .on_click(move |_, _, cx| {
-                    let name = name.clone();
-                    shell.update(cx, |shell, cx| {
-                        shell.change_permissions(|p| p.set(&name, capability, None), cx)
-                    })
+            ghost_icon(
+                ("perm-reset", card * 100 + row),
+                "rotate-ccw",
+                "Back to the plugin's default",
+            )
+            .on_click(move |_, _, cx| {
+                let name = name.clone();
+                shell.update(cx, |shell, cx| {
+                    shell.change_permissions(|p| p.set(&name, capability, None), cx)
                 })
-                .into_any_element()
+            })
+            .into_any_element()
         });
         let hosts = (capability == Capability::Network && current == Decision::Ask)
             .then(|| self.host_list(card, profile, policy));
@@ -212,14 +241,19 @@ impl SettingsWindow {
                     })
                     .collect();
                 let forget = policy.stored_host(&profile.name, &host).map(|_| {
-                    let (name, host, shell) = (profile.name.clone(), host.clone(), self.shell.clone());
-                    ghost_icon(("host-forget", card * 1000 + i), "x", "Forget, ask again next time")
-                        .on_click(move |_, _, cx| {
-                            let (name, host) = (name.clone(), host.clone());
-                            shell.update(cx, |shell, cx| {
-                                shell.change_permissions(|p| p.set_host(&name, &host, None), cx)
-                            })
+                    let (name, host, shell) =
+                        (profile.name.clone(), host.clone(), self.shell.clone());
+                    ghost_icon(
+                        ("host-forget", card * 1000 + i),
+                        "x",
+                        "Forget, ask again next time",
+                    )
+                    .on_click(move |_, _, cx| {
+                        let (name, host) = (name.clone(), host.clone());
+                        shell.update(cx, |shell, cx| {
+                            shell.change_permissions(|p| p.set_host(&name, &host, None), cx)
                         })
+                    })
                 });
                 h_flex()
                     .gap(px(8.))
@@ -252,7 +286,9 @@ pub(super) fn reset(shell: &mut crate::shell::Shell, cx: &mut Context<crate::she
 /// hosts, allowed if there are any.
 fn shown(policy: &Policy, profile: &PluginProfile, capability: Capability) -> Decision {
     match policy.decide(profile, capability) {
-        Decision::Ask if capability == Capability::Network && profile.kind != PluginKind::Roblox => {
+        Decision::Ask
+            if capability == Capability::Network && profile.kind != PluginKind::Roblox =>
+        {
             let any = policy
                 .hosts(profile)
                 .iter()
@@ -329,7 +365,11 @@ fn card_header(
                 .flex_1()
                 .min_w_0()
                 .gap(px(2.))
-                .child(text(13., 18.).font_weight(FontWeight::BOLD).child(title.into()))
+                .child(
+                    text(13., 18.)
+                        .font_weight(FontWeight::BOLD)
+                        .child(title.into()),
+                )
                 .children(subtitle.map(|s| text(12., 17.).text_color(tokens::text2()).child(s))),
         )
         .child(control)
@@ -366,8 +406,16 @@ fn capability_row(
                         .flex_1()
                         .min_w_0()
                         .gap(px(2.))
-                        .child(text(12.5, 17.).font_weight(FontWeight::SEMIBOLD).child(capability.label()))
-                        .child(text(12., 17.).text_color(tokens::text2()).child(capability.description())),
+                        .child(
+                            text(12.5, 17.)
+                                .font_weight(FontWeight::SEMIBOLD)
+                                .child(capability.label()),
+                        )
+                        .child(
+                            text(12., 17.)
+                                .text_color(tokens::text2())
+                                .child(capability.description()),
+                        ),
                 )
                 .child(control),
         )
