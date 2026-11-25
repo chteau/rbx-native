@@ -35,6 +35,16 @@ impl Leaf {
         }
     }
 
+    /// A `MeshPart`, which the tree can only draw as its box.
+    pub(in crate::scene) fn mesh(at: Vec3, size: f32) -> Self {
+        Leaf {
+            class: "MeshPart",
+            cframe: Mat4::from_translation(at),
+            size: Vec3::splat(size),
+            color: None,
+        }
+    }
+
     /// Its box stretched to `size` rather than a cube.
     pub(in crate::scene) fn stretched(mut self, size: Vec3) -> Self {
         self.size = size;

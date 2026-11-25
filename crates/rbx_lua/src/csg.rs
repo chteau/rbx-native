@@ -186,6 +186,9 @@ pub fn world_solid(dom: &WeakDom, db: &ReflectionDatabase, part: Ref) -> Result<
             return Ok(Solid::from_triangles(&positions, &indices, model).painted(color));
         }
     }
+    if let Some(solid) = mesh::world_solid(db, instance, size, at) {
+        return solid.map(|solid| solid.painted(color));
+    }
     let (mesh, scale) = primitive(db, instance, size);
     Ok(Solid::from_triangles(
         &mesh.positions,
@@ -461,9 +464,12 @@ pub fn refresh_collision(dom: &mut WeakDom, db: &ReflectionDatabase, operation: 
     true
 }
 
+mod mesh;
 mod place;
 pub(crate) mod script;
 mod tree;
+
+pub use mesh::{set_mesh_source, MeshSource, NON_MANIFOLD};
 
 pub use place::{negate_in_place, negate_operations_in_place, operate_in_place, separate_in_place};
 use tree::child_data;
