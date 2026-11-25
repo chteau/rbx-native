@@ -3217,6 +3217,38 @@ both the plain fetch failure and the silent fall back to a default
   ring only that handle stays drawn (the held ring whole), and a trackball
   drag hides every ring, as in Studio. Transform and Edit Pivot keep their
   combined classic handles.
+- [x] **CSG on meshes** (`rbx_lua::csg::mesh`, behind the "Solid Modeling
+  On Meshes" beta, default off). Union, Intersect and Negate take
+  `MeshPart`s: the mesh (`rbx_mesh`, LOD 0) carves as its own triangles,
+  fitted to the part the way the renderer fits it (`InitialSize` to
+  `Size`), painted the part's colour. A mesh that isn't closed (an open
+  edge, or an edge three or more triangles share, collapsed triangles
+  counted) is refused with Studio's "The mesh has non-manifold geometry
+  and cannot be used in solid modeling.", both measured in Studio 0.748
+  (an open 40-triangle box and its own `headA.mesh`). What Studio 0.748
+  does, measured with the beta on and off (it behaves the same either
+  way): the Model tab's Union, Intersect and Negate with any `MeshPart`
+  operand make a `MeshPart` named "MeshPart", white, Plastic, framed on
+  the result's bounds, whose mesh lives only in memory (`MeshContent`
+  empty, no tree), so Separate stays greyed, and the saved `.rbxl` or
+  `.rbxlx` keeps only its collision (`PhysicalConfigData`, Default
+  fidelity) and mass: it reopens as a plain box.
+  `GeometryService:SubtractAsync`, `UnionAsync` and `SubtractAsync` with
+  a mesh return a `MeshPart` the same way. Here the result stays a
+  `UnionOperation`/`IntersectOperation` with the `MeshPart` in its
+  `ChildData2` (a negated one as the `MeshPart` itself tagged
+  `rbxNegated`: Studio refuses to separate one wrapped in a
+  `NegateOperation`, "Part type not supported in CSG"), so the shape
+  saves in its `SolidMeshHolder`, real Studio opens it with the same
+  geometry, and Separate gives the `MeshPart` back in both. Open: a mesh
+  made of nested shells (asset 3587876365, an outer and an inner surface
+  both facing out) leaves about 1% open edges in our BSP, and Studio
+  draws a bake that isn't closed as a small stand-in; the tree is fine
+  and separates. The viewer draws a tree with
+  a `MeshPart` leaf from the union's own bake, since it has no mesh to
+  carve it with. Studio's own mesh unions read back as the box Studio
+  reopens them as. The runtime half (`GeometryService` returning a
+  `MeshPart`, `FragmentAsync`) is Local Run's.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
@@ -3977,7 +4009,7 @@ there. What each does live, and where it stands here:
 | Collections | `CollectionService:CreateCollection(query)` returns a `CollectionHandle` (`Query`, `Root`, `Destroy`), no `GetInstances` | Not built: the handle's reads and callbacks aren't discoverable yet |
 | CreateAssetAsync Lua API | `AssetService:CreateAssetAsync` exists | Not built: an upload API, nothing for the editor to draw |
 | Mixed Content for CreateSurfaceAppearance | `AssetService:CreateSurfaceAppearanceAsync{ColorMap = Content}` returns a `SurfaceAppearance`; local `rbxasset://` content is refused in the client | Local Run's business (runtime API) |
-| Solid Modeling On Meshes | `GeometryService:SubtractAsync` takes a `MeshPart` and returns a `MeshPart`; `FragmentAsync` is new | Runtime half is Local Run's; the editor half is "CSG on meshes" below |
+| Solid Modeling On Meshes | `GeometryService:SubtractAsync` takes a `MeshPart` and returns a `MeshPart`; `FragmentAsync` is new | Editor half built behind a beta of the same name ("CSG on meshes" under Editor); runtime half is Local Run's |
 | New Video API | `VideoPlayer` (Looping, PlaybackSpeed, Volume, TimeLength, IsPlaying, Resolution) and a `VideoDisplay` GuiObject (VideoColor3, VideoTransparency, ScaleType, ResampleMode, TileSize) | Not built: no video decoding here |
 | AvatarAbilities Character Controller Library | No new creatable class beyond `ControllerManager` | Not built: nothing to mirror yet |
 | Animation Graph State Machines | `AnimationGraphDefinition` creatable | Already here (Animation) |
@@ -4053,13 +4085,6 @@ there. What each does live, and where it stands here:
   `MaterialVariant`, `SurfaceAppearance`). It needs new captures from real
   Studio once it ships, the same discipline the lighting model was built
   under, and not a stretch of today's constants.
-- [ ] 📋 **CSG on meshes** (moved from Late 2025 to Late 2026 in the same
-  post). The from-scratch boolean (`scene::union::csg`) works on primitives. A
-  `MeshPart` operand means feeding it `rbx_mesh` geometry instead. A saved
-  mesh union's baked `MeshData` reads like any other union's; the open
-  question is how its operation tree stores the mesh operand. "Solid
-  Modeling On Meshes" is a Studio beta, switched on for this account on
-  2026-11-20, so a real mesh union can now be made and saved to study.
 
 #### GUI (renderer and UI Editor)
 - [ ] 📋 **UI backdrop blur** (Early 2027): blur whatever is behind a GUI

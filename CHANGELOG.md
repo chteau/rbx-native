@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-25
+
+- **Solid modeling on meshes (beta).** Turn on "Solid Modeling On Meshes" in Beta Features and Union, Intersect and Negate take MeshParts, carved as their real triangles. A mesh that isn't a closed solid gets Studio's own "The mesh has non-manifold geometry and cannot be used in solid modeling." One thing works differently on purpose. Studio 0.748 turns a mesh union into a MeshPart whose shape only lives in memory: it can't be separated, and it saves and reopens as a plain box, .rbxl or .rbxlx. Ours stays a union with the MeshPart in its tree, so the shape saves, Studio opens it with the same geometry, and Separate gives the MeshPart back here and in Studio. With the beta off a MeshPart still carves as its box. (@chteau)
+
 ## 2026-11-24
 
 - **Layered clothing from Studio-saved places fits in the 3D view.** Newer Studio saves a WrapLayer's and WrapTarget's cages as `CageMeshContent` and `ReferenceMeshContent` instead of the old `...Id` names, so the viewer and the avatar builder didn't find them and left the garment unfitted. Both read either name now. (@chteau)
