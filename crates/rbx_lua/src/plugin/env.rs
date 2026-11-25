@@ -13,7 +13,9 @@ use std::time::Instant;
 use mlua::Lua;
 use rbx_dom::Ref;
 
-use super::api::{Context, Manifest, OutputKind, OutputLine, PluginId, Request, Ui, UiId};
+use super::api::{
+    Context, Manifest, OutputKind, OutputLine, PluginId, PluginProfile, Request, Ui, UiId,
+};
 use super::http::Http;
 use crate::ctx::Ctx;
 use crate::engine::{Engine, Host};
@@ -30,6 +32,8 @@ pub(crate) struct Env {
     pub(crate) engine: Rc<Engine>,
     /// Some for an rbx-native plugin (`plugin.toml`).
     pub(crate) manifest: Option<Manifest>,
+    /// Who the plugin is to the permission store.
+    pub(crate) profile: PluginProfile,
     /// The plugin's own root instances (its script tree, its widgets, its
     /// `CoreGui` folder): parked between dispatches.
     pub(crate) roots: Rc<RefCell<Vec<Ref>>>,
@@ -81,8 +85,14 @@ pub(crate) struct Shared {
     /// Plugins another one's `Activate` displaced: their `Deactivation`
     /// fires once the input is handled.
     pub(crate) displaced: Vec<PluginId>,
+    /// The editor's permission store, which every check reads.
+    pub(crate) permissions: rbx_permissions::Shared,
+    /// Script injection prompts waiting for an answer, by plugin.
+    pub(crate) script_prompts: HashMap<PluginId, UiId>,
 }
 
+/// Where HTTP answers used to live in a plugin's settings.
+const LEGACY_HTTP_KEY: &str = "__rbxnative_http";
 /// Where dock widget states live in a plugin's settings.
 const WIDGETS_KEY: &str = "__rbxnative_widgets";
 /// Where floating dock widgets were left, in a plugin's settings.
@@ -106,6 +116,36 @@ impl Shared {
             .and_then(|text| serde_json::from_str(&text).ok());
         if let Some(map) = saved {
             self.settings.insert(name.to_string(), map);
+            self.move_http_answers(name);
+        }
+    }
+
+    /// Earlier builds kept a Roblox plugin's HTTP answers in its own
+    /// settings; they belong to the permission store now.
+    fn move_http_answers(&mut self, name: &str) {
+        let Some(answers) = self
+            .settings
+            .get_mut(name)
+            .and_then(|map| map.remove(LEGACY_HTTP_KEY))
+        else {
+            return;
+        };
+        let hosts: Vec<(String, bool)> = answers
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter_map(|(host, allow)| Some((host.clone(), allow.as_bool()?)))
+            .collect();
+        let saved = self.permissions.borrow_mut().change(|policy| {
+            for (host, allow) in &hosts {
+                if policy.stored_host(name, host).is_none() {
+                    policy.set_host(name, host, Some(*allow));
+                }
+            }
+        });
+        match saved {
+            Ok(()) => self.save_settings(name),
+            Err(error) => self.push_output(name, OutputKind::Warn, format!("permissions: {error}")),
         }
     }
 
@@ -245,4 +285,35 @@ pub(crate) fn engine_for(
         roots: roots.clone(),
     };
     Engine::new(ctx.clone(), Rc::new(host))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Shared;
+
+    #[test]
+    fn old_http_answers_move_to_the_permission_store() {
+        let dir = std::env::temp_dir().join(format!("rbx_env_http_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("Tool.json");
+        std::fs::write(
+            &file,
+            r#"{"__rbxnative_http": {"a.com": true, "b.com": false}, "kept": 1}"#,
+        )
+        .unwrap();
+        let mut shared = Shared {
+            settings_dir: Some(dir.clone()),
+            ..Shared::default()
+        };
+        shared.load_settings("Tool");
+        {
+            let store = shared.permissions.borrow();
+            assert_eq!(store.policy().stored_host("Tool", "a.com"), Some(true));
+            assert_eq!(store.policy().stored_host("Tool", "b.com"), Some(false));
+        }
+        let saved = std::fs::read_to_string(&file).unwrap();
+        assert!(!saved.contains("__rbxnative_http"));
+        assert!(saved.contains("kept"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

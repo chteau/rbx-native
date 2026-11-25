@@ -7,6 +7,9 @@ use serde_json::{json, Value};
 
 use crate::Host;
 
+const SCRIPT_CLASSES: [&str; 3] = ["Script", "LocalScript", "ModuleScript"];
+const SCRIPTS_DENIED: &str = "permission 'scripts' not granted";
+
 /// Borrows the place and the selection for one call into a plugin.
 /// `set_property` goes through `WeakDom::set_property` (so the change log
 /// sees it); `new` applies no defaults beyond the class and name.
@@ -16,6 +19,9 @@ pub struct DomHost<'a> {
     pub selection: &'a mut Vec<Ref>,
     /// Set when `selection.set` ran.
     pub selection_changed: bool,
+    /// Whether the plugin holds Script injection: changing a script, or
+    /// putting one in the place.
+    pub scripts: bool,
 }
 
 impl Host for DomHost<'_> {
@@ -67,6 +73,7 @@ impl Host for DomHost<'_> {
             }
             "instance.set_property" => {
                 let referent = self.existing(field(params, "ref")?)?;
+                self.check_scripts(referent)?;
                 let name = str_field(params, "name")?;
                 let value = field(params, "value")?;
                 if name == "Name" {
@@ -95,6 +102,9 @@ impl Host for DomHost<'_> {
                     None | Some(Value::Null) => None,
                     Some(value) => Some(self.existing(value)?),
                 };
+                if parent.is_some() && SCRIPT_CLASSES.contains(&class) && !self.scripts {
+                    return Err(SCRIPTS_DENIED.to_string());
+                }
                 let name = params.get("name").and_then(Value::as_str).unwrap_or(class);
                 let referent = self.dom.new_instance(class, name, parent);
                 Ok(json!(referent.value()))
@@ -105,6 +115,9 @@ impl Host for DomHost<'_> {
                     None | Some(Value::Null) => None,
                     Some(value) => Some(self.existing(value)?),
                 };
+                if parent.is_some() {
+                    self.check_scripts(referent)?;
+                }
                 let mut cursor = parent;
                 while let Some(ancestor) = cursor {
                     if ancestor == referent {
@@ -127,6 +140,21 @@ impl Host for DomHost<'_> {
 }
 
 impl DomHost<'_> {
+    /// Refuses a write that changes a script, or moves one into the place,
+    /// without Script injection.
+    fn check_scripts(&self, root: Ref) -> Result<(), String> {
+        if !self.scripts && self.holds_script(root) {
+            return Err(SCRIPTS_DENIED.to_string());
+        }
+        Ok(())
+    }
+
+    fn holds_script(&self, root: Ref) -> bool {
+        self.dom.get(root).is_some_and(|i| {
+            SCRIPT_CLASSES.contains(&i.class()) || i.children().iter().any(|c| self.holds_script(*c))
+        })
+    }
+
     fn existing(&self, value: &Value) -> Result<Ref, String> {
         let number = value
             .as_u64()
@@ -295,6 +323,7 @@ mod tests {
             database: &database,
             selection,
             selection_changed: false,
+            scripts: true,
         };
         host.call(method, &params)
     }
@@ -432,6 +461,7 @@ mod tests {
             database: &database,
             selection: &mut sel,
             selection_changed: false,
+            scripts: true,
         };
         host.call("selection.set", &json!({"refs": [part]}))
             .unwrap();
@@ -444,5 +474,43 @@ mod tests {
             .unwrap();
         assert_eq!(host.call("selection.get", &json!({})).unwrap(), json!([]));
         assert!(host.dom.get(Ref::new(part as u32)).is_none());
+    }
+
+    #[test]
+    fn scripts_need_script_injection() {
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let script = dom.new_instance("Script", "Main", Some(workspace));
+        let loose = dom.new_instance("Model", "Loose", None);
+        dom.new_instance("ModuleScript", "Lib", Some(loose));
+        let database = database();
+        let mut sel = Vec::new();
+        let mut host = DomHost {
+            dom: &mut dom,
+            database: &database,
+            selection: &mut sel,
+            selection_changed: false,
+            scripts: false,
+        };
+        let denied = |r: Result<Value, String>| r.unwrap_err() == SCRIPTS_DENIED;
+        assert!(denied(host.call(
+            "instance.set_property",
+            &json!({"ref": script.value(), "name": "Source", "value": "x"})
+        )));
+        assert!(denied(host.call(
+            "instance.new",
+            &json!({"class": "LocalScript", "parent": workspace.value()})
+        )));
+        assert!(denied(host.call(
+            "instance.set_parent",
+            &json!({"ref": loose.value(), "parent": workspace.value()})
+        )));
+        // A loose script, and anything that is not a script, are fine.
+        assert!(host
+            .call("instance.new", &json!({"class": "Script"}))
+            .is_ok());
+        assert!(host
+            .call("instance.new", &json!({"class": "Part", "parent": workspace.value()}))
+            .is_ok());
     }
 }

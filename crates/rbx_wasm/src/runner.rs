@@ -69,6 +69,11 @@ fn describe(error: wasmtime::Error) -> String {
 }
 
 impl WasmPlugin {
+    /// Replaces what the plugin may do, for the calls that follow.
+    pub fn set_grants(&mut self, grants: Grants) {
+        self.store.data_mut().grants = grants;
+    }
+
     /// Compiles `bytes` (binary `.wasm` or text `.wat`), links `rbxn.call`,
     /// instantiates with fuel metering on and `MEMORY_LIMIT`. Missing
     /// `memory`/`rbxn_alloc` exports are an error.

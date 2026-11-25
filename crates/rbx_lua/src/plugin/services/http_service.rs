@@ -5,12 +5,12 @@ use mlua::{Function, Lua, MultiValue, Result, Table, Value};
 use super::state;
 use crate::engine::json;
 use crate::engine::scheduler::{self, AwaitId};
-use crate::plugin::api::{Answer, Permission, PromptKind, Request, UiId};
+use rbx_permissions::Decision;
+
+use crate::plugin::api::{Answer, OutputKind, Permission, PromptKind, Request, UiId};
 use crate::plugin::env::env;
 use crate::plugin::http::{host_of, Finished, HttpRequest};
 use crate::plugin::native;
-
-const PERMISSION_KEY: &str = "__rbxnative_http";
 
 /// What a pending request's script wants back.
 #[derive(Clone, Copy)]
@@ -239,24 +239,13 @@ fn begin(lua: &Lua, request: HttpRequest, mode: Mode) -> Result<AwaitId> {
     let id = scheduler::new_await(lua);
     state(lua).borrow_mut().modes.insert(id, mode);
 
-    let decision = if env.manifest.is_some() {
-        Some(native::allowed(lua, &Permission::Http(host.clone())))
-    } else {
-        env.shared
-            .borrow()
-            .settings
-            .get(&env.name)
-            .and_then(|s| s.get(PERMISSION_KEY))
-            .and_then(|m| m.get(&host))
-            .and_then(|v| v.as_bool())
-    };
-    match decision {
-        Some(true) => env.shared.borrow_mut().http.start(env.plugin, id, request),
-        Some(false) => {
+    match native::host_decision(lua, &host) {
+        Decision::Allow => env.shared.borrow_mut().http.start(env.plugin, id, request),
+        Decision::Deny => {
             state(lua).borrow_mut().modes.remove(&id);
             return Err(mlua::Error::runtime(denied(&host)));
         }
-        None => {
+        Decision::Ask => {
             let state = state(lua);
             let mut state = state.borrow_mut();
             let waiting = state.prompts.iter_mut().find(|(_, (h, _))| *h == host);
@@ -268,7 +257,7 @@ fn begin(lua: &Lua, request: HttpRequest, mode: Mode) -> Result<AwaitId> {
                     shared.requests.push(Request::Prompt {
                         id: prompt,
                         plugin: env.plugin,
-                        kind: PromptKind::HttpPermission { host: host.clone() },
+                        kind: PromptKind::Permission(Permission::Host(host.clone())),
                     });
                     state.prompts.insert(prompt, (host, vec![(id, request)]));
                 }
@@ -288,16 +277,13 @@ pub(super) fn permission_answered(lua: &Lua, prompt: UiId, answer: &Answer) -> R
     let env = env(lua);
     {
         let mut shared = env.shared.borrow_mut();
-        let hosts = shared
-            .settings
-            .entry(env.name.clone())
-            .or_default()
-            .entry(PERMISSION_KEY.to_string())
-            .or_insert_with(|| serde_json::Value::Object(Default::default()));
-        if let Some(map) = hosts.as_object_mut() {
-            map.insert(host.clone(), serde_json::Value::Bool(*allow));
+        let saved = shared
+            .permissions
+            .borrow_mut()
+            .change(|policy| policy.set_host(&env.profile.name, &host, Some(*allow)));
+        if let Err(error) = saved {
+            shared.push_output(&env.name, OutputKind::Warn, format!("permissions: {error}"));
         }
-        shared.save_settings(&env.name);
     }
     for (id, request) in waiting {
         if *allow {

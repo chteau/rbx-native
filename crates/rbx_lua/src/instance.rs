@@ -671,7 +671,7 @@ impl UserData for LuaInstance {
                             )));
                         }
                         if let Some(parent) = target {
-                            this.ctx.check_write(parent)?;
+                            this.ctx.check_adopt(parent, this.referent)?;
                             let dom = this.ctx.dom();
                             if dom.get(parent).is_none() {
                                 return Err(property::missing_instance());

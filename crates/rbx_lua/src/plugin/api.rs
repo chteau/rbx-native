@@ -4,6 +4,9 @@
 use std::path::PathBuf;
 
 use rbx_dom::{Change, Ref, WeakDom};
+/// One `plugin.toml` permission (a capability, or HTTP to one host).
+pub use rbx_permissions::Request as Permission;
+pub use rbx_permissions::{Capability, PluginKind, PluginProfile};
 
 /// One loaded plugin, stable for the host's lifetime.
 pub type PluginId = u32;
@@ -49,18 +52,33 @@ pub struct Manifest {
     pub permissions: Vec<Permission>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Permission {
-    /// Read the place (`dom.read`).
-    DomRead,
-    /// Edit the place (`dom.write`).
-    DomWrite,
-    /// Read and change the selection (`selection`).
-    Selection,
-    /// HTTP to one host (`http:<host>`), `*` for any.
-    Http(String),
-    /// Breakpoints, watches, stepping (`debugger`).
-    Debugger,
+impl Manifest {
+    /// The plugin's profile: what its permissions ask for. `kind` is Luau
+    /// here; the editor's WASM loader reads the same manifest.
+    pub fn profile(&self, name: &str, kind: PluginKind) -> PluginProfile {
+        let mut profile = PluginProfile {
+            name: name.to_owned(),
+            kind,
+            ..Default::default()
+        };
+        for request in &self.permissions {
+            match request {
+                Permission::Capability(capability) => profile.requested.push(*capability),
+                Permission::Host(host) => profile.hosts.push(host.clone()),
+            }
+        }
+        profile
+    }
+}
+
+impl Origin {
+    /// What the permission model needs to know about the plugin.
+    pub fn profile(&self, name: &str) -> PluginProfile {
+        match self {
+            Origin::Roblox { .. } => PluginProfile::roblox(name),
+            Origin::Native { manifest, .. } => manifest.profile(name, PluginKind::Luau),
+        }
+    }
 }
 
 /// A value handed to (or from) Luau without a VM at hand.
@@ -193,7 +211,7 @@ pub enum Answer {
     /// `None` = cancelled.
     Color3(Option<[f32; 3]>),
     BrickColor(Option<u32>),
-    /// An HTTP permission prompt: allowed or not (remembered either way).
+    /// A permission prompt: allowed or not (remembered either way).
     Allow(bool),
     /// A `PluginMenu:ShowAsync`: the chosen action, `None` = dismissed.
     Menu(Option<UiId>),
@@ -435,10 +453,9 @@ pub enum PromptKind {
     BrickColor {
         initial: Option<u32>,
     },
-    /// First request from this plugin to this host.
-    HttpPermission {
-        host: String,
-    },
+    /// The first time a plugin needs something the user is asked for:
+    /// HTTP to a new host, or script injection.
+    Permission(Permission),
     /// A `PluginMenu:ShowAsync` at the cursor.
     Menu {
         title: String,

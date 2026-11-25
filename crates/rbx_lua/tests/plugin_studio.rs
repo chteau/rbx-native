@@ -31,6 +31,14 @@ impl Fixture {
         .unwrap();
         dom.take_changes();
         let mut host = PluginHost::new(ReflectionDatabase::embedded(), None);
+        // These plugins edit scripts: the user said yes to Script injection.
+        let mut policy = rbx_permissions::Policy::default();
+        policy.set(
+            "StudioPlugin",
+            rbx_lua::plugin::Capability::EditScripts,
+            Some(rbx_permissions::Decision::Allow),
+        );
+        host.set_permissions(rbx_permissions::Store::in_memory(policy).shared());
         host.add(PluginSource {
             name: "StudioPlugin".into(),
             body: SourceBody::Luau(src.into()),
