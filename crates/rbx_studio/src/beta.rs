@@ -116,7 +116,7 @@ pub(crate) const FEATURES: &[Feature] = &[
     Feature {
         id: crate::shell::LOCAL_RUN_BETA_ID,
         name: "Local Run",
-        description: "Model › Run (local) runs the place's server scripts and physics for 5 s of game time on our own clean-room runtime, no Roblox client, and prints what they printed to the Output. Server side only, headless, and nothing is written back to the place yet.",
+        description: "Our own clean-room Roblox runtime, no Roblox client needed. Test › Play (local), Run (local) and Server & Clients play the place right in the editor, with physics, humanoids, your avatar, GUI, sound and remotes, plus the Remote Inspector, Leak Finder, MicroProfiler, Load test and integration specs. Works offline. Close to the real thing, not exact, so real Play stays the reference.",
     },
     Feature {
         id: IF_LOCAL_BETA_ID,
