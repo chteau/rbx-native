@@ -105,6 +105,9 @@ fn run(name: &str, arguments: &Value, session: &mut Session) -> Result<Outcome, 
     if let Err(refused) = permissions::check(name, arguments, session) {
         return Ok(Err(refused));
     }
+    if crate::offline::blocked() && needs_roblox(name, arguments) {
+        return Ok(Err(crate::offline::mcp_refusal(name)));
+    }
     Ok(match name {
         "search_game_tree" => tree::search(arguments, session),
         "inspect_instance" => tree::inspect(arguments, session),
@@ -135,12 +138,21 @@ fn run(name: &str, arguments: &Value, session: &mut Session) -> Result<Outcome, 
     })
 }
 
+/// Whether a tool call can only fail offline: the asset tools and
+/// `http_get` call Roblox, and starting a play test runs Roblox's client.
+fn needs_roblox(name: &str, arguments: &Value) -> bool {
+    crate::offline::MCP_TOOLS.contains(&name)
+        || (name == luau::START_STOP_PLAY
+            && arguments.get("is_start").and_then(Value::as_bool) == Some(true))
+}
+
 /// The answer to a tool that reads nothing of an editor's (`skill`,
 /// `http_get`), which the broker gives itself, so documentation is reachable
 /// with no editor open and a slow fetch never waits on a UI thread.
 pub(super) fn without_editor(name: &str, arguments: &Value) -> Option<Value> {
     let outcome = match name {
         skills::NAME => skills::call(arguments),
+        docs::NAME if crate::offline::blocked() => Err(crate::offline::mcp_refusal(name)),
         docs::NAME => docs::call(arguments),
         _ => return None,
     };

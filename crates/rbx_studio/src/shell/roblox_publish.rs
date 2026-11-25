@@ -159,6 +159,9 @@ impl Shell {
     /// and a failed upload's "Change place…": brings the game picker
     /// forward, opening it if it isn't.
     pub(crate) fn open_roblox_link(&mut self, then: Option<PublishMode>, cx: &mut Context<Self>) {
+        if self.offline_refuses("Link to Roblox Place", cx) {
+            return;
+        }
         self.roblox.dialog = None;
         if let (Some(picking), Some(window)) = (&mut self.roblox.picking, self.roblox.picker) {
             if window

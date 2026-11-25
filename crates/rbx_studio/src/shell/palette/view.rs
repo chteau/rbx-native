@@ -25,19 +25,25 @@ use super::commands::Command;
 /// screen reader is told about it. `pub(super)` so `tests` can read the
 /// accessibility node it writes.
 pub(super) fn option(row: usize, count: usize, command: &Command, selected: bool) -> Stateful<Div> {
+    let cut_off = command.cut_off();
     let hint = command.hint.clone();
-    let aside = hint
-        .clone()
-        .map(SharedString::from)
-        .or(command.detail.clone());
-    // The muted grey is too faint on the highlight's accent.
-    let aside_color = match selected {
+    let aside = match cut_off {
+        true => Some(SharedString::from(crate::offline::TIP)),
+        false => hint
+            .clone()
+            .map(SharedString::from)
+            .or(command.detail.clone()),
+    };
+    // The muted grey is too faint on the highlight's accent, and so is a
+    // greyed-out row's text: that one is highlighted with the hover surface.
+    let aside_color = match selected && !cut_off {
         true => tokens::text_strong(),
         false => tokens::text2(),
     };
-    super::super::menu::row_chrome(("palette-row", row), None, command.text(), true, false)
+    super::super::menu::row_chrome(("palette-row", row), None, command.text(), !cut_off, false)
         .role(Role::ListBoxOption)
         .aria_label(command.text())
+        .when(cut_off, |row| row.aria_description(crate::offline::TIP))
         .when_some(command.detail.clone(), |row, path| {
             row.aria_description(path)
         })
@@ -46,7 +52,11 @@ pub(super) fn option(row: usize, count: usize, command: &Command, selected: bool
         .aria_position_in_set(row + 1)
         .aria_size_of_set(count)
         .when(selected, |row| {
-            row.bg(tokens::selection()).aria_active_descendant()
+            row.bg(match cut_off {
+                true => tokens::hover(),
+                false => tokens::selection(),
+            })
+            .aria_active_descendant()
         })
         .when_some(aside, |row, aside| {
             row.child(

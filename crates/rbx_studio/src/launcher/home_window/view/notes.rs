@@ -142,7 +142,7 @@ impl HomeWindow {
                                 )
                             }),
                     )
-                    .child(if empty || resolving {
+                    .child(if empty || resolving || crate::offline::blocked() {
                         ui::disabled_button("link-add", "Add")
                             .w(px(64.))
                             .h(px(32.))

@@ -59,11 +59,20 @@ impl RecentAction {
     /// Why the entry is greyed out for `place`, or `None` when it works.
     /// Everything but Remove is about the Roblox place, which a file that
     /// was never linked doesn't have.
-    pub(super) fn unavailable(self, place: &RecentPlace, signed_in: bool) -> Option<&'static str> {
+    /// Configure opens Game Settings, and Archive/Restore call Roblox, so
+    /// those are off `offline` too.
+    pub(super) fn unavailable(
+        self,
+        place: &RecentPlace,
+        signed_in: bool,
+        offline: bool,
+    ) -> Option<&'static str> {
         let linked = place.universe_id.is_some() && place.place_id.is_some();
         match self {
             RecentAction::Remove => None,
             _ if !linked => Some("Local only: this file isn't linked to a Roblox place"),
+            RecentAction::OpenPage => None,
+            _ if offline => Some(crate::offline::TIP),
             RecentAction::Archive if !signed_in => Some(
                 "Archiving needs a Roblox sign-in: in the editor, Settings \u{203a} Account \u{203a} Roblox sign-in",
             ),
@@ -145,7 +154,10 @@ impl HomeWindow {
             return;
         };
         cx.notify();
-        if action.unavailable(&place, self.session.is_some()).is_some() {
+        if action
+            .unavailable(&place, self.session.is_some(), crate::offline::blocked())
+            .is_some()
+        {
             return;
         }
         match action {
@@ -292,7 +304,7 @@ mod tests {
     fn a_local_file_can_only_be_removed() {
         let local = place(false);
         for action in RecentAction::menu(false) {
-            let off = action.unavailable(&local, true).is_some();
+            let off = action.unavailable(&local, true, false).is_some();
             assert_eq!(off, action != RecentAction::Remove, "{action:?}");
         }
     }
@@ -304,10 +316,26 @@ mod tests {
             .into_iter()
             .chain(RecentAction::menu(true))
         {
-            assert_eq!(action.unavailable(&linked, true), None, "{action:?}");
-            let off = action.unavailable(&linked, false).is_some();
+            assert_eq!(action.unavailable(&linked, true, false), None, "{action:?}");
+            let off = action.unavailable(&linked, false, false).is_some();
             let needs = matches!(action, RecentAction::Archive | RecentAction::Restore);
             assert_eq!(off, needs, "{action:?}");
+        }
+    }
+
+    #[test]
+    fn offline_only_the_page_and_remove_stay_live() {
+        let linked = place(true);
+        for action in RecentAction::menu(false)
+            .into_iter()
+            .chain(RecentAction::menu(true))
+        {
+            let off = action.unavailable(&linked, true, true);
+            let live = matches!(action, RecentAction::OpenPage | RecentAction::Remove);
+            assert_eq!(off.is_none(), live, "{action:?}");
+            if !live {
+                assert_eq!(off, Some(crate::offline::TIP), "{action:?}");
+            }
         }
     }
 

@@ -142,6 +142,7 @@ mod luau_lsp;
 mod mcp;
 mod menu_bar;
 mod notes;
+mod offline;
 mod pacing;
 mod packs;
 mod place_templates;

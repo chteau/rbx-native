@@ -30,6 +30,26 @@ fn find<'a>(commands: &'a [Command], label: &str) -> &'a Command {
         .unwrap_or_else(|| panic!("no {label} in the palette"))
 }
 
+/// What greys out offline is read off each row's command, so the menu's
+/// uploads and the ribbon's cloud settings both carry it, and nothing local.
+#[test]
+fn the_rows_that_need_roblox_are_the_cloud_commands() {
+    let commands = all();
+    for label in [
+        "File: Save to Roblox",
+        "File: Publish to Roblox",
+        "File: Version History",
+        "File: Game Settings",
+        "Home: Game Settings",
+        "Home: Data Stores",
+    ] {
+        assert!(find(&commands, label).needs_roblox, "{label}");
+    }
+    for label in ["File: Save to File", "Edit: Undo", "Home: Terrain Editor"] {
+        assert!(!find(&commands, label).needs_roblox, "{label}");
+    }
+}
+
 #[test]
 fn every_live_menu_item_is_a_row_and_no_placeholder_is() {
     let commands = all();
