@@ -130,6 +130,102 @@ modules, `.server`/`.client` scripts and nested projects. It skips
 `.json`/`.txt`/`.rbxm` files, so a project that needs those should build a
 place first (`rojo build -o place.rbxl` or `argon build`).
 
+## Integration specs on Local Run
+
+Unit specs run where no game is running. An **integration spec** runs a
+whole game: name the ModuleScript `*.integration.spec` (or
+`*.integration.test`) and it runs on a Local Run session instead of the
+sandbox, with the place's server scripts, players who join with clients of
+their own (their LocalScripts, `PlayerModule` controls and character),
+physics, Humanoids and remotes over the simulated link. The sandbox limits
+in the table above don't apply: those services behave as in Local Run.
+
+The spec runs on the server, once the server's scripts have had their
+first frame. Keep it somewhere that doesn't replicate (`ServerStorage`).
+Beside TestEZ's names it gets `LocalRun`:
+
+| Call | What it does |
+|---|---|
+| `LocalRun.addPlayer(name?)` | A player joins (`Player1`, `Player2`... without a name; named ones get UserIds from -1001 down). Returns their `Player` once their character is in on the server and on their client. |
+| `LocalRun.removePlayer(player)` | The player leaves; returns once the server has let them go. |
+| `LocalRun.act(player, action)` | Does something as the player, on their client: `{ keyDown = "W" }`, `{ keyUp = "W" }`, `{ key = "E" }` (a tap), `{ jump = true }`, `{ walkTo = Vector3 }` (`Humanoid:MoveTo`, returns whether they got there), `{ click = "PlayerGui.Shop.Buy" }` (a left click on that GuiObject's middle), `{ chat = "hi" }`, `{ reset = true }`. |
+| `LocalRun.runFor(seconds)` | Lets the game run that long on the simulated clock. |
+| `LocalRun.waitUntil(check, timeout?)` | Steps the game until `check()` returns something truthy and returns it; fails after `timeout` simulated seconds (10). |
+| `LocalRun.client(player):eval(source, ...)` | Runs the Luau `source` on the player's client (`...` are the arguments) and returns what it returned, to assert on what that client sees. It may yield and takes a frame at least. Values cross as remote arguments do: an instance the server doesn't have comes back `nil`. An error there fails the test with `Player1: <message>`. |
+| `LocalRun.setNetwork(profile)` | The link every client has, from the next frame: `"none"`, `"fiber"`, `"broadband"`, `"wifi"`, `"4g"`, `"3g"` (the Network Simulator's presets) or `{ latency = 0.1, jitter = 0.02, loss = 0.01 }` (seconds, 0 to 1), for both ways or as `{ down = {...}, up = {...} }`. |
+
+Each file gets a fresh session over its own copy of the place. Runs are
+fast and repeatable: time is simulated (60 frames a simulated second,
+stepped as fast as the machine goes), nothing is rendered, and every VM's
+randomness (`math.random`, `Random.new()`, GUIDs) comes from the run's
+seed, so a place and spec run the same way every time. Nothing goes
+online: DataStores are the run's own and start empty, avatars are the
+default character, and live DataStores are never touched. Only the wall
+clock reads (`os.time()`, `os.clock()`, `tick()`) stay real. A file
+still running after 300 simulated seconds fails the test it is in with
+"still waiting after 300 s of simulated time".
+
+```lua
+-- ServerStorage/Specs/Coins.integration.spec.luau
+return function()
+	describe("coin pickup", function()
+		local alice, bob
+
+		beforeAll(function()
+			alice = LocalRun.addPlayer()
+			bob = LocalRun.addPlayer()
+		end)
+
+		it("gives the coin to the player who walks into it", function()
+			LocalRun.act(alice, { walkTo = workspace.Coins.CoinA.Position })
+			LocalRun.waitUntil(function()
+				return alice.leaderstats.Coins.Value == 1
+			end)
+			expect(bob.leaderstats.Coins.Value).to.equal(0)
+		end)
+
+		it("shows the outcome on the other client", function()
+			local gone = LocalRun.client(bob):eval([[
+				return workspace.Coins:FindFirstChild("CoinA") == nil
+			]])
+			expect(gone).to.equal(true)
+		end)
+
+		it("is slower on a bad connection", function()
+			LocalRun.setNetwork("3g")
+			expect(alice:GetNetworkPing()).to.be.near(0.33, 0.001)
+		end)
+	end)
+end
+```
+
+`assets/tests/local_run_integration` is a complete example project (a
+coin pickup with two players, remote round trips, respawning):
+
+```sh
+rbxlua test assets/tests/local_run_integration
+rbxlua test place.rbxl --seed 42 --network 4g   # another seed; start on a 4G link
+```
+
+```text
+ServerStorage.Specs.Coins.integration.spec
+  + coin pickup › starts both players on 0 coins (0 ms)
+  + coin pickup › gives the coin to the player who walks into it (722 ms)
+  ...
+10 passed, 0 failed, 0 skipped (3 files)
+```
+
+`rbxlua test` runs integration specs after the unit specs, in the same
+report: the same text, `--format json` and `--junit` output, the same
+`--filter` and `--root`, the same exit codes. `--seed <n>` (0 by default)
+and `--network <profile>` apply to integration specs only. What a client
+prints shows in the test's output marked with the player's name
+(`[Player1] ...`).
+
+In the editor, the Tests dock lists integration specs and runs them while
+the Local Run beta is on; with it off they are left out
+of the tree, and the unit specs work as before.
+
 ## In GitHub Actions
 
 `.github/actions/rbxlua-test` builds `rbxlua` from this repository and runs

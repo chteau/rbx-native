@@ -80,7 +80,18 @@ impl Shell {
     /// Focus: frames everything selected, a model as the box round all its
     /// parts, keeping the way the camera looks, as Studio's F does.
     pub(super) fn focus_selection(&mut self, cx: &mut Context<Self>) {
-        let Some((low, high)) = parts_box(&self.dom, self.selected_all()) else {
+        let roots = self.selected_all().to_vec();
+        self.frame_roots(&roots, cx);
+    }
+
+    /// `Workspace:ZoomToExtents()`: frames the whole place.
+    pub(super) fn zoom_to_extents(&mut self, cx: &mut Context<Self>) {
+        let roots = self.dom.root_refs().to_vec();
+        self.frame_roots(&roots, cx);
+    }
+
+    fn frame_roots(&mut self, roots: &[Ref], cx: &mut Context<Self>) {
+        let Some((low, high)) = parts_box(&self.dom, roots) else {
             return;
         };
         self.viewport.read(cx).focus_box(low, high);

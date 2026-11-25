@@ -217,3 +217,90 @@ fn a_grid_sorts_its_items_like_a_list_does() {
     // Tree order c, a, b; alphabetical order puts c last.
     assert_eq!(origins(&dom), [[220.0, 0.0], [0.0, 0.0], [110.0, 0.0]]);
 }
+
+/// A HUD column as the GuiLayout golden builds it: a 166x276 frame, a holder
+/// `(1, 0.2756)` tall growing with `AutomaticSize` Y around a two-wide grid
+/// of `(0.45, 0.3)` cells, six items each squared by a
+/// `UIAspectRatioConstraint` and capped at 60x60, anchored `anchor`.
+fn hud_column(anchor: [f32; 2]) -> Vec<Rect> {
+    let (mut dom, gui) = screen_gui();
+    let column = frame(
+        &mut dom,
+        gui,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(0.0, 166, 0.0, 276),
+    );
+    let holder = frame(
+        &mut dom,
+        column,
+        udim2(0.0, 0, 0.0, 0),
+        udim2(1.0, 0, 0.2756, 0),
+    );
+    dom.set_property(holder, "AutomaticSize", Variant::Enum(2))
+        .unwrap();
+    let layout = dom.new_instance("UIGridLayout", "UIGridLayout", Some(holder));
+    for (name, value) in [
+        ("CellSize", udim2(0.45, 0, 0.3, 0)),
+        ("CellPadding", udim2(0.05, 0, 0.0, 0)),
+        ("FillDirectionMaxCells", Variant::Int32(2)),
+        ("HorizontalAlignment", Variant::Enum(0)),
+        ("VerticalAlignment", Variant::Enum(0)),
+    ] {
+        dom.set_property(layout, name, value).unwrap();
+    }
+    for _ in 0..6 {
+        let item = frame(
+            &mut dom,
+            holder,
+            udim2(0.0, 0, 0.0, 0),
+            udim2(0.388, 0, 0.317, 0),
+        );
+        let at = Vector2Data {
+            x: anchor[0],
+            y: anchor[1],
+        };
+        dom.set_property(item, "AnchorPoint", Variant::Vector2(at))
+            .unwrap();
+        dom.new_instance(
+            "UIAspectRatioConstraint",
+            "UIAspectRatioConstraint",
+            Some(item),
+        );
+        let cap = dom.new_instance("UISizeConstraint", "UISizeConstraint", Some(item));
+        let max = Vector2Data { x: 60.0, y: 60.0 };
+        dom.set_property(cap, "MaxSize", Variant::Vector2(max))
+            .unwrap();
+    }
+    rects(&dom)
+}
+
+fn near(got: f32, want: f32) -> bool {
+    (got - want).abs() < 0.05
+}
+
+/// The grid's cells are measured against the column (0.3 x 276, three rows:
+/// 248.4) and then laid out again in the holder's grown size, so a cell is
+/// 74.7x74.52, and each item squares itself to the cell and caps at 60,
+/// centred in it whatever its anchor (GuiLayout golden, `auto_capped_*`,
+/// `corner_capped_*`, `far_capped_*`).
+#[test]
+fn constrained_items_centre_in_cells_measured_against_the_grown_holder() {
+    for anchor in [[0.0, 0.0], [0.5, 0.5], [1.0, 1.0]] {
+        let rects = hud_column(anchor);
+        let holder = rects[1];
+        assert!(near(holder.height, 248.4), "{anchor:?}: {holder:?}");
+        let [first, second, third] = [rects[2], rects[3], rects[4]];
+        for item in [first, second, third] {
+            assert!(
+                near(item.width, 60.0) && near(item.height, 60.0),
+                "{item:?}"
+            );
+        }
+        assert!(
+            near(first.x, 11.5) && near(first.y - holder.y, 19.68),
+            "{first:?}"
+        );
+        assert!(near(second.x, 94.5), "{second:?}");
+        assert!(near(third.y - holder.y, 94.2), "{third:?}");
+    }
+}

@@ -31,6 +31,22 @@ pub(super) fn binary(cache: &Path) -> io::Result<Option<PathBuf>> {
     unpack(ZIP, &cache.join("bin").join(VERSION)).map(Some)
 }
 
+/// `run`, which starts the unpacked server, tried again while the system
+/// says the file is busy: a process another thread forks while a write
+/// handle to the binary is open (ours as we unpack, or anything's) holds a
+/// copy of that handle until it execs.
+pub(super) fn retry_busy<T>(mut run: impl FnMut() -> io::Result<T>) -> io::Result<T> {
+    for _ in 0..50 {
+        match run() {
+            Err(error) if error.kind() == io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            done => return done,
+        }
+    }
+    run()
+}
+
 fn unpack(zip: &[u8], dir: &Path) -> io::Result<PathBuf> {
     let path = dir.join(EXECUTABLE);
     let mut archive = zip::ZipArchive::new(io::Cursor::new(zip)).map_err(io::Error::other)?;
@@ -68,7 +84,7 @@ fn unpack(zip: &[u8], dir: &Path) -> io::Result<PathBuf> {
 mod tests {
     use std::process::Command;
 
-    use super::{binary, ZIP};
+    use super::{binary, retry_busy, ZIP};
 
     /// The embedded release runs and is the version `build.rs` pinned.
     #[test]
@@ -82,7 +98,7 @@ mod tests {
         assert_eq!(binary(&cache).unwrap().unwrap(), path);
         assert!(path.with_file_name("NOTICE.txt").exists());
 
-        let output = Command::new(&path).arg("--version").output().unwrap();
+        let output = retry_busy(|| Command::new(&path).arg("--version").output()).unwrap();
         assert_eq!(
             String::from_utf8_lossy(&output.stdout).trim(),
             super::VERSION

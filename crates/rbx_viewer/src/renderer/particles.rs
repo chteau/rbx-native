@@ -13,6 +13,7 @@ use web_time::Instant;
 
 use glam::{Mat4, Vec3};
 use rbx_assets::AssetRef;
+use rbx_dom::Ref;
 use wgpu::util::DeviceExt;
 
 use super::pipeline::Target;
@@ -238,7 +239,14 @@ impl Particles {
             .last_tick
             .replace(now)
             .map_or(0.0, |previous| (now - previous).as_secs_f32().min(0.25));
+        let bursts = take_bursts();
         for live in &mut self.live {
+            for (_, burst) in bursts.iter().filter(|(r, _)| *r == live.emitter.id().0) {
+                match burst {
+                    Some(count) => live.simulation.burst(&live.emitter, *count),
+                    None => live.simulation.clear(),
+                }
+            }
             // `TimeScale` is documented as the speed of the whole effect, so
             // it scales the step rather than any one property: 0 freezes it.
             live.simulation
@@ -400,3 +408,19 @@ fn texture_refs(emitters: &[Emitter]) -> Vec<AssetRef> {
 #[cfg(test)]
 #[path = "particles/tests.rs"]
 mod tests;
+
+thread_local! {
+    /// Per thread, as each editor viewport draws on its own.
+    static BURSTS: std::cell::RefCell<Vec<(Ref, Option<u32>)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// A running game's `ParticleEmitter:Emit(count)` (`Some`) or `Clear()`
+/// (`None`), for the next frame drawn on this thread.
+pub fn particle_burst(emitter: Ref, burst: Option<u32>) {
+    BURSTS.with_borrow_mut(|queue| queue.push((emitter, burst)));
+}
+
+fn take_bursts() -> Vec<(Ref, Option<u32>)> {
+    BURSTS.with_borrow_mut(std::mem::take)
+}

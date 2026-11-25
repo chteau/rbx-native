@@ -1,0 +1,64 @@
+{
+  "passes": 2,
+  "raw": [
+    {
+      "decision_items": 2,
+      "owns_asset_nil": "Argument 1 missing or nil",
+      "owns_asset_zero": "MarketplaceService:PlayerOwnsAsset() second argument is not a valid assetId (supplied assetId was less than 0)",
+      "owns_pass_bad_user": "Argument 1 missing or nil",
+      "owns_pass_zero": "ok",
+      "process_receipt_read": "ProcessReceipt is a callback member of MarketplaceService; you can only set the callback value, get is not available",
+      "process_receipt_set": "ok",
+      "process_receipt_set_number": "ok",
+      "product_info_bad_type": "Unable to cast double to InfoType",
+      "product_info_negative": "MarketplaceService:GetProductInfo() -5 is not a valid assetId",
+      "product_info_zero": "MarketplaceService:GetProductInfo() 0 is not a valid assetId",
+      "prompt_nil_player": "MarketplaceService:PromptPurchase(): player should be of type Player.",
+      "prompt_pass_nil": "MarketplaceService:PromptGamePassPurchase(): player should be of type Player.",
+      "prompt_pass_string": "Unable to cast string to int64",
+      "prompt_product_nil": "MarketplaceService:PromptProductPurchase(): player should be of type Player.",
+      "prompt_subscription_nil": "First argument to PromptSubscriptionPurchase must be a player"
+    },
+    {
+      "decision_items": 2,
+      "owns_asset_nil": "Argument 1 missing or nil",
+      "owns_asset_zero": "MarketplaceService:PlayerOwnsAsset() second argument is not a valid assetId (supplied assetId was less than 0)",
+      "owns_pass_bad_user": "Argument 1 missing or nil",
+      "owns_pass_zero": "ok",
+      "process_receipt_read": "ProcessReceipt is a callback member of MarketplaceService; you can only set the callback value, get is not available",
+      "process_receipt_set": "ok",
+      "process_receipt_set_number": "ok",
+      "product_info_bad_type": "Unable to cast double to InfoType",
+      "product_info_negative": "MarketplaceService:GetProductInfo() -5 is not a valid assetId",
+      "product_info_zero": "MarketplaceService:GetProductInfo() 0 is not a valid assetId",
+      "prompt_nil_player": "MarketplaceService:PromptPurchase(): player should be of type Player.",
+      "prompt_pass_nil": "MarketplaceService:PromptGamePassPurchase(): player should be of type Player.",
+      "prompt_pass_string": "Unable to cast string to int64",
+      "prompt_product_nil": "MarketplaceService:PromptProductPurchase(): player should be of type Player.",
+      "prompt_subscription_nil": "First argument to PromptSubscriptionPurchase must be a player"
+    }
+  ],
+  "result": {
+    "decision_items": 2.0,
+    "owns_asset_nil": "Argument 1 missing or nil",
+    "owns_asset_zero": "MarketplaceService:PlayerOwnsAsset() second argument is not a valid assetId (supplied assetId was less than 0)",
+    "owns_pass_bad_user": "Argument 1 missing or nil",
+    "owns_pass_zero": "ok",
+    "process_receipt_read": "ProcessReceipt is a callback member of MarketplaceService; you can only set the callback value, get is not available",
+    "process_receipt_set": "ok",
+    "process_receipt_set_number": "ok",
+    "product_info_bad_type": "Unable to cast double to InfoType",
+    "product_info_negative": "MarketplaceService:GetProductInfo() -5 is not a valid assetId",
+    "product_info_zero": "MarketplaceService:GetProductInfo() 0 is not a valid assetId",
+    "prompt_nil_player": "MarketplaceService:PromptPurchase(): player should be of type Player.",
+    "prompt_pass_nil": "MarketplaceService:PromptGamePassPurchase(): player should be of type Player.",
+    "prompt_pass_string": "Unable to cast string to int64",
+    "prompt_product_nil": "MarketplaceService:PromptProductPurchase(): player should be of type Player.",
+    "prompt_subscription_nil": "First argument to PromptSubscriptionPurchase must be a player"
+  },
+  "source": "real Roblox server, place 3086963177 version 582, joined with Sober",
+  "spread": {
+    "decision_items": 0.0
+  },
+  "status": "recorded"
+}

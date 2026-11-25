@@ -210,6 +210,11 @@ impl Shell {
 }
 
 impl Coedit {
+    /// Where the room is and who this editor is in it.
+    pub(super) fn seed(&self) -> &Seed {
+        &self.seed
+    }
+
     /// Moves to the relay at `url`; what the old one never got goes to it.
     fn link(&mut self, url: String) {
         if let Some(link) = self.link.take() {

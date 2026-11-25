@@ -5,6 +5,8 @@
 //! shows it beside the people in a Team Create session; anonymous too.
 //! `/v1/games/{id}/thumbnails`: Game Settings' thumbnail strip.
 //! `/v1/assets`: a Creator Store item's icon, for the plugin catalog.
+//! And any `rbxthumb://` content id a game puts in an image property
+//! (`Players:GetUserThumbnailAsync`'s headshots and the like).
 
 use serde::Deserialize;
 
@@ -15,6 +17,20 @@ const ICONS_URL: &str = "https://thumbnails.roblox.com/v1/games/icons";
 const THUMBNAILS_ROOT: &str = "https://thumbnails.roblox.com/v1/games";
 const HEADSHOTS_URL: &str = "https://thumbnails.roblox.com/v1/users/avatar-headshot";
 const ASSETS_URL: &str = "https://thumbnails.roblox.com/v1/assets";
+
+/// `rbxthumb://` types: (type, thumbnails API path, its id parameter).
+const THUMB_TYPES: &[(&str, &str, &str)] = &[
+    ("AvatarHeadShot", "users/avatar-headshot", "userIds"),
+    ("Avatar", "users/avatar", "userIds"),
+    ("AvatarBust", "users/avatar-bust", "userIds"),
+    ("Asset", "assets", "assetIds"),
+    ("BadgeIcon", "badges/icons", "badgeIds"),
+    ("BundleThumbnail", "bundles/thumbnails", "bundleIds"),
+    ("GameIcon", "games/icons", "universeIds"),
+    ("GamePass", "game-passes", "gamePassIds"),
+    ("GroupIcon", "groups/icons", "groupIds"),
+    ("Outfit", "users/outfits", "userOutfitIds"),
+];
 
 /// The endpoint's own per-request cap.
 const BATCH: usize = 100;
@@ -146,6 +162,55 @@ impl Client {
             icons.extend(parse(&response.body)?);
         }
         Ok(icons)
+    }
+
+    /// The PNG an `rbxthumb://` content id names; `spec` is what follows the
+    /// scheme (`type=AvatarHeadShot&id=1&w=150&h=150`). Anonymous. A
+    /// thumbnail still rendering is asked for again a few times, as the
+    /// client keeps a placeholder until it's ready.
+    pub fn rbxthumb(&self, spec: &str) -> Result<Vec<u8>, CloudError> {
+        let field = |name: &str| {
+            spec.split('&').find_map(|pair| {
+                let (key, value) = pair.split_once('=')?;
+                key.eq_ignore_ascii_case(name).then_some(value)
+            })
+        };
+        let unknown = || CloudError::UnexpectedShape(format!("unsupported thumbnail: {spec}"));
+        let kind = field("type").ok_or_else(unknown)?;
+        let (path, ids) = THUMB_TYPES
+            .iter()
+            .find(|(name, _, _)| name.eq_ignore_ascii_case(kind))
+            .map(|(_, path, ids)| (*path, *ids))
+            .ok_or_else(unknown)?;
+        let id = field("id").ok_or_else(unknown)?;
+        let size = format!(
+            "{}x{}",
+            field("w").unwrap_or("150"),
+            field("h").unwrap_or("150")
+        );
+        let url = format!("https://thumbnails.roblox.com/v1/{path}");
+        for attempt in 0..4 {
+            let response = self.get_with(&url, false, true, |req| {
+                req.query(ids, id)
+                    .query("size", &size)
+                    .query("format", "Png")
+                    .query("isCircular", "false")
+            })?;
+            if !(200..300).contains(&response.status) {
+                return Err(error::error_for_status(
+                    &url,
+                    response.status,
+                    &response.headers,
+                ));
+            }
+            if let Some((_, image)) = parse(&response.body)?.into_iter().next() {
+                return self.download_image(&image);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(500 * (attempt + 1)));
+        }
+        Err(CloudError::UnexpectedShape(format!(
+            "thumbnail not ready: {spec}"
+        )))
     }
 
     /// The PNG behind one of [`game_icon_urls`](Self::game_icon_urls)' URLs.

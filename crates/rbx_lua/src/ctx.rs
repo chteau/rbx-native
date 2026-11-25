@@ -27,6 +27,9 @@ pub(crate) struct Ctx {
     /// destroyed instance readable (`Parent` nil), so a handler that gets
     /// one late can still ask what it was.
     tombstones: Rc<RefCell<std::collections::HashMap<Ref, (String, String)>>>,
+    /// The properties the most recently destroyed instances had, for a
+    /// script still holding one to read (`Remains`).
+    remains: Rc<RefCell<Remains>>,
     /// Lets host objects that are instances in Roblox but handles here fill
     /// an `Instance` property; see [`HandleBridge`].
     handles: Rc<RefCell<Option<Rc<dyn HandleBridge>>>>,
@@ -102,6 +105,7 @@ impl Ctx {
             guard: None,
             on_write: None,
             tombstones: Rc::default(),
+            remains: Rc::default(),
             handles: Rc::default(),
         }
     }
@@ -109,13 +113,37 @@ impl Ctx {
     /// Notes `root` and its descendants as destroyed; call before removing.
     pub(crate) fn bury(&self, dom: &WeakDom, root: Ref) {
         let mut tombstones = self.tombstones.borrow_mut();
+        let mut remains = self.remains.borrow_mut();
         let mut stack = vec![root];
         while let Some(r) = stack.pop() {
             if let Some(i) = dom.get(r) {
                 tombstones.insert(r, (i.class().to_string(), i.name().to_string()));
+                if remains.held.contains(&r) {
+                    remains.kept.insert(r, i.clone());
+                }
                 stack.extend_from_slice(i.children());
             }
         }
+    }
+
+    /// A script now holds `referent` (its one userdata was made).
+    pub(crate) fn hold(&self, referent: Ref) {
+        self.remains.borrow_mut().held.insert(referent);
+    }
+
+    /// No script holds `referent` any more (its userdata was collected):
+    /// what it was, if it was destroyed, can go.
+    pub(crate) fn let_go(&self, referent: Ref) {
+        if let Ok(mut remains) = self.remains.try_borrow_mut() {
+            remains.held.remove(&referent);
+            remains.kept.remove(&referent);
+        }
+    }
+
+    /// What a destroyed instance was when it went, while it is among the
+    /// most recent ones.
+    pub(crate) fn remains(&self) -> std::cell::Ref<'_, Remains> {
+        self.remains.borrow()
     }
 
     /// The class and name a destroyed instance had.
@@ -137,5 +165,32 @@ impl Ctx {
 
     pub(crate) fn print(&self, kind: LineKind, parts: Vec<PrintPart>) {
         self.output.borrow_mut().push(kind, parts);
+    }
+}
+
+/// Destroyed instances as they were, for as long as a script holds them,
+/// as Roblox keeps them readable: kept when destroyed while held, let go
+/// when the script's handle is collected, so a game that destroys parts
+/// all session long keeps only what it still refers to.
+#[derive(Default)]
+pub(crate) struct Remains {
+    kept: std::collections::HashMap<Ref, rbx_dom::Instance>,
+    /// Instances a script holds a handle to.
+    held: std::collections::HashSet<Ref>,
+}
+
+impl Remains {
+    pub(crate) fn get(&self, referent: Ref) -> Option<&rbx_dom::Instance> {
+        self.kept.get(&referent)
+    }
+
+    /// Destroyed instances a script still holds.
+    pub(crate) fn kept(&self) -> impl Iterator<Item = (&Ref, &rbx_dom::Instance)> {
+        self.kept.iter()
+    }
+
+    /// Every instance a script holds a handle to.
+    pub(crate) fn held(&self) -> impl Iterator<Item = &Ref> {
+        self.held.iter()
     }
 }

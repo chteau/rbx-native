@@ -163,10 +163,7 @@ fn slice(
     let top = (cy0 * scale).max(0.0);
     let right = ((tex_w - cx1) * scale).max(0.0);
     let bottom = ((tex_h - cy1) * scale).max(0.0);
-    // Roblox's docs don't say what happens once the borders overlap; shrunk
-    // proportionally, they at least never invert the centre they surround.
-    let (left, right) = shrink_to_fit(left, right, rect.width);
-    let (top, bottom) = shrink_to_fit(top, bottom, rect.height);
+    let [left, right, top, bottom] = fit_borders([left, right, top, bottom], rect);
 
     let u = [0.0, cx0 / tex_w, cx1 / tex_w, 1.0];
     let v = [0.0, cy0 / tex_h, cy1 / tex_h, 1.0];
@@ -206,16 +203,20 @@ fn slice(
     }
 }
 
-/// Scales a pair of opposing borders down together, proportionally, so they
-/// never claim more of `extent` than it has to give.
-fn shrink_to_fit(a: f32, b: f32, extent: f32) -> (f32, f32) {
-    let total = a + b;
-    if total > extent && total > 0.0 {
-        let factor = extent / total;
-        (a * factor, b * factor)
-    } else {
-        (a, b)
-    }
+/// Borders too thick for `rect` all shrink by one factor, the one the
+/// tighter axis needs, so the corners keep their shape: the real client draws
+/// a 405 px source with 105/300 px side and 205/200 px top/bottom borders at
+/// 166x55 with round corners about 8 px across, which only the common factor
+/// (55 / 405) gives; shrinking each axis on its own stretched them to
+/// ellipses three times wider than tall.
+fn fit_borders(borders: [f32; 4], rect: &GuiRect) -> [f32; 4] {
+    let [left, right, top, bottom] = borders;
+    let factor = |sum: f32, extent: f32| match sum > extent && sum > 0.0 {
+        true => extent / sum,
+        false => 1.0,
+    };
+    let shrink = factor(left + right, rect.width).min(factor(top + bottom, rect.height));
+    borders.map(|border| border * shrink)
 }
 
 #[cfg(test)]

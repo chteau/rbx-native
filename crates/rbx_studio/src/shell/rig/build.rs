@@ -281,7 +281,7 @@ fn make_part(
         "Head" => spec
             .mesh
             .as_ref()
-            .is_none_or(|piece| piece.family == Family::Classic),
+            .is_none_or(|piece| piece.family != Family::Mannequin),
         _ => false,
     };
     for (property, value) in [

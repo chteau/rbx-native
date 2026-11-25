@@ -47,6 +47,12 @@ fn measure(text: &str, size: f32, limit: f32) -> Metrics {
     }
 }
 
+/// (width, height) of `text` at `size`, wrapping at `limit` (0 for none).
+pub(crate) fn text_size(text: &str, size: f32, limit: f32) -> [f32; 2] {
+    let metrics = measure(text, size, limit);
+    [metrics.width, metrics.lines as f32 * size]
+}
+
 pub(super) struct TextService;
 
 impl UserData for TextService {

@@ -7,7 +7,7 @@ use rbx_assets::AssetRef;
 use rbx_dom::Ref;
 
 use super::sky::stars;
-use super::{Body, FaceInstance, Plan, Quad, Star};
+use super::{Body, FaceInstance, MeshFace, Plan, Quad, Star};
 use crate::assets::Image;
 use crate::scene::Placement;
 
@@ -70,19 +70,23 @@ impl Decor {
     /// the decals that were projected onto that box: a decal floating in the
     /// air where the box used to be is worse than none, and dropping it here
     /// leaves exactly the faces a build with every asset already resident
-    /// would have planned.
+    /// would have planned. A part in `meshes` draws a real mesh its decals
+    /// can land on instead, so its faces are kept, projected onto that.
     pub(crate) fn assemble(
         plan: &Plan,
         images: &HashMap<AssetRef, Arc<Image>>,
         drawn: &HashMap<Ref, Placement>,
+        meshes: &HashMap<Ref, MeshFace>,
     ) -> Self {
         let mut groups: Vec<Group> = Vec::new();
         let mut index: HashMap<AssetRef, usize> = HashMap::new();
 
         for planned in &plan.faces {
-            if !drawn.contains_key(&planned.part) {
-                continue;
-            }
+            let mesh = match (drawn.contains_key(&planned.part), meshes.get(&planned.part)) {
+                (true, _) => None,
+                (false, Some(mesh)) => Some(*mesh),
+                (false, None) => continue,
+            };
             let Some(image) = images.get(&planned.reference) else {
                 continue;
             };
@@ -96,10 +100,14 @@ impl Decor {
                 groups.len() - 1
             });
             let group = &mut groups[slot];
-            if planned.face.alpha >= 1.0 && !group.image.has_alpha() {
-                group.opaque.push(planned.face);
+            let face = FaceInstance {
+                mesh,
+                ..planned.face
+            };
+            if face.alpha >= 1.0 && !group.image.has_alpha() {
+                group.opaque.push(face);
             } else {
-                group.blended.push(planned.face);
+                group.blended.push(face);
             }
         }
 
@@ -192,6 +200,7 @@ mod tests {
 
     fn instance(alpha: f32) -> FaceInstance {
         FaceInstance {
+            mesh: None,
             referent: rbx_dom::Ref::new(1),
             kind: ShapeKind::CylinderY,
             model: Mat4::IDENTITY,
@@ -203,6 +212,7 @@ mod tests {
             ),
             tint: [1.0; 3],
             alpha,
+            base: [255; 3],
         }
     }
 
@@ -215,7 +225,7 @@ mod tests {
         ]);
         let images = HashMap::from([(AssetRef::Id(1), image(255)), (AssetRef::Id(2), image(255))]);
 
-        let decor = Decor::assemble(&plan, &images, &drawn());
+        let decor = Decor::assemble(&plan, &images, &drawn(), &HashMap::new());
 
         assert_eq!(decor.groups.len(), 2);
         assert_eq!(decor.groups[0].opaque.len(), 2);
@@ -230,9 +240,29 @@ mod tests {
         let plan = plan_of(vec![(AssetRef::Id(1), instance(1.0))]);
         let images = HashMap::from([(AssetRef::Id(1), image(255))]);
 
-        let decor = Decor::assemble(&plan, &images, &HashMap::new());
+        let decor = Decor::assemble(&plan, &images, &HashMap::new(), &HashMap::new());
 
         assert!(decor.groups.is_empty());
+    }
+
+    // A part drawing a real mesh keeps its faces, projected onto the mesh.
+    #[test]
+    fn a_face_on_a_part_drawing_a_mesh_lands_on_the_mesh() {
+        let plan = plan_of(vec![(AssetRef::Id(1), instance(1.0))]);
+        let images = HashMap::from([(AssetRef::Id(1), image(255))]);
+        let mesh = MeshFace {
+            key: 7,
+            to_unit: Mat4::from_scale(Vec3::splat(0.5)),
+        };
+
+        let decor = Decor::assemble(
+            &plan,
+            &images,
+            &HashMap::new(),
+            &HashMap::from([(part(), mesh)]),
+        );
+
+        assert_eq!(decor.groups[0].opaque[0].mesh, Some(mesh));
     }
 
     #[test]
@@ -244,7 +274,7 @@ mod tests {
         ]);
         let images = HashMap::from([(AssetRef::Id(1), image(255)), (AssetRef::Id(2), image(128))]);
 
-        let decor = Decor::assemble(&plan, &images, &drawn());
+        let decor = Decor::assemble(&plan, &images, &drawn(), &HashMap::new());
 
         assert_eq!(decor.groups[0].blended.len(), 1);
         assert_eq!(decor.groups[0].opaque.len(), 1);
@@ -258,7 +288,7 @@ mod tests {
     fn an_instance_whose_image_never_downloaded_is_left_unpainted() {
         let plan = plan_of(vec![(AssetRef::Id(1), instance(1.0))]);
 
-        let decor = Decor::assemble(&plan, &HashMap::new(), &drawn());
+        let decor = Decor::assemble(&plan, &HashMap::new(), &drawn(), &HashMap::new());
 
         assert!(decor.groups.is_empty());
     }

@@ -14,11 +14,14 @@ fn at_origin() -> Origin {
 }
 
 #[test]
-fn a_disabled_emitter_builds_nothing() {
+fn a_disabled_emitter_spawns_nothing_on_its_own() {
     let mut budget = TOTAL_CAP;
     let properties = props(vec![("Enabled", Variant::Bool(false))]);
-    assert!(build(&properties, at_origin(), Ref::new(1), &mut budget).is_none());
-    assert_eq!(budget, TOTAL_CAP, "a skipped emitter spends no budget");
+    // Kept (its particles live out their life, `Emit` still works), at
+    // rate 0 and with no share of the budget.
+    let emitter = build(&properties, at_origin(), Ref::new(1), &mut budget).unwrap();
+    assert_eq!(emitter.rate, 0.0);
+    assert_eq!(budget, TOTAL_CAP, "a disabled emitter spends no budget");
 }
 
 #[test]

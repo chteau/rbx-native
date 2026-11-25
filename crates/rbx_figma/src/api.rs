@@ -21,7 +21,7 @@ pub struct Session {
 
 impl Session {
     pub fn new(tokens: Tokens) -> Self {
-        let agent = ureq::Agent::config_builder()
+        let agent = rbx_net::config()
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(60)))
             .build()

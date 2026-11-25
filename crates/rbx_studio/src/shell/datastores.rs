@@ -156,6 +156,9 @@ pub(crate) struct DataStoresWindow {
 impl Shell {
     /// Brings Data Stores forward, opening it if it isn't.
     pub(crate) fn open_data_stores(&mut self, cx: &mut Context<Self>) {
+        if self.offline_refuses("Data Stores", cx) {
+            return;
+        }
         if let Some(existing) = &self.data_stores {
             if existing
                 .update(cx, |_, window, _| window.activate_window())

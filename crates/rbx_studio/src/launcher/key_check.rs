@@ -327,6 +327,11 @@ pub(crate) fn summary(check: &KeyCheck, tail: &str) -> Summary {
             Some(Tag::Refused),
             format!("Roblox answered {status}. Replace it with a working key."),
         ),
+        Status::Network if rbx_net::is_offline() => summary(
+            "Your key",
+            None,
+            "You\u{2019}re offline, so it wasn\u{2019}t checked with Roblox.".into(),
+        ),
         Status::Network => summary(
             "Your key",
             None,

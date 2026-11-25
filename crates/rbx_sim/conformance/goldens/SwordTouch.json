@@ -1,0 +1,48 @@
+{
+  "passes": 3,
+  "raw": [
+    {
+      "activated_beat": 0,
+      "activated_now": true,
+      "equipped": true,
+      "grip": true,
+      "touch_beats": 34,
+      "touch_by": "Head",
+      "walked": 9
+    },
+    {
+      "activated_beat": 0,
+      "activated_now": true,
+      "equipped": true,
+      "grip": true,
+      "touch_beats": 34,
+      "touch_by": "Head",
+      "walked": 9
+    },
+    {
+      "activated_beat": 0,
+      "activated_now": true,
+      "equipped": true,
+      "grip": true,
+      "touch_beats": 34,
+      "touch_by": "Head",
+      "walked": 9
+    }
+  ],
+  "result": {
+    "activated_beat": 0.0,
+    "activated_now": true,
+    "equipped": true,
+    "grip": true,
+    "touch_beats": 34.0,
+    "touch_by": "Head",
+    "walked": 9.0
+  },
+  "source": "real Roblox server, place 3086963177 version 589, joined with Sober",
+  "spread": {
+    "activated_beat": 0.0,
+    "touch_beats": 0.0,
+    "walked": 0.0
+  },
+  "status": "recorded"
+}

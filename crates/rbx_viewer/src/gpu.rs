@@ -12,9 +12,61 @@ pub(crate) fn instance() -> wgpu::Instance {
 
 /// An instance limited to `backends`, with the rest of wgpu's knobs still
 /// read from the environment.
+///
+/// One per backend set for the whole process, so the caches keyed by device
+/// can tell its devices apart (see [`DeviceKey`]). Tests needed it anyway:
+/// each their own brought up a display per thread, which the NVIDIA driver
+/// crashes on in parallel.
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
+    static SHARED: Mutex<Vec<(wgpu::Backends, wgpu::Instance)>> = Mutex::new(Vec::new());
+    let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((_, instance)) = shared.iter().find(|(b, _)| *b == backends) {
+        return instance.clone();
+    }
+    let instance = new_instance(backends);
+    shared.push((backends, instance.clone()));
+    instance
+}
+
+/// A device as the caches shared between renderers (`renderer::material`,
+/// the sun map) tell it apart.
+///
+/// wgpu compares devices by id within their instance only, and every
+/// instance numbers its devices from the same start. Devices of one backend
+/// all come from one instance ([`instance_for`], each backend in one set of
+/// [`backend_order`]), so the backend and the id tell real devices apart. A
+/// noop device (an undrawn `Headless`) has an instance of its own and the
+/// same id as the first real one: it gets no key, else its textures were
+/// found for the real device, and binding a view of one there failed with
+/// "Cannot get non-existent resource TextureViewId".
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(PartialEq)]
+pub(crate) struct DeviceKey(wgpu::Backend, wgpu::Device);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl DeviceKey {
+    pub(crate) fn of(device: &wgpu::Device) -> Option<Self> {
+        let backend = device.adapter_info().backend;
+        (backend != wgpu::Backend::Noop).then(|| DeviceKey(backend, device.clone()))
+    }
+}
+
+/// The browser has one viewer, and no `Sync` instance to keep.
+#[cfg(target_arch = "wasm32")]
+pub(crate) fn instance_for(backends: wgpu::Backends) -> wgpu::Instance {
+    new_instance(backends)
+}
+
+fn new_instance(backends: wgpu::Backends) -> wgpu::Instance {
     let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
     descriptor.backends = backends;
+    // Tests never need GL, and bringing up an EGL display per thread is what
+    // crashes the NVIDIA driver.
+    #[cfg(test)]
+    if backends.contains(wgpu::Backends::GL) && backends != wgpu::Backends::GL {
+        descriptor.backends = backends - wgpu::Backends::GL;
+    }
     wgpu::Instance::new(descriptor)
 }
 
@@ -384,6 +436,13 @@ fn on_arm64_windows() -> bool {
     false
 }
 
+/// Lib tests used to open an instance and a device each, from many threads at
+/// once, creating and tearing them down concurrently, and the NVIDIA driver
+/// segfaulted doing that: under test they share one instance and one device
+/// per backend, opened under this lock and never dropped.
+#[cfg(test)]
+static OPENING: Mutex<Vec<(wgpu::Backend, wgpu::Device, wgpu::Queue)>> = Mutex::new(Vec::new());
+
 /// Picks an adapter, optionally one able to present to `surface`.
 ///
 /// The chosen adapter and backend are printed: which of Vulkan, GL or a software
@@ -529,6 +588,12 @@ pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Que
         shadow_side_cap(small, adapter.limits().max_texture_dimension_2d),
         Ordering::Relaxed,
     );
+    #[cfg(test)]
+    let mut shared = OPENING.lock().unwrap_or_else(|e| e.into_inner());
+    #[cfg(test)]
+    if let Some((_, device, queue)) = shared.iter().find(|(b, ..)| *b == info.backend) {
+        return Ok((device.clone(), queue.clone()));
+    }
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         label: Some("rbxview"),
         // Small allocator blocks rather than wgpu's default 128-256 MB ones:
@@ -539,6 +604,8 @@ pub(crate) fn device(adapter: &wgpu::Adapter) -> Result<(wgpu::Device, wgpu::Que
         ..Default::default()
     }))
     .map_err(|err| format!("failed to open a GPU device: {err}"))?;
+    #[cfg(test)]
+    shared.push((info.backend, device.clone(), queue.clone()));
     device.on_uncaptured_error(Arc::new(log_error));
     device.set_device_lost_callback(|reason, message| {
         eprintln!("rbxview: GPU device lost ({reason:?}): {message}");

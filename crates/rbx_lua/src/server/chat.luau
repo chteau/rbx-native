@@ -1,0 +1,292 @@
+--!nonstrict
+-- TextChatService in Local Run: our own, written from the creator docs and
+-- what the TextChat golden measured. A client's TextChannel:SendAsync
+-- builds a TextChatMessage (Status Sending), runs OnIncomingMessage
+-- (TextChatService's, then the channel's), fires SendingMessage and only
+-- then returns, while the text goes to the server. The server asks the
+-- channel's ShouldDeliverCallback once per TextSource in it (never firing
+-- MessageReceived itself) and hands the message to each player it lets
+-- through; their client runs OnIncomingMessage again (Status Success) and
+-- fires TextChatService.MessageReceived, then the channel's. Nothing
+-- filters text: there is no filtering service offline.
+local host = ...
+
+local M = {}
+
+local Players = game:GetService("Players")
+local TextChatService = game:GetService("TextChatService")
+
+local callbacks = {} -- instance id -> callback name -> function
+local CALLBACKS = {
+	TextChatService = { OnIncomingMessage = true, OnBubbleAdded = true, OnChatWindowAdded = true },
+	TextChannel = { OnIncomingMessage = true, ShouldDeliverCallback = true },
+}
+-- What a system message shows as (TextChat `client_system_log`).
+local SYSTEM_STYLE = "<font color='#d4d4d4' weight='600' size=\"12\">%s</font>"
+
+local function callback(owner, name)
+	local mine = callbacks[host.id(owner)]
+	return mine and mine[name]
+end
+
+local function sourceOf(channel, userId)
+	for _, child in channel:GetChildren() do
+		if child:IsA("TextSource") and child.UserId == userId then
+			return child
+		end
+	end
+	return nil
+end
+
+local function message(channel, text, status, source, id)
+	local m = host.new("TextChatMessage")
+	host.write(m, "Text", text)
+	host.write(m, "Status", Enum.TextChatMessageStatus[status])
+	host.write(m, "TextChannel", channel)
+	host.write(m, "TextSource", source)
+	host.write(m, "MessageId", id)
+	local player = source and Players:GetPlayerByUserId(source.UserId)
+	host.write(m, "PrefixText", player and (player.DisplayName .. ":") or "")
+	return m
+end
+
+-- OnIncomingMessage: TextChatService's, then the channel's. What a
+-- callback returns (TextChatMessageProperties) restyles the message.
+local function incoming(channel, m)
+	for _, owner in { TextChatService, channel } do
+		local f = callback(owner, "OnIncomingMessage")
+		if f then
+			local ok, props = pcall(f, m)
+			if not ok then
+				warn(props)
+			elseif typeof(props) == "Instance" and props:IsA("TextChatMessageProperties") then
+				if props.Text ~= "" then
+					host.write(m, "Text", props.Text)
+				end
+				if props.PrefixText ~= "" then
+					host.write(m, "PrefixText", props.PrefixText)
+				end
+			end
+		end
+	end
+end
+
+-- The enabled TextChatCommand whose PrimaryAlias or SecondaryAlias is
+-- the message's first word (any case), if any.
+local function commandFor(text)
+	local word = string.lower(string.match(text, "^%s*(%S+)") or "")
+	if word == "" then
+		return nil
+	end
+	for _, command in TextChatService:GetDescendants() do
+		if command:IsA("TextChatCommand") and command.Enabled then
+			for _, alias in { command.PrimaryAlias, command.SecondaryAlias } do
+				if alias ~= "" and string.lower(alias) == word then
+					return command
+				end
+			end
+		end
+	end
+	return nil
+end
+
+local function sendAsync(channel, text)
+	if not host.client() then
+		error("TextChannel:SendAsync can only be called on the client.", 3)
+	end
+	text = tostring(text or "")
+	local player = Players.LocalPlayer
+	local source = player and sourceOf(channel, player.UserId)
+	local id = host.guid()
+	local m = message(channel, text, "Sending", source, id)
+	-- A command runs instead of being said: Triggered here, and on the
+	-- server once the text gets there.
+	local command = commandFor(text)
+	if command then
+		host.fire(command, "Triggered", source, text)
+		host.send(channel, text, id)
+		return m
+	end
+	incoming(channel, m)
+	host.fire(TextChatService, "SendingMessage", m)
+	host.send(channel, text, id)
+	return m
+end
+
+local function displaySystemMessage(channel, text)
+	if not host.client() then
+		error("TextChannel:DisplaySystemMessage can only be called on the client.", 3)
+	end
+	local m = message(channel, tostring(text or ""), "Success", nil, host.guid())
+	incoming(channel, m)
+	host.write(m, "Text", string.format(SYSTEM_STYLE, m.Text))
+	host.fire(TextChatService, "MessageReceived", m)
+	host.fire(channel, "MessageReceived", m)
+	host.log("", m.Text, channel.Name, 0)
+	return m
+end
+
+local function addUserAsync(channel, userId)
+	local existing = sourceOf(channel, userId)
+	if existing then
+		return existing, true
+	end
+	local player = Players:GetPlayerByUserId(userId)
+	local source = host.new("TextSource")
+	source.Name = player and player.Name or tostring(userId)
+	host.write(source, "UserId", userId)
+	source.Parent = channel
+	return source, true
+end
+
+-- DisplayBubble: a bubble over a part or character that isn't a message
+-- anyone sent; OnBubbleAdded may restyle it, BubbleDisplayed tells scripts.
+local function displayBubble(_, adornee, text)
+	if typeof(adornee) ~= "Instance" then
+		error("Argument 1 missing or nil", 3)
+	end
+	local m = host.new("TextChatMessage")
+	host.write(m, "Text", tostring(text or ""))
+	host.write(m, "Status", Enum.TextChatMessageStatus.Success)
+	host.write(m, "MessageId", host.guid())
+	local f = callback(TextChatService, "OnBubbleAdded")
+	if f then
+		local ok, err = pcall(f, m, adornee)
+		if not ok then
+			warn(err)
+		end
+	end
+	host.fire(TextChatService, "BubbleDisplayed", adornee, m)
+end
+
+local methods = {
+	TextChannel = {
+		SendAsync = sendAsync,
+		DisplaySystemMessage = displaySystemMessage,
+		AddUserAsync = addUserAsync,
+		SetDirectChatRequester = function(channel, requester)
+			if requester ~= nil and not (typeof(requester) == "Instance" and requester:IsA("Player")) then
+				error("Unable to cast value to Object", 2)
+			end
+			host.write(channel, "DirectChatRequester", requester)
+		end,
+	},
+	ChatWindowConfiguration = {
+		DeriveNewMessageProperties = function(config)
+			local props = host.new("ChatWindowMessageProperties")
+			for _, name in { "FontFace", "TextColor3", "TextSize", "TextStrokeColor3", "TextStrokeTransparency" } do
+				host.write(props, name, config[name])
+			end
+			return props
+		end,
+	},
+	TextChatService = {
+		CanUserChatAsync = function()
+			return true
+		end,
+		CanUsersChatAsync = function()
+			return true
+		end,
+		CanUsersDirectChatAsync = function(_, _, ids)
+			return ids
+		end,
+		DisplayBubble = displayBubble,
+		-- Chat groups need Roblox's chat backend (golden WebServices).
+		GetChatGroupsAsync = function(_, players)
+			if type(players) ~= "table" then
+				error("Unable to cast " .. typeof(players) .. " to Instances", 0)
+			end
+			task.wait()
+			error(
+				"TextChatService:GetChatGroupsAsync error: GetChatGroupsAsync is not available in this experience.",
+				0
+			)
+		end,
+	},
+}
+
+-- A member of a TextChannel or of TextChatService.
+function M.member(class, owner, key)
+	local f = methods[class] and methods[class][key]
+	if f then
+		return f, true
+	end
+	if CALLBACKS[class] and CALLBACKS[class][key] then
+		return callback(owner, key), true
+	end
+	return nil, false
+end
+
+-- A callback set (`OnIncomingMessage = f`); whether it was one.
+function M.set(class, owner, key, value)
+	if not (CALLBACKS[class] and CALLBACKS[class][key]) then
+		return false
+	end
+	local id = host.id(owner)
+	callbacks[id] = callbacks[id] or {}
+	callbacks[id][key] = value
+	return true
+end
+
+-- The server: `player` sent `text` to `channel`.
+function M.fromClient(player, channel, text, id)
+	if not channel or not channel:IsA("TextChannel") then
+		return
+	end
+	local sender = player and sourceOf(channel, player.UserId)
+	if sender and not sender.CanSend then
+		return
+	end
+	local command = commandFor(text)
+	if command then
+		host.fire(command, "Triggered", sender, text)
+		return
+	end
+	for _, to in channel:GetChildren() do
+		if to:IsA("TextSource") then
+			local deliver = true
+			local should = callback(channel, "ShouldDeliverCallback")
+			if should then
+				local ok, result = pcall(should, message(channel, text, "Sending", sender, id), to)
+				deliver = ok and result ~= false
+			end
+			local recipient = Players:GetPlayerByUserId(to.UserId)
+			if deliver and recipient then
+				host.deliver(recipient, channel, text, id, sender)
+			end
+		end
+	end
+end
+
+-- A client: the server delivered a message.
+function M.fromServer(channel, text, id, source)
+	if not channel then
+		return
+	end
+	local m = message(channel, text, "Success", source, id)
+	incoming(channel, m)
+	host.fire(TextChatService, "MessageReceived", m)
+	host.fire(channel, "MessageReceived", m)
+	host.log(m.PrefixText, m.Text, channel.Name, source and source.UserId or 0)
+end
+
+-- The editor's chat bar: what the local player typed, to the general
+-- channel.
+function M.say(text)
+	-- The emote command (TextChatService's RBXEmoteCommand) is not a
+	-- message: the local Animate hears it through `Player.Chatted`.
+	local player = Players.LocalPlayer
+	if player then
+		host.fire(player, "Chatted", text)
+	end
+	if string.match(text, "^/e%s") or string.match(text, "^/emote%s") then
+		return
+	end
+	local channels = TextChatService:FindFirstChild("TextChannels")
+	local general = channels and channels:FindFirstChild("RBXGeneral")
+	if general then
+		sendAsync(general, text)
+	end
+end
+
+return M

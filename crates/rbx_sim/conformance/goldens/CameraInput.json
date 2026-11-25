@@ -1,0 +1,77 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "focus_above_root": 1.500000238418579,
+      "start_distance": 12.500000953674316,
+      "start_pitch": -15.000001680812602,
+      "turn_per_100px": -55.61998203320951,
+      "wall_margin": -0.09999227523803712,
+      "zoom_back_1": 12.499999046325684,
+      "zoom_in_1": 7.66666841506958,
+      "zoom_out_1": 19.75000381469727
+    },
+    {
+      "focus_above_root": 1.500000238418579,
+      "start_distance": 11.03125,
+      "start_pitch": -14.999999913029553,
+      "turn_per_100px": -55.61998203320951,
+      "wall_margin": -0.09999275207519533,
+      "zoom_back_1": 12.5,
+      "zoom_in_1": 7.666666507720947,
+      "zoom_out_1": 19.75000381469727
+    },
+    {
+      "focus_above_root": 1.500000238418579,
+      "start_distance": 11.03125,
+      "start_pitch": -14.999999913029553,
+      "turn_per_100px": -55.61998203320951,
+      "wall_margin": -0.09999275207519533,
+      "zoom_back_1": 12.5,
+      "zoom_in_1": 7.666667938232422,
+      "zoom_out_1": 19.75000381469727
+    },
+    {
+      "focus_above_root": 1.500000238418579,
+      "start_distance": 11.031250953674316,
+      "start_pitch": -15.000001680812602,
+      "turn_per_100px": -55.61998203320951,
+      "wall_margin": -0.09999275207519533,
+      "zoom_back_1": 12.499998092651367,
+      "zoom_in_1": 7.6666669845581055,
+      "zoom_out_1": 19.75
+    },
+    {
+      "focus_above_root": 1.500000238418579,
+      "start_distance": 11.031250953674316,
+      "start_pitch": -15.000001680812602,
+      "turn_per_100px": -55.61998203320951,
+      "wall_margin": -0.09999275207519533,
+      "zoom_back_1": 12.500000953674316,
+      "zoom_in_1": 7.6666669845581055,
+      "zoom_out_1": 19.749996185302734
+    }
+  ],
+  "result": {
+    "focus_above_root": 1.500000238418579,
+    "start_distance": 11.031250953674316,
+    "start_pitch": -15.000001680812602,
+    "turn_per_100px": -55.61998203320951,
+    "wall_margin": -0.09999275207519533,
+    "zoom_back_1": 12.5,
+    "zoom_in_1": 7.6666669845581055,
+    "zoom_out_1": 19.75000381469727
+  },
+  "source": "real Roblox server, place 3086963177 version 549, joined with Sober",
+  "spread": {
+    "focus_above_root": 0.0,
+    "start_distance": 1.4687509536743164,
+    "start_pitch": 1.7677830488338486e-6,
+    "turn_per_100px": 0.0,
+    "wall_margin": 4.76837158203125e-7,
+    "zoom_back_1": 2.86102294921875e-6,
+    "zoom_in_1": 1.9073486328125e-6,
+    "zoom_out_1": 7.629394534802714e-6
+  },
+  "status": "recorded"
+}

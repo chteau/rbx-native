@@ -1,0 +1,95 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "_spawned_on_blue": 2,
+      "after_color": "false,ConfBlue,Bright blue",
+      "after_destroy": "false,nil,Bright red",
+      "after_neutral": "true,nil,Bright blue",
+      "after_team": "false,ConfRed,Bright red",
+      "after_teams": "true,nil,White",
+      "defaults": "true,nil,White",
+      "get_players": "0,1",
+      "log": "ConfRed+p set_team ConfRed-p ConfBlue+p set_color ConfBlue-p ConfBlue+p ConfBlue-p neutral ConfRed+p ConfRed-p destroyed",
+      "no_team_color": "false,nil,Lime green",
+      "set_team_now": "false,ConfRed,Bright red",
+      "spawned_on_red": 0
+    },
+    {
+      "_spawned_on_blue": 1,
+      "after_color": "false,ConfBlue,Bright blue",
+      "after_destroy": "false,nil,Bright red",
+      "after_neutral": "true,nil,Bright blue",
+      "after_team": "false,ConfRed,Bright red",
+      "after_teams": "true,nil,White",
+      "defaults": "true,nil,White",
+      "get_players": "0,1",
+      "log": "ConfRed+p set_team ConfRed-p ConfBlue+p set_color ConfBlue-p ConfBlue+p ConfBlue-p neutral ConfRed+p ConfRed-p destroyed",
+      "no_team_color": "false,nil,Lime green",
+      "set_team_now": "false,ConfRed,Bright red",
+      "spawned_on_red": 0
+    },
+    {
+      "_spawned_on_blue": 2,
+      "after_color": "false,ConfBlue,Bright blue",
+      "after_destroy": "false,nil,Bright red",
+      "after_neutral": "true,nil,Bright blue",
+      "after_team": "false,ConfRed,Bright red",
+      "after_teams": "true,nil,White",
+      "defaults": "true,nil,White",
+      "get_players": "0,1",
+      "log": "ConfRed+p set_team ConfRed-p ConfBlue+p set_color ConfBlue-p ConfBlue+p ConfBlue-p neutral ConfRed+p ConfRed-p destroyed",
+      "no_team_color": "false,nil,Lime green",
+      "set_team_now": "false,ConfRed,Bright red",
+      "spawned_on_red": 0
+    },
+    {
+      "_spawned_on_blue": 1,
+      "after_color": "false,ConfBlue,Bright blue",
+      "after_destroy": "false,nil,Bright red",
+      "after_neutral": "true,nil,Bright blue",
+      "after_team": "false,ConfRed,Bright red",
+      "after_teams": "true,nil,White",
+      "defaults": "true,nil,White",
+      "get_players": "0,1",
+      "log": "ConfRed+p set_team ConfRed-p ConfBlue+p set_color ConfBlue-p ConfBlue+p ConfBlue-p neutral ConfRed+p ConfRed-p destroyed",
+      "no_team_color": "false,nil,Lime green",
+      "set_team_now": "false,ConfRed,Bright red",
+      "spawned_on_red": 0
+    },
+    {
+      "_spawned_on_blue": 1,
+      "after_color": "false,ConfBlue,Bright blue",
+      "after_destroy": "false,nil,Bright red",
+      "after_neutral": "true,nil,Bright blue",
+      "after_team": "false,ConfRed,Bright red",
+      "after_teams": "true,nil,White",
+      "defaults": "true,nil,White",
+      "get_players": "0,1",
+      "log": "ConfRed+p set_team ConfRed-p ConfBlue+p set_color ConfBlue-p ConfBlue+p ConfBlue-p neutral ConfRed+p ConfRed-p destroyed",
+      "no_team_color": "false,nil,Lime green",
+      "set_team_now": "false,ConfRed,Bright red",
+      "spawned_on_red": 0
+    }
+  ],
+  "result": {
+    "_spawned_on_blue": 1.0,
+    "after_color": "false,ConfBlue,Bright blue",
+    "after_destroy": "false,nil,Bright red",
+    "after_neutral": "true,nil,Bright blue",
+    "after_team": "false,ConfRed,Bright red",
+    "after_teams": "true,nil,White",
+    "defaults": "true,nil,White",
+    "get_players": "0,1",
+    "log": "ConfRed+p set_team ConfRed-p ConfBlue+p set_color ConfBlue-p ConfBlue+p ConfBlue-p neutral ConfRed+p ConfRed-p destroyed",
+    "no_team_color": "false,nil,Lime green",
+    "set_team_now": "false,ConfRed,Bright red",
+    "spawned_on_red": 0.0
+  },
+  "source": "real Roblox server, place 3086963177 version 554, joined with Sober",
+  "spread": {
+    "_spawned_on_blue": 1.0,
+    "spawned_on_red": 0.0
+  },
+  "status": "recorded"
+}

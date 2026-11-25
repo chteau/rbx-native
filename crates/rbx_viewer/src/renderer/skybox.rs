@@ -226,10 +226,8 @@ fn create(
             buffers: &buffers,
         },
         primitive: wgpu::PrimitiveState {
-            // No culling: the panels carry the exterior-facing cube map basis
-            // (see `textures::sky`), so their triangles wind away from the camera
-            // sitting at the centre. Culling would blank the sky, and either
-            // winding is fine for six flat quads that never overlap.
+            // No culling: either winding is fine for six flat quads that
+            // never overlap, and the sky must never blank on a winding slip.
             cull_mode: None,
             ..Default::default()
         },

@@ -24,6 +24,7 @@ fn plain(face: Face, size: f32) -> GuiText {
         max_graphemes: None,
         automatic: [false, false],
         size_bounds: None,
+        clipped: false,
     }
 }
 
@@ -53,6 +54,16 @@ fn believing(family: &AssetRef, faces: &[(u16, bool)]) -> Typesetter {
 fn attrs_of(fonts: &mut Typesetter, face: Face) -> cosmic_text::AttrsOwned {
     let buffer = fonts.shape(&plain(face, 24.0), 24.0, None, None);
     cosmic_text::AttrsOwned::new(&buffer.lines[0].attrs_list().get_span(0))
+}
+
+// Text at size 0 (a game's HUD had some) used to panic cosmic-text over a
+// line no pixels tall.
+#[test]
+fn text_at_size_zero_shapes_to_nothing() {
+    let face = Face::named("Believed", 400, false);
+    let mut fonts = believing(&face.family, &[(400, false)]);
+    let buffer = fonts.shape(&plain(face, 0.0), 0.0, None, None);
+    assert_eq!(fonts.bounds(&buffer), [0.0, 0.0]);
 }
 
 // Roblox's docs make `TextSize` the line height; the em is that plus one

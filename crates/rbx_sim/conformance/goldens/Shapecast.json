@@ -1,0 +1,80 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "block": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "block_respect": "Grouped d=5.75 n=0,0,-1 Plastic",
+      "block_start_inside": "Grouped d=0.75 n=0,0,-1 Plastic",
+      "block_turned": "Ball d=6.59 n=0,1,0 Plastic",
+      "block_wedge": "Slope d=8 n=0,0.71,-0.71 Plastic",
+      "miss": "nil",
+      "shape_ball": "Cyl d=7.5 n=0,1,0 Metal",
+      "sphere": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "sphere_ball": "Ball d=7.04 n=0,0.99,0.17 Plastic",
+      "sphere_cylinder": "Cyl d=8.27 n=0,0.87,0.5 Metal"
+    },
+    {
+      "block": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "block_respect": "Grouped d=5.75 n=0,0,-1 Plastic",
+      "block_start_inside": "Grouped d=0.75 n=0,0,-1 Plastic",
+      "block_turned": "Ball d=6.59 n=0,1,0 Plastic",
+      "block_wedge": "Slope d=8 n=0,0.71,-0.71 Plastic",
+      "miss": "nil",
+      "shape_ball": "Cyl d=7.5 n=0,1,0 Metal",
+      "sphere": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "sphere_ball": "Ball d=7.04 n=0,0.99,0.17 Plastic",
+      "sphere_cylinder": "Cyl d=8.27 n=0,0.87,0.5 Metal"
+    },
+    {
+      "block": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "block_respect": "Grouped d=5.75 n=0,0,-1 Plastic",
+      "block_start_inside": "Grouped d=0.75 n=0,0,-1 Plastic",
+      "block_turned": "Ball d=6.59 n=0,1,0 Plastic",
+      "block_wedge": "Slope d=8 n=0,0.71,-0.71 Plastic",
+      "miss": "nil",
+      "shape_ball": "Cyl d=7.5 n=0,1,0 Metal",
+      "sphere": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "sphere_ball": "Ball d=7.04 n=0,0.99,0.17 Plastic",
+      "sphere_cylinder": "Cyl d=8.27 n=0,0.87,0.5 Metal"
+    },
+    {
+      "block": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "block_respect": "Grouped d=5.75 n=0,0,-1 Plastic",
+      "block_start_inside": "Grouped d=0.75 n=0,0,-1 Plastic",
+      "block_turned": "Ball d=6.59 n=0,1,0 Plastic",
+      "block_wedge": "Slope d=8 n=0,0.71,-0.71 Plastic",
+      "miss": "nil",
+      "shape_ball": "Cyl d=7.5 n=0,1,0 Metal",
+      "sphere": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "sphere_ball": "Ball d=7.04 n=0,0.99,0.17 Plastic",
+      "sphere_cylinder": "Cyl d=8.27 n=0,0.87,0.5 Metal"
+    },
+    {
+      "block": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "block_respect": "Grouped d=5.75 n=0,0,-1 Plastic",
+      "block_start_inside": "Grouped d=0.75 n=0,0,-1 Plastic",
+      "block_turned": "Ball d=6.59 n=0,1,0 Plastic",
+      "block_wedge": "Slope d=8 n=0,0.71,-0.71 Plastic",
+      "miss": "nil",
+      "shape_ball": "Cyl d=7.5 n=0,1,0 Metal",
+      "sphere": "Ghost d=3.75 n=0,0,-1 Plastic",
+      "sphere_ball": "Ball d=7.04 n=0,0.99,0.17 Plastic",
+      "sphere_cylinder": "Cyl d=8.27 n=0,0.87,0.5 Metal"
+    }
+  ],
+  "result": {
+    "block": "Ghost d=3.75 n=0,0,-1 Plastic",
+    "block_respect": "Grouped d=5.75 n=0,0,-1 Plastic",
+    "block_start_inside": "Grouped d=0.75 n=0,0,-1 Plastic",
+    "block_turned": "Ball d=6.59 n=0,1,0 Plastic",
+    "block_wedge": "Slope d=8 n=0,0.71,-0.71 Plastic",
+    "miss": "nil",
+    "shape_ball": "Cyl d=7.5 n=0,1,0 Metal",
+    "sphere": "Ghost d=3.75 n=0,0,-1 Plastic",
+    "sphere_ball": "Ball d=7.04 n=0,0.99,0.17 Plastic",
+    "sphere_cylinder": "Cyl d=8.27 n=0,0.87,0.5 Metal"
+  },
+  "source": "real Roblox server, place 3086963177 version 537, joined with Sober",
+  "spread": {},
+  "status": "recorded"
+}

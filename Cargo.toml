@@ -49,6 +49,12 @@ font-types = { opt-level = 3 }
 fontdb = { opt-level = 3 }
 zeno = { opt-level = 3 }
 unicode-linebreak = { opt-level = 3 }
+# A playing video decodes every frame (a 720p VP9 frame takes ~3 ms
+# optimised, far longer without), and speech is synthesised on load.
+vp8-decoder = { opt-level = 3 }
+rusty_vp9 = { opt-level = 3 }
+opus-pure = { opt-level = 3 }
+flite-rs = { opt-level = 3 }
 
 # GPUI Kit's editor keeps its selection list private, and Ctrl+D (add the
 # next match of the selection as another selection) needs to add one from
@@ -66,3 +72,11 @@ gpui-pre = { path = "vendor/gpui-pre" }
 gpui-pre-apple = { path = "vendor/gpui-pre-apple" }
 # Same alpha blending fix for Windows (DirectX): `vendor/gpui-pre-windows`.
 gpui-pre-windows = { path = "vendor/gpui-pre-windows" }
+# Luau as live Roblox ships it (see `vendor/README.md` and
+# `rbx_lua::LUAU_VERSION`): mlua's unreleased master is the first with the
+# Luau 0.747 C API (the `integer` type is gone, so the type tags moved), and
+# `vendor/luau0-src` is luau0-src 0.24.0 with its Luau sources swapped for
+# upstream 0.748's. Back to crates.io once mlua releases a Luau >= 0.748.
+mlua = { git = "https://github.com/mlua-rs/mlua", rev = "3c0fd85882" }
+mlua-sys = { git = "https://github.com/mlua-rs/mlua", rev = "3c0fd85882" }
+luau0-src = { path = "vendor/luau0-src" }

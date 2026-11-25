@@ -192,6 +192,12 @@ pub(crate) struct Screen {
     /// Whether the device's safe-area insets (a phone's notch and home
     /// indicator) apply: every `ScreenInsets` mode but `None` adds them.
     pub(in crate::scene::gui) device_safe: bool,
+    /// A running game's screen kept clear of its top bar (see
+    /// [`super::constraints::under_topbar`]).
+    pub(in crate::scene::gui) under_topbar: bool,
+    /// A running game's screen inside its top bar's free strip (see
+    /// [`super::constraints::in_topbar`]).
+    pub(in crate::scene::gui) in_topbar: bool,
     /// `ZIndexBehavior.Global`, where `ZIndex` orders every descendant of the
     /// screen against every other rather than only its own siblings.
     pub(in crate::scene::gui) global_z_index: bool,
@@ -199,6 +205,9 @@ pub(crate) struct Screen {
     /// rather than only offsetting them.
     pub(in crate::scene::gui) clip_to_safe_area: bool,
     pub(in crate::scene::gui) list: Option<Layout>,
+    /// A `UIPadding` child of a `ScreenGui`: it pads the screen's canvas
+    /// as it would a frame's (live: a game's HUD with 2% bottom padding).
+    pub(in crate::scene::gui) padding: Option<super::constraints::Padding>,
     pub(in crate::scene::gui) roots: Vec<Node>,
     pub(in crate::scene::gui) groups: Vec<Group>,
 }

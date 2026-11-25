@@ -892,3 +892,60 @@ fn the_mannequin_carries_the_reference_skeleton() {
     assert_eq!(bones(BodyScale::RthroNormal), 37);
     assert_eq!(bones(BodyScale::Classic), 0);
 }
+
+/// The noob of Play (local) is what the Rig Builder makes with R15 and
+/// Block: the 2021 block meshes in grey 127, a dynamic head with its face
+/// in its texture (no face decal), standing 2 studs up on its hips, and
+/// Motor6Ds for the Animator.
+#[test]
+fn rig_builder_block_matches_studio() {
+    let (dom, rig) = build(&RigOptions::rig_builder_block());
+    let part = |name: &str| child(&dom, rig, name).unwrap_or_else(|| panic!("{name}"));
+    let mesh = |name: &str| match dom.get(part(name)).unwrap().properties().get("MeshId") {
+        Some(Variant::Content(rbx_dom::Content::Uri(uri))) => uri.clone(),
+        other => panic!("{name}: {other:?}"),
+    };
+    assert!(mesh("UpperTorso").ends_with("7430071038"));
+    assert!(mesh("LeftHand").ends_with("7430070991"));
+    assert!(mesh("Head").ends_with("123480233606534"));
+    let torso = size(&dom, part("UpperTorso"));
+    assert!(
+        torso
+            .iter()
+            .zip([2.0, 1.6, 1.0])
+            .all(|(a, b)| (a - b).abs() < 1e-4),
+        "{torso:?}"
+    );
+    for name in ["Head", "UpperTorso", "LeftFoot"] {
+        assert_eq!(
+            dom.get(part(name)).unwrap().properties().get("Color3uint8"),
+            Some(&Variant::Color3uint8 {
+                r: 127,
+                g: 127,
+                b: 127
+            })
+        );
+    }
+    assert!(children_of_class(&dom, part("Head"), "Decal").is_empty());
+    assert_eq!(
+        dom.get(part("Head"))
+            .unwrap()
+            .properties()
+            .get("CanCollide"),
+        Some(&Variant::Bool(true))
+    );
+    let motors: usize = dom
+        .get(rig)
+        .unwrap()
+        .children()
+        .iter()
+        .map(|&p| children_of_class(&dom, p, "Motor6D").len())
+        .sum();
+    assert_eq!(motors, 15);
+    let humanoid = child(&dom, rig, "Humanoid").unwrap();
+    let Some(Variant::Float32(hip)) = dom.get(humanoid).unwrap().properties().get("HipHeight")
+    else {
+        panic!("no HipHeight");
+    };
+    assert!((hip - 2.0).abs() < 0.01, "{hip}");
+}

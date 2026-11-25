@@ -223,13 +223,59 @@ pub fn leave_all(limit: Duration) -> bool {
 /// `relay_url` with `https` → `wss`, `http` → `ws`, plus
 /// `/v1/rooms/<room>/ws`. `None` for any other scheme.
 pub fn ws_url(relay_url: &str, room: &str) -> Option<String> {
+    route_url(relay_url, room, "ws")
+}
+
+/// [`ws_url`] for any of the room's WebSocket routes (`route` may carry a
+/// query).
+fn route_url(relay_url: &str, room: &str, route: &str) -> Option<String> {
     let base = relay_url.trim_end_matches('/');
     let scheme = match base.split_once("://")? {
         ("https", rest) => format!("wss://{rest}"),
         ("http", rest) => format!("ws://{rest}"),
         _ => return None,
     };
-    Some(format!("{scheme}/v1/rooms/{room}/ws"))
+    Some(format!("{scheme}/v1/rooms/{room}/{route}"))
+}
+
+/// Opens the room's WebSocket `route` (`ws`, `play?pid=…`) on `relay_url`
+/// as `user_id`, with the signed headers (the key included); reads time
+/// out after `read_timeout`.
+pub(crate) fn connect_route(
+    relay_url: &str,
+    room: &str,
+    key: &str,
+    user_id: u64,
+    route: &str,
+    read_timeout: Duration,
+) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, WsError> {
+    let url = route_url(relay_url, room, route)
+        .ok_or_else(|| WsError::Url(tungstenite::error::UrlError::UnsupportedUrlScheme))?;
+    let mut request = url.into_client_request()?;
+    if request.uri().host().is_some_and(rbx_net::blocks) {
+        return Err(WsError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotConnected,
+            format!("{}: {}", rbx_net::OFFLINE, rbx_net::status().reason()),
+        )));
+    }
+    let path = format!("/v1/rooms/{room}/{route}");
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis() as u64);
+    for (name, value) in auth::headers(key, "GET", &path, user_id, ts, b"", true) {
+        if let Ok(value) = HeaderValue::from_str(&value) {
+            request
+                .headers_mut()
+                .insert(HeaderName::from_static_lower(name), value);
+        }
+    }
+    let (socket, _) = tungstenite::connect(request)?;
+    match socket.get_ref() {
+        MaybeTlsStream::Plain(stream) => stream.set_read_timeout(Some(read_timeout))?,
+        MaybeTlsStream::Rustls(stream) => stream.get_ref().set_read_timeout(Some(read_timeout))?,
+        _ => {}
+    }
+    Ok(socket)
 }
 
 impl Client {
@@ -754,7 +800,7 @@ impl Worker {
             return Outcome::Failed("ntfy relay url must be http(s)".into());
         }
         let topic = relay::ntfy_topic(&self.config.room);
-        let agent: ureq::Agent = ureq::Agent::config_builder()
+        let agent: ureq::Agent = rbx_net::config()
             .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(20)))
@@ -905,37 +951,15 @@ impl Worker {
     }
 
     fn connect(&self, relay_url: &str) -> Result<WebSocket<MaybeTlsStream<TcpStream>>, WsError> {
-        let url = ws_url(relay_url, &self.config.room)
-            .ok_or_else(|| WsError::Url(tungstenite::error::UrlError::UnsupportedUrlScheme))?;
-        let mut request = url.into_client_request()?;
-        let path = format!("/v1/rooms/{}/ws", self.config.room);
-        let ts = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis() as u64);
-        for (name, value) in auth::headers(
-            &self.config.key,
-            "GET",
-            &path,
-            self.config.user_id,
-            ts,
-            b"",
-            true,
-        ) {
-            if let Ok(value) = HeaderValue::from_str(&value) {
-                request
-                    .headers_mut()
-                    .insert(HeaderName::from_static_lower(name), value);
-            }
-        }
-        let (socket, _) = tungstenite::connect(request)?;
-        match socket.get_ref() {
-            MaybeTlsStream::Plain(stream) => stream.set_read_timeout(Some(READ_TIMEOUT))?,
-            MaybeTlsStream::Rustls(stream) => {
-                stream.get_ref().set_read_timeout(Some(READ_TIMEOUT))?
-            }
-            _ => {}
-        }
-        Ok(socket)
+        let config = &self.config;
+        connect_route(
+            relay_url,
+            &config.room,
+            &config.key,
+            config.user_id,
+            "ws",
+            READ_TIMEOUT,
+        )
     }
 }
 
@@ -976,7 +1000,7 @@ const LOOPBACK_TRIES: u32 = 6;
 /// Whether a relay answers its health check (a host that crashed leaves its
 /// last announcement behind).
 fn reachable(url: &str) -> bool {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = rbx_net::config()
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(8)))
         .build()

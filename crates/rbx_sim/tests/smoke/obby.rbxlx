@@ -1,0 +1,188 @@
+<roblox version="4">
+  <Item class="Workspace" referent="RBX14">
+    <Properties>
+      <string name="Name">Workspace</string>
+    </Properties>
+    <Item class="Part" referent="RBX1">
+      <Properties>
+        <string name="Name">Baseplate</string>
+        <CoordinateFrame name="CFrame"><X>0</X><Y>-10</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+        <Vector3 name="size"><X>512</X><Y>20</Y><Z>512</Z></Vector3>
+        <bool name="Anchored">true</bool>
+      </Properties>
+    </Item>
+    <Item class="SpawnLocation" referent="RBX2">
+      <Properties>
+        <string name="Name">SpawnLocation</string>
+        <CoordinateFrame name="CFrame"><X>0</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+        <Vector3 name="size"><X>6</X><Y>1</Y><Z>6</Z></Vector3>
+        <bool name="Anchored">true</bool>
+      </Properties>
+    </Item>
+    <Item class="Folder" referent="RBX13">
+      <Properties>
+        <string name="Name">Checkpoints</string>
+      </Properties>
+      <Item class="Model" referent="RBX7">
+        <Properties>
+          <string name="Name">1</string>
+        </Properties>
+        <Item class="Part" referent="RBX3">
+          <Properties>
+            <string name="Name">Pad0</string>
+            <CoordinateFrame name="CFrame"><X>0</X><Y>0.5</Y><Z>8.0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+            <Vector3 name="size"><X>20</X><Y>1</Y><Z>4</Z></Vector3>
+            <bool name="Anchored">true</bool>
+            <bool name="CanCollide">false</bool>
+            <float name="Transparency">0.5</float>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="RBX4">
+          <Properties>
+            <string name="Name">Pad1</string>
+            <CoordinateFrame name="CFrame"><X>0</X><Y>0.5</Y><Z>-8.0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+            <Vector3 name="size"><X>20</X><Y>1</Y><Z>4</Z></Vector3>
+            <bool name="Anchored">true</bool>
+            <bool name="CanCollide">false</bool>
+            <float name="Transparency">0.5</float>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="RBX5">
+          <Properties>
+            <string name="Name">Pad2</string>
+            <CoordinateFrame name="CFrame"><X>8.0</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+            <Vector3 name="size"><X>4</X><Y>1</Y><Z>20</Z></Vector3>
+            <bool name="Anchored">true</bool>
+            <bool name="CanCollide">false</bool>
+            <float name="Transparency">0.5</float>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="RBX6">
+          <Properties>
+            <string name="Name">Pad3</string>
+            <CoordinateFrame name="CFrame"><X>-8.0</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+            <Vector3 name="size"><X>4</X><Y>1</Y><Z>20</Z></Vector3>
+            <bool name="Anchored">true</bool>
+            <bool name="CanCollide">false</bool>
+            <float name="Transparency">0.5</float>
+          </Properties>
+        </Item>
+      </Item>
+      <Item class="Model" referent="RBX12">
+        <Properties>
+          <string name="Name">2</string>
+        </Properties>
+        <Item class="Part" referent="RBX8">
+          <Properties>
+            <string name="Name">Pad0</string>
+            <CoordinateFrame name="CFrame"><X>0</X><Y>0.5</Y><Z>16.0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+            <Vector3 name="size"><X>36</X><Y>1</Y><Z>4</Z></Vector3>
+            <bool name="Anchored">true</bool>
+            <bool name="CanCollide">false</bool>
+            <float name="Transparency">0.5</float>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="RBX9">
+          <Properties>
+            <string name="Name">Pad1</string>
+            <CoordinateFrame name="CFrame"><X>0</X><Y>0.5</Y><Z>-16.0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+            <Vector3 name="size"><X>36</X><Y>1</Y><Z>4</Z></Vector3>
+            <bool name="Anchored">true</bool>
+            <bool name="CanCollide">false</bool>
+            <float name="Transparency">0.5</float>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="RBX10">
+          <Properties>
+            <string name="Name">Pad2</string>
+            <CoordinateFrame name="CFrame"><X>16.0</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+            <Vector3 name="size"><X>4</X><Y>1</Y><Z>36</Z></Vector3>
+            <bool name="Anchored">true</bool>
+            <bool name="CanCollide">false</bool>
+            <float name="Transparency">0.5</float>
+          </Properties>
+        </Item>
+        <Item class="Part" referent="RBX11">
+          <Properties>
+            <string name="Name">Pad3</string>
+            <CoordinateFrame name="CFrame"><X>-16.0</X><Y>0.5</Y><Z>0</Z><R00>1</R00><R01>0</R01><R02>0</R02><R10>0</R10><R11>1</R11><R12>0</R12><R20>0</R20><R21>0</R21><R22>1</R22></CoordinateFrame>
+            <Vector3 name="size"><X>4</X><Y>1</Y><Z>36</Z></Vector3>
+            <bool name="Anchored">true</bool>
+            <bool name="CanCollide">false</bool>
+            <float name="Transparency">0.5</float>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="RBX16">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Script" referent="RBX15">
+      <Properties>
+        <string name="Name">Obby</string>
+        <ProtectedString name="Source"><![CDATA[local function leaderstats(player, values)
+	local folder = Instance.new("Folder")
+	folder.Name = "leaderstats"
+	for _, entry in values do
+		local value = Instance.new("IntValue")
+		value.Name = entry[1]
+		value.Value = entry[2]
+		value.Parent = folder
+	end
+	folder.Parent = player
+	return folder
+end
+
+local Players = game:GetService("Players")
+local store = game:GetService("DataStoreService"):GetDataStore("ObbyProgress")
+
+Players.PlayerAdded:Connect(function(player)
+	local ok, saved = pcall(store.GetAsync, store, "stage_" .. player.UserId)
+	print("loaded stage", ok, saved or 0)
+	leaderstats(player, { { "Stage", saved or 0 } })
+end)
+
+for _, pad in workspace.Checkpoints:GetDescendants() do
+	if pad:IsA("BasePart") then
+		local n = tonumber(pad.Parent.Name)
+		pad.Touched:Connect(function(hit)
+			local player = Players:GetPlayerFromCharacter(hit.Parent)
+			local stats = player and player:FindFirstChild("leaderstats")
+			if stats and stats.Stage.Value == n - 1 then
+				stats.Stage.Value = n
+				store:SetAsync("stage_" .. player.UserId, n)
+				print("checkpoint", n, "saved", store:GetAsync("stage_" .. player.UserId))
+			end
+		end)
+	end
+end
+]]></ProtectedString>
+      </Properties>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="RBX19">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="RBX18">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="LocalScript" referent="RBX17">
+        <Properties>
+          <string name="Name">Jumps</string>
+          <ProtectedString name="Source"><![CDATA[local player = game:GetService("Players").LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+character:WaitForChild("Humanoid").StateChanged:Connect(function(_, new)
+	if new == Enum.HumanoidStateType.Jumping then
+		print("jumped")
+	end
+end)
+]]></ProtectedString>
+        </Properties>
+      </Item>
+    </Item>
+  </Item>
+</roblox>

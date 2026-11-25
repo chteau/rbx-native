@@ -14,7 +14,7 @@
 //! 5. `UISizeConstraint`, a hard pixel clamp, last so nothing can push the
 //!    element back outside `MinSize`/`MaxSize`.
 
-use super::super::plan::{Aspect, Flex, Layout, Node};
+use super::super::plan::{Align, Aspect, Flex, Layout, Node};
 use super::{Rect, TextMeasure};
 
 /// The element's final pixel size inside a parent box of `parent` pixels.
@@ -27,14 +27,21 @@ pub(super) fn extent(node: &Node, parent: [f32; 2], measure: &mut dyn TextMeasur
 
     if node.automatic_size != [false, false] {
         // Along an automatic axis the element's own size is what is being
-        // worked out, so the box the children are measured in is zero wide
-        // there and a child sized or positioned by scale contributes only its
-        // offsets, and then, separately, whatever its own content needs
-        // (see `scaled_need`).
-        let probe = [0, 1].map(|axis| match node.automatic_size[axis] {
-            true => 0.0,
-            false => size[axis],
-        });
+        // worked out. Children placed by their own `Position`/`Size` are
+        // measured in a box zero wide there, so one sized or positioned by
+        // scale contributes only its offsets, and then, separately, whatever
+        // its own content needs (see `scaled_need`). A layout's items are
+        // measured against the parent's box instead: a list's 0.25-tall item
+        // under a 276 px parent counts 69 px, and a grid's 0.3-tall cells
+        // three rows deep make 248.4 (GuiLayout golden, `auto_list_*` and
+        // `auto_bare_*`); they are laid out again in the size that comes to.
+        let probe = [0, 1].map(
+            |axis| match (node.automatic_size[axis], node.list.is_some()) {
+                (false, _) => size[axis],
+                (true, true) => parent[axis],
+                (true, false) => 0.0,
+            },
+        );
         let content = content_extent(node, probe, node.automatic_size, measure);
         let scaled = scaled_need(node, node.automatic_size, measure);
         for axis in 0..2 {
@@ -44,6 +51,13 @@ pub(super) fn extent(node: &Node, parent: [f32; 2], measure: &mut dyn TextMeasur
         }
     }
 
+    constrained(node, size, parent)
+}
+
+/// `size` through the element's `UIAspectRatioConstraint` and then its
+/// `UISizeConstraint`: the last two steps of [`extent`], and all a
+/// `UIGridLayout` cell's item goes through after taking the cell's size.
+pub(super) fn constrained(node: &Node, mut size: [f32; 2], parent: [f32; 2]) -> [f32; 2] {
     if let Some(aspect) = &node.constraints.aspect {
         size = with_aspect(size, parent, aspect);
     }
@@ -143,7 +157,15 @@ pub(super) fn content_extent(
         measure.measure(text, size, super::text::wrap_width(text, &inner))
     });
     let layout = node.list.map(|layout| relaxed(layout, automatic));
-    for rect in super::arrange(&node.children, layout.as_ref(), &inner, measure).rects {
+    if let Some(Layout::Grid(grid)) = &layout {
+        let cells = super::grid::cells(node.children.len(), grid, inner.size()).content;
+        high = [high[0].max(cells[0]), high[1].max(cells[1])];
+    }
+    let rects = match &layout {
+        Some(Layout::Grid(_)) => Vec::new(),
+        _ => super::arrange(&node.children, layout.as_ref(), &inner, measure).rects,
+    };
+    for rect in rects {
         low[0] = low[0].min(rect.x);
         low[1] = low[1].min(rect.y);
         high[0] = high[0].max(rect.x + rect.width);
@@ -160,18 +182,30 @@ pub(super) fn content_extent(
 /// a flex layout "fills the space available", and along an axis the container
 /// takes from its content there is no such space yet, a zero-wide probe box
 /// would have `Fill` shrink every child into it.
+///
+/// Its alignment along an automatic axis is moved to the start too: the
+/// items are measured in the parent's box there (see [`extent`]), where a
+/// centred list would otherwise count the space before it as content.
 fn relaxed(layout: Layout, automatic: [bool; 2]) -> Layout {
-    let Layout::List(mut list) = layout else {
-        return layout;
-    };
-    let along = usize::from(list.vertical);
-    if automatic[along] {
-        list.flex = Flex::None;
+    match layout {
+        Layout::List(mut list) => {
+            let along = usize::from(list.vertical);
+            if automatic[along] {
+                list.flex = Flex::None;
+            }
+            if automatic[1 - along] {
+                list.cross_flex = Flex::None;
+            }
+            if automatic[0] {
+                list.horizontal = Align::Start;
+            }
+            if automatic[1] {
+                list.vertical_align = Align::Start;
+            }
+            Layout::List(list)
+        }
+        other => other,
     }
-    if automatic[1 - along] {
-        list.cross_flex = Flex::None;
-    }
-    Layout::List(list)
 }
 
 /// `UIAspectRatioConstraint`: the dominant axis keeps the size it already had

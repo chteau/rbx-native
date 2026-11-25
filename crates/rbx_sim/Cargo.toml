@@ -1,0 +1,62 @@
+[package]
+name = "rbx_sim"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Headless local Run of a place: server scripts and physics, no Roblox servers"
+
+[dependencies]
+rbx_dom = { path = "../rbx_dom" }
+rbx_binary = { path = "../rbx_binary" }
+# replay.rs: recordings are compressed as rbx_binary compresses its chunks.
+lz4_flex = { version = "0.14", default-features = false, features = ["std", "safe-decode"] }
+rbx_xml = { path = "../rbx_xml" }
+rbx_reflection = { path = "../rbx_reflection", features = ["embedded-dump"] }
+rbx_lua = { path = "../rbx_lua" }
+# integration.rs: the integration specs' `LocalRun` on the server's VM; the
+# version rbx_lua builds.
+mlua = { version = "0.12", features = ["luau"] }
+# live.rs: a published place's real DataStores through Open Cloud.
+rbx_cloud = { path = "../rbx_cloud" }
+rbx_net = { path = "../rbx_net" }
+rbx_animation = { path = "../rbx_animation" }
+rbx_assets = { path = "../rbx_assets" }
+rbx_mesh = { path = "../rbx_mesh" }
+rbx_terrain = { path = "../rbx_terrain" }
+# Rigid-body physics (Apache-2.0), the stand-in for Roblox's own solver,
+# in f64: places sit thousands of studs out and f32 loses whole substeps.
+rapier3d = { package = "rapier3d-f64", version = "0.36", features = ["parallel"] }
+rbx_materials = { path = "../rbx_materials" }
+serde_json = "1"
+# Sounds at run time (`audio`): decoding what Roblox accepts, pure Rust
+# (MPL-2.0, used unmodified as a crate). Already in the tree for Studio's
+# sound preview.
+symphonia = { version = "0.5", default-features = false, features = ["ogg", "vorbis", "mp3", "wav", "pcm", "flac", "mkv"] }
+# Video at run time (`video`): WebM demuxing (MIT/Apache-2.0/Zlib), VP8
+# (MIT/Apache-2.0, tables BSD-3-Clause from RFC 6386) and VP9 (Apache-2.0)
+# decoding and Opus audio (BSD-3-Clause), all pure Rust.
+matroska-demuxer = "0.8"
+vp8-decoder = "0.1"
+rusty_vp9 = "0.3"
+opus-pure = "0.2"
+# AudioTextToSpeech: Flite's diphone and Clustergen voices in pure Rust
+# (Apache-2.0; CMU's voice data under its permissive licence).
+flite-rs = { version = "0.3", default-features = false, features = ["clustergen"] }
+
+# session.rs: the session thread's CPU time, for a load test's server step
+# time (already in Cargo.lock through rbx_play).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+# examples/record_goldens.rs: publish the suite over the sandbox place,
+# join it with the real client and read results back through the Play probe.
+rbx_play = { path = "../rbx_play" }
+ureq = "3"
+# examples/record_goldens.rs: finds the client window for its gestures.
+x11rb = "0.13"
+# examples/record_render_goldens.rs: the render fidelity scenes it captures.
+rbx_viewer = { path = "../rbx_viewer" }
+# tests/remote_play.rs: a remote player through the co-edit room's relay.
+rbx_presence = { path = "../rbx_presence" }

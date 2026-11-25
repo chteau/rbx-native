@@ -2,7 +2,7 @@
 
 use gpui_kit::*;
 use rbx_dom::Ref;
-use rbx_lua::plugin::{Outcome, OutputKind, Request, Ui, Widget};
+use rbx_lua::plugin::{Outcome, OutputKind, Request, StudioAction, Ui, Widget};
 
 use crate::command_bar::Feedback;
 use crate::shell::Shell;
@@ -79,6 +79,52 @@ impl Shell {
                 self.output.push_plugin(&name, Feedback::Info(text));
             }
             Request::SetClipboard(text) => cx.write_to_clipboard(ClipboardItem::new_string(text)),
+            Request::Studio(action) => self.plugin_studio_action(action, cx),
+            Request::CloseScript(script) => self.close_script(script, cx),
+        }
+    }
+
+    fn plugin_studio_action(&mut self, action: StudioAction, cx: &mut Context<Self>) {
+        match action {
+            StudioAction::ZoomToExtents => self.zoom_to_extents(cx),
+            StudioAction::Export { selection, path } => {
+                use crate::shell::export::Export;
+                match (selection, path) {
+                    (true, Some(path)) => {
+                        let roots = self.selected_all().to_vec();
+                        self.export_to(Export::Model, &roots, &path, cx);
+                    }
+                    (false, Some(path)) => {
+                        let roots = self.dom.root_refs().to_vec();
+                        self.export_to(Export::Place, &roots, &path, cx);
+                    }
+                    (true, None) => self.export_selected(Export::Model, cx),
+                    (false, None) => self.export_place(Export::Place, cx),
+                }
+            }
+            StudioAction::Run => self.run_local(cx),
+            StudioAction::Pause => {
+                if self.local_run_running() && !self.local_run_paused() {
+                    self.local_run_pause(cx);
+                }
+            }
+            StudioAction::Stop => {
+                if self.local_run_running() {
+                    self.local_run_stop(cx);
+                }
+            }
+            // Studio's upload and curve editor windows: rbx-native has
+            // neither, so the request is said rather than dropped.
+            StudioAction::SaveSelectedToRoblox | StudioAction::CurveEditor { .. } => {
+                let what = match action {
+                    StudioAction::SaveSelectedToRoblox => "Save to Roblox",
+                    _ => "the sound curve editor",
+                };
+                self.output.push_plugin(
+                    "Plugin",
+                    Feedback::Info(format!("{what} is not available in rbx-native yet")),
+                );
+            }
         }
     }
 

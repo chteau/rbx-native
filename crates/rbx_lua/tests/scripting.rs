@@ -176,6 +176,29 @@ fn destroy_removes_the_whole_subtree() {
 }
 
 #[test]
+fn clone_points_inner_references_at_the_copies() {
+    let mut runtime = runtime();
+    runtime
+        .run(
+            r#"
+            local model = Instance.new("Model")
+            local a = Instance.new("Part", model)
+            local b = Instance.new("Part", model)
+            local weld = Instance.new("Weld", a)
+            weld.Part0 = a
+            weld.Part1 = workspace.Baseplate
+            model.PrimaryPart = b
+            local copy = model:Clone()
+            assert(copy.PrimaryPart ~= b and copy.PrimaryPart.Parent == copy)
+            local w = copy:FindFirstChildOfClass("Part"):FindFirstChildOfClass("Weld")
+            assert(w.Part0 == w.Parent, "inner reference moves to the copy")
+            assert(w.Part1 == workspace.Baseplate, "outer reference stays")
+        "#,
+        )
+        .expect("script must run");
+}
+
+#[test]
 fn clone_copies_properties_under_a_fresh_ref() {
     let mut runtime = runtime();
 
@@ -296,7 +319,9 @@ fn services_are_not_creatable() {
         .run(r#"Instance.new("Workspace")"#)
         .expect_err("services cannot be created");
     assert!(
-        error.to_string().contains("not creatable"),
+        error
+            .to_string()
+            .contains("Unable to create an Instance of type \"Workspace\""),
         "unexpected message: {error}"
     );
 }

@@ -4,6 +4,14 @@
 //! Bind group 1 of every surface pipeline (see `renderer::pipeline`), so a part
 //! and a file mesh sample their material exactly the same way.
 
+use std::sync::Arc;
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::{Mutex, Weak};
+
+#[cfg(not(target_arch = "wasm32"))]
+use crate::gpu::DeviceKey;
+
+use rbx_assets::AssetRef;
 use rbx_materials::MapKind;
 
 use super::texture;
@@ -45,8 +53,10 @@ fn format(kind: MapKind) -> wgpu::TextureFormat {
 pub(super) struct Materials {
     pub(super) bind_group: wgpu::BindGroup,
     /// One array per map kind, in [`MapKind::ALL`] order, kept alive so a change
-    /// of quality level only has to re-view and re-bind them.
-    arrays: Vec<wgpu::Texture>,
+    /// of quality level only has to re-view and re-bind them. Shared with
+    /// every renderer on the same device built from the same maps, see
+    /// [`SHARED`].
+    arrays: Arc<[wgpu::Texture]>,
     /// What the arrays were uploaded from (see [`Catalog::resolved_maps`]), so
     /// a scene rebuild can tell whether the new scene's catalog would upload
     /// the very same texels, the common case for any edit that is not a new
@@ -120,10 +130,20 @@ impl Materials {
         old: Option<&Materials>,
     ) -> Self {
         let maps = catalog.resolved_maps();
+        let side = crate::gpu::material_resolution();
+        if old.is_none() {
+            if let Some(arrays) = shared(device, &maps, side) {
+                return Materials {
+                    bind_group: bind(device, layout, &arrays, quality),
+                    arrays,
+                    maps,
+                };
+            }
+        }
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("rbxview material array reuse"),
         });
-        let arrays: Vec<wgpu::Texture> = MapKind::ALL
+        let arrays: Arc<[wgpu::Texture]> = MapKind::ALL
             .iter()
             .enumerate()
             .map(|(index, &kind)| {
@@ -132,6 +152,7 @@ impl Materials {
             })
             .collect();
         queue.submit([encoder.finish()]);
+        share(device, &maps, side, &arrays);
 
         Materials {
             bind_group: bind(device, layout, &arrays, quality),
@@ -164,6 +185,57 @@ impl Materials {
         self.bind_group = bind(device, layout, &self.arrays, quality);
     }
 }
+
+/// The material arrays each device holds, by what they were built from: a
+/// second renderer on the same device (Server & Clients' tabs share one,
+/// `Headless::from_dom_shared`) binds the first one's textures instead of
+/// uploading every pack again. Weak, so the arrays go with the last
+/// renderer using them. Not in the browser, which has one renderer.
+#[cfg(not(target_arch = "wasm32"))]
+static SHARED: Mutex<Vec<Shared>> = Mutex::new(Vec::new());
+
+#[cfg(not(target_arch = "wasm32"))]
+struct Shared {
+    device: DeviceKey,
+    maps: Vec<Maps>,
+    side: u32,
+    arrays: Weak<[wgpu::Texture]>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn shared(device: &wgpu::Device, maps: &[Maps], side: u32) -> Option<Arc<[wgpu::Texture]>> {
+    let device = DeviceKey::of(device)?;
+    let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    shared.retain(|s| s.arrays.strong_count() > 0);
+    shared
+        .iter()
+        .find(|s| s.device == device && s.side == side && s.maps == maps)?
+        .arrays
+        .upgrade()
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn share(device: &wgpu::Device, maps: &[Maps], side: u32, arrays: &Arc<[wgpu::Texture]>) {
+    let Some(device) = DeviceKey::of(device) else {
+        return;
+    };
+    let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+    shared.retain(|s| s.arrays.strong_count() > 0);
+    shared.push(Shared {
+        device,
+        maps: maps.to_vec(),
+        side,
+        arrays: Arc::downgrade(arrays),
+    });
+}
+
+#[cfg(target_arch = "wasm32")]
+fn shared(_: &wgpu::Device, _: &[Maps], _: u32) -> Option<Arc<[wgpu::Texture]>> {
+    None
+}
+
+#[cfg(target_arch = "wasm32")]
+fn share(_: &wgpu::Device, _: &[Maps], _: u32, _: &Arc<[wgpu::Texture]>) {}
 
 /// Views every array from the level the cap allows and binds the lot behind one
 /// sampler.
@@ -266,7 +338,18 @@ fn array(
             continue;
         }
         let chain = match catalog.image(layer as usize, kind) {
-            Some(image) => texture::mip_chain(&fit(image, resolution)),
+            Some(image) => {
+                let mut fitted = fit(image, resolution);
+                let map = maps
+                    .get(layer as usize)
+                    .and_then(|maps| maps[kind.index()].as_ref());
+                if let (MapKind::Color, Some(AssetRef::Id(id))) = (kind, map) {
+                    if let Some(grade) = rbx_materials::grade_for(*id) {
+                        regrade(&mut fitted, grade);
+                    }
+                }
+                texture::mip_chain(&fitted)
+            }
             None => blank
                 .get_or_insert_with(|| texture::mip_chain(&solid(neutral(kind), resolution)))
                 .clone(),
@@ -331,6 +414,36 @@ fn solid(color: [u8; CHANNELS], resolution: u32) -> Image {
             .cycle()
             .take((resolution * resolution) as usize * CHANNELS)
             .collect(),
+    }
+}
+
+/// Applies a pack's [`rbx_materials::Grade`] to its colour map, in linear
+/// light, against the map's own mean colour.
+fn regrade(image: &mut Image, grade: rbx_materials::Grade) {
+    let decode: Vec<f32> = (0..=255u8)
+        .map(|v| crate::scene::srgb_to_linear(f32::from(v) / 255.0))
+        .collect();
+    let texels = (image.pixels.len() / CHANNELS).max(1) as f32;
+    let mut mean = [0.0f32; 3];
+    for texel in image.pixels.as_chunks::<CHANNELS>().0 {
+        for (channel, sum) in mean.iter_mut().enumerate() {
+            *sum += decode[usize::from(texel[channel])];
+        }
+    }
+    let mean = mean.map(|sum| sum / texels);
+    for texel in image.pixels.as_chunks_mut::<CHANNELS>().0 {
+        for (channel, &mean) in mean.iter().enumerate() {
+            let linear = grade.apply(channel, decode[usize::from(texel[channel])], mean);
+            texel[channel] = (linear_to_srgb(linear) * 255.0).round() as u8;
+        }
+    }
+}
+
+fn linear_to_srgb(linear: f32) -> f32 {
+    if linear <= 0.003_130_8 {
+        linear * 12.92
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
     }
 }
 
@@ -475,13 +588,54 @@ mod tests {
         let rebuilt = old.rebuilt(&device, &queue, &layout, &after, &quality);
         let fresh = Materials::new(&device, &queue, &layout, &after, &quality);
 
-        for (kind, (rebuilt, fresh)) in rebuilt.arrays.iter().zip(&fresh.arrays).enumerate() {
+        for (kind, (rebuilt, fresh)) in rebuilt.arrays.iter().zip(fresh.arrays.iter()).enumerate() {
             for level in [0, 2] {
                 assert!(
                     read(&device, &queue, rebuilt, level) == read(&device, &queue, fresh, level),
                     "map kind {kind}, mip {level}"
                 );
             }
+        }
+    }
+
+    // Server & Clients' tabs share a device: a second renderer built from
+    // the same maps binds the first one's arrays instead of its own copy.
+    #[test]
+    fn a_second_build_on_the_device_shares_the_arrays() {
+        let Some((device, queue)) = crate::gpu::for_tests() else {
+            return;
+        };
+        let layout = layout(&device);
+        let quality = QualityLevel::default().profile();
+        let maps = catalog(&["Slate", "Marble"]);
+        let first = Materials::new(&device, &queue, &layout, &maps, &quality);
+        let second = Materials::new(&device, &queue, &layout, &maps, &quality);
+        assert!(Arc::ptr_eq(&first.arrays, &second.arrays));
+        let other = Materials::new(&device, &queue, &layout, &catalog(&["Slate"]), &quality);
+        assert!(!Arc::ptr_eq(&first.arrays, &other.arrays));
+        let weak = Arc::downgrade(&first.arrays);
+        drop((first, second));
+        assert!(
+            weak.upgrade().is_none(),
+            "the last renderer takes them along"
+        );
+    }
+
+    // Every noop device has its own instance and the first real device's id:
+    // binding its arrays on another device failed ("non-existent
+    // TextureViewId") whenever an undrawn test ran alongside.
+    #[test]
+    fn a_noop_device_shares_no_arrays() {
+        let quality = QualityLevel::default().profile();
+        let maps = catalog(&["Slate", "Marble"]);
+        let build = |(device, queue): (wgpu::Device, wgpu::Queue)| {
+            Materials::new(&device, &queue, &layout(&device), &maps, &quality)
+        };
+        let noop = || wgpu::Device::noop(&wgpu::DeviceDescriptor::default());
+        let undrawn = build(noop());
+        assert!(!Arc::ptr_eq(&undrawn.arrays, &build(noop()).arrays));
+        if let Some(device) = crate::gpu::for_tests() {
+            assert!(!Arc::ptr_eq(&undrawn.arrays, &build(device).arrays));
         }
     }
 

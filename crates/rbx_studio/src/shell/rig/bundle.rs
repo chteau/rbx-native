@@ -21,6 +21,8 @@ mod tables;
 pub(super) enum Family {
     Classic,
     Mannequin,
+    /// The Rig Builder's block body: never a scale's pick, only asked for.
+    Block,
 }
 
 impl Family {
@@ -86,6 +88,7 @@ pub(super) type Pieces = BTreeMap<String, Piece>;
 fn table(family: Family, shape: BodyShape) -> &'static [Raw; 16] {
     match (family, shape) {
         (Family::Mannequin, _) => &tables::MANNEQUIN,
+        (Family::Block, _) => &tables::BLOCK,
         (Family::Classic, BodyShape::Masculine) => &tables::CLASSIC_MALE,
         (Family::Classic, BodyShape::Feminine) => &tables::CLASSIC_FEMALE,
     }

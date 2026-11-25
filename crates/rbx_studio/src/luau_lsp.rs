@@ -35,6 +35,15 @@ pub(crate) use mirror::Mirror;
 /// release to bundle looks for `luau-lsp` on `PATH`.
 pub(crate) const BINARY_VARIABLE: &str = "RBX_STUDIO_LUAU_LSP";
 
+/// What the "If Local/Const Bindings" beta turns on in the bundled server.
+/// Its Luau (0.739) still names them `Debug…` and has no `while local`;
+/// a luau-lsp release on Luau 0.745 or later takes
+/// `rbx_lua::IF_LOCAL_FFLAGS` and their `…Analysis` partners instead.
+const IF_LOCAL_FLAGS: &[&str] = &[
+    "--flag:DebugLuauIfLocalSyntax=true",
+    "--flag:DebugLuauIfLocalAnalysis=true",
+];
+
 /// `describe`, `it`, `expect` and the rest of what a spec sees, so Script
 /// Analysis doesn't call them unknown globals.
 const TESTEZ_DEFINITIONS: &str = include_str!("luau_lsp/testez.d.luau");
@@ -83,6 +92,9 @@ pub(crate) fn start(root: &Path) -> Result<Client, String> {
         ))
         .arg(format!("--definitions=@testez={}", testez.display()))
         .current_dir(root);
+    if crate::beta::enabled(crate::beta::IF_LOCAL_BETA_ID) {
+        command.args(IF_LOCAL_FLAGS);
+    }
     if let Some(documentation) = api.documentation {
         command.arg(format!("--docs={}", documentation.display()));
     }

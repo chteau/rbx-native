@@ -137,7 +137,7 @@ fn install_into(
 }
 
 fn download(url: &str, progress: &Progress) -> Result<Vec<u8>, String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = rbx_net::config()
         .timeout_global(Some(Duration::from_secs(60)))
         .build()
         .into();

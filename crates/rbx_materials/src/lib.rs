@@ -8,7 +8,11 @@
 //! Terrain has its own per-face packs which are deliberately left out: the
 //! viewer draws no terrain.
 
+mod grade;
+pub mod physics;
 mod table;
+
+pub use grade::{grade_for, Grade};
 
 /// Which generation of texture packs a place asks for, through
 /// `MaterialService.Use2022MaterialsXml`.

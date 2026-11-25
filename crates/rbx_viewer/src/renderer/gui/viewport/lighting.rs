@@ -108,6 +108,7 @@ pub(super) fn lighting_of(viewport: &GuiViewport) -> Lighting {
         environment_diffuse: 0.0,
         environment_specular: 0.0,
         global_shadows: false,
+        voxel_locals: false,
         shadow_softness: 0.0,
         fog: Fog::Linear {
             color: Vec3::ZERO,

@@ -211,13 +211,18 @@ impl Bake<'_> {
         );
         self.queue.submit(std::iter::once(encoder.finish()));
 
+        // Sampled through the texture's own sRGB view, which decodes, like
+        // every other image: the encoded view hands back the bytes as they
+        // are, and the overlay encoded them a second time (a flattened red
+        // child came out pink, `gui_canvas_groups`).
+        let sampled = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let bind_group = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("rbxview gui group"),
             layout: &self.atlas.image_layout,
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view),
+                    resource: wgpu::BindingResource::TextureView(&sampled),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,

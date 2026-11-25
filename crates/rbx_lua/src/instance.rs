@@ -5,8 +5,8 @@ pub(crate) mod tags;
 pub(crate) mod tree;
 
 use mlua::{
-    FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, MultiValue, Result, Table, UserData,
-    UserDataFields, UserDataMethods, Value,
+    AnyUserData, FromLuaMulti, IntoLua, IntoLuaMulti, Lua, MetaMethod, MultiValue, Result, Table,
+    UserData, UserDataFields, UserDataMethods, Value,
 };
 use rbx_dom::Ref;
 
@@ -18,10 +18,12 @@ use crate::game::LuaGame;
 use crate::not_creatable;
 use crate::property;
 
-#[derive(Clone)]
 pub(crate) struct LuaInstance {
     referent: Ref,
     ctx: Ctx,
+    /// This is the interned userdata (see [`InstanceRef`]), whose collection
+    /// means no script holds the instance.
+    held: bool,
 }
 
 /// What [`LuaInstance::new`] hands back. Converting it into Lua yields
@@ -51,9 +53,31 @@ impl IntoLua for InstanceRef {
         if let Value::UserData(_) = found {
             return Ok(found);
         }
-        let value = Value::UserData(lua.create_userdata(self.0)?);
+        let mut instance = self.0;
+        instance.ctx.hold(instance.referent);
+        instance.held = true;
+        let value = Value::UserData(lua.create_userdata(instance)?);
         cache.set(key, value.clone())?;
         Ok(value)
+    }
+}
+
+/// A copy is not the interned userdata, so dropping it lets nothing go.
+impl Clone for LuaInstance {
+    fn clone(&self) -> Self {
+        LuaInstance {
+            referent: self.referent,
+            ctx: self.ctx.clone(),
+            held: false,
+        }
+    }
+}
+
+impl Drop for LuaInstance {
+    fn drop(&mut self) {
+        if self.held {
+            self.ctx.let_go(self.referent);
+        }
     }
 }
 
@@ -62,7 +86,11 @@ impl LuaInstance {
     // route into Lua has to go through the one cache (see `InstanceRef`).
     #[allow(clippy::new_ret_no_self)]
     pub(crate) fn new(referent: Ref, ctx: Ctx) -> InstanceRef {
-        InstanceRef(LuaInstance { referent, ctx })
+        InstanceRef(LuaInstance {
+            referent,
+            ctx,
+            held: false,
+        })
     }
 
     fn find_child(
@@ -281,35 +309,60 @@ impl UserData for LuaInstance {
         });
         // A wireframe's lines are not instance data and the viewport draws no
         // wireframe adornments, so drawing calls are accepted and dropped.
-        for name in ["AddLine", "AddLines", "AddPath", "AddText"] {
-            methods.add_method(name, move |_, this, _: mlua::MultiValue| {
-                this.require_class("WireframeHandleAdornment", name)
+        for name in ["AddLine", "AddLines", "AddPath", "AddText", "Clear", "Emit"] {
+            methods.add_method(name, move |lua, this, mut args: MultiValue| {
+                // `ParticleEmitter:Emit`/`Clear` and `Terrain:Clear`, the
+                // run's, go on to the hooks (methods answer before
+                // `__index`, as for `Remove`).
+                let class = this.class()?;
+                let hooked = match name {
+                    "Clear" => matches!(class.as_str(), "ParticleEmitter" | "Terrain"),
+                    "Emit" => class == "ParticleEmitter",
+                    _ => false,
+                };
+                if hooked {
+                    if let Some(hooks) = crate::hooks::hooks(lua) {
+                        let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
+                        if let Some(Value::Function(f)) = member {
+                            args.push_front(Value::Nil);
+                            return f.call::<MultiValue>(args).map_err(untraced);
+                        }
+                    }
+                }
+                if matches!(name, "Clear" | "Emit") && class == crate::particles::CLASS {
+                    let burst = if name == "Emit" {
+                        let count: Option<f64> =
+                            lua.unpack(args.pop_front().unwrap_or(Value::Nil))?;
+                        Some(count.map_or(crate::particles::DEFAULT_COUNT, |n| n.max(0.0) as u32))
+                    } else {
+                        None
+                    };
+                    crate::particles::push(this.referent, burst);
+                    return Ok(MultiValue::new());
+                }
+                if name == "Emit" {
+                    this.require_class(crate::particles::CLASS, name)?;
+                }
+                this.require_class("WireframeHandleAdornment", name)?;
+                Ok(MultiValue::new())
             });
         }
-        methods.add_method("Clear", |_, this, _: mlua::MultiValue| {
-            if this.require_class(crate::particles::CLASS, "Clear").is_ok() {
-                crate::particles::push(this.referent, None);
-                return Ok(());
-            }
-            this.require_class("WireframeHandleAdornment", "Clear")
-        });
-        methods.add_method("Emit", |_, this, count: Option<f64>| {
-            this.require_class(crate::particles::CLASS, "Emit")?;
-            let count = count.map_or(crate::particles::DEFAULT_COUNT, |n| n.max(0.0) as u32);
-            crate::particles::push(this.referent, Some(count));
-            Ok(())
-        });
-        methods.add_method("GetTouchingParts", |lua, this, ()| {
-            this.require_part("GetTouchingParts")?;
-            lua.create_table()
-        });
-        methods.add_method(
-            "GetConnectedParts",
-            |lua, this, _recursive: Option<bool>| {
-                this.require_part("GetConnectedParts")?;
-                lua.create_table()
-            },
-        );
+        // A run's physics answers these (the hooks); the editor has no
+        // contacts or assemblies to report.
+        for name in ["GetTouchingParts", "GetConnectedParts"] {
+            methods.add_method(name, move |lua, this, mut args: MultiValue| {
+                this.require_part(name)?;
+                if let Some(hooks) = crate::hooks::hooks(lua) {
+                    let class = this.class()?;
+                    let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
+                    if let Some(Value::Function(f)) = member {
+                        args.push_front(Value::Nil);
+                        return f.call::<MultiValue>(args).map_err(untraced);
+                    }
+                }
+                lua.create_table()?.into_lua_multi(lua)
+            });
+        }
         methods.add_method("ResetPropertyToDefault", |_, this, name: String| {
             if crate::property::reset(&this.ctx, this.referent, &name)? {
                 Ok(())
@@ -319,7 +372,8 @@ impl UserData for LuaInstance {
                 )))
             }
         });
-        methods.add_method("ClearAllChildren", |_, this, ()| {
+        methods.add_method("ClearAllChildren", |lua, this, ()| {
+            crate::engine::parallel::check_method(lua, "ClearAllChildren")?;
             this.ctx.check_write(this.referent)?;
             let children = this
                 .ctx
@@ -361,7 +415,8 @@ impl UserData for LuaInstance {
                 None => Err(this.not_a_member("GetPivot")),
             }
         });
-        methods.add_method("PivotTo", |_, this, target: Value| {
+        methods.add_method("PivotTo", |lua, this, target: Value| {
+            crate::engine::parallel::check_method(lua, "PivotTo")?;
             let target: LuaCFrame = from_userdata(&target, "CFrame")?;
             this.ctx.check_write(this.referent)?;
             let moved = crate::pivot::pivot_to(
@@ -375,53 +430,85 @@ impl UserData for LuaInstance {
                 None => Err(this.not_a_member("PivotTo")),
             }
         });
-        methods.add_method("GetScale", |_, this, ()| {
-            crate::pivot::scale(&this.ctx.dom(), this.ctx.database(), this.referent)
-                .ok_or_else(|| this.not_a_member("GetScale"))
-        });
-        methods.add_method("ScaleTo", |_, this, factor: f32| {
-            this.ctx.check_write(this.referent)?;
-            let scaled = crate::pivot::scale_to(
-                &mut this.ctx.dom_mut(),
-                this.ctx.database(),
-                this.referent,
-                factor,
+        // A run's world service scales the way a live server does (emitters,
+        // fire, ropes, springs and meshes included), so it answers first,
+        // as methods answer before `__index`.
+        for name in ["GetScale", "ScaleTo"] {
+            methods.add_function(
+                name,
+                move |lua, (ud, mut args): (AnyUserData, MultiValue)| {
+                    let this = ud.borrow::<Self>()?;
+                    if let Some(hooks) = crate::hooks::hooks(lua) {
+                        let class = this.class()?;
+                        let member = hooks.index(lua, &this.ctx, this.referent, &class, name)?;
+                        if let Some(Value::Function(f)) = member {
+                            drop(this);
+                            args.push_front(Value::UserData(ud));
+                            return f.call::<MultiValue>(args).map_err(untraced);
+                        }
+                    }
+                    if name == "GetScale" {
+                        return crate::pivot::scale(
+                            &this.ctx.dom(),
+                            this.ctx.database(),
+                            this.referent,
+                        )
+                        .ok_or_else(|| this.not_a_member(name))?
+                        .into_lua_multi(lua);
+                    }
+                    let factor: f32 = lua.unpack(args.pop_front().unwrap_or(Value::Nil))?;
+                    this.ctx.check_write(this.referent)?;
+                    let scaled = crate::pivot::scale_to(
+                        &mut this.ctx.dom_mut(),
+                        this.ctx.database(),
+                        this.referent,
+                        factor,
+                    );
+                    match scaled {
+                        Some(result) => result.map_err(mlua::Error::runtime)?.into_lua_multi(lua),
+                        None => Err(this.not_a_member(name)),
+                    }
+                },
             );
-            match scaled {
-                Some(result) => result.map_err(mlua::Error::runtime),
-                None => Err(this.not_a_member("ScaleTo")),
-            }
-        });
+        }
         methods.add_method("Destroy", |lua, this, ()| {
+            crate::engine::parallel::check_method(lua, "Destroy")?;
             this.ctx.check_write(this.referent)?;
-            if this.ctx.dom().get(this.referent).is_some() {
-                crate::engine::changes::destroying(lua, this.referent)?;
-            }
-            let mut dom = this.ctx.dom_mut();
-            // A model losing its `PrimaryPart` keeps the pivot it had.
-            crate::pivot::keep_pivots(&mut dom, this.ctx.database(), &[this.referent])
-                .map_err(mlua::Error::runtime)?;
-            this.ctx.bury(&dom, this.referent);
-            dom.remove(this.referent);
-            Ok(())
+            crate::engine::changes::destroy(lua, &this.ctx, this.referent)
         });
         methods.add_method("AddTag", |lua, this, args: MultiValue| {
+            crate::engine::parallel::check_method(lua, "AddTag")?;
             if let Some(answer) =
                 tags::service_call(lua, &this.ctx, this.referent, "AddTag", &args)?
             {
                 return Ok(answer);
             }
             let tag = String::from_lua_multi(args, lua)?;
-            tags::set(&this.ctx, this.referent, &tag, true).map(|_| MultiValue::new())
+            if tags::set(&this.ctx, this.referent, &tag, true)?
+                && lua
+                    .app_data_ref::<std::rc::Rc<crate::engine::Engine>>()
+                    .is_some()
+            {
+                crate::engine::collection::changed(lua, &[this.referent])?;
+            }
+            Ok(MultiValue::new())
         });
         methods.add_method("RemoveTag", |lua, this, args: MultiValue| {
+            crate::engine::parallel::check_method(lua, "RemoveTag")?;
             if let Some(answer) =
                 tags::service_call(lua, &this.ctx, this.referent, "RemoveTag", &args)?
             {
                 return Ok(answer);
             }
             let tag = String::from_lua_multi(args, lua)?;
-            tags::set(&this.ctx, this.referent, &tag, false).map(|_| MultiValue::new())
+            if tags::set(&this.ctx, this.referent, &tag, false)?
+                && lua
+                    .app_data_ref::<std::rc::Rc<crate::engine::Engine>>()
+                    .is_some()
+            {
+                crate::engine::collection::changed(lua, &[this.referent])?;
+            }
+            Ok(MultiValue::new())
         });
         methods.add_method("HasTag", |lua, this, args: MultiValue| {
             if let Some(answer) =
@@ -444,6 +531,7 @@ impl UserData for LuaInstance {
         });
         // Deprecated: parents the instance to nil, children and all.
         methods.add_method("Remove", |lua, this, mut args: MultiValue| {
+            crate::engine::parallel::check_method(lua, "Remove")?;
             // Methods answer before `__index`, so `Selection:Remove`, an
             // unrelated method with the same name, has to be sent on from here.
             if matches!(this.class().as_deref(), Ok("Selection")) {
@@ -460,13 +548,30 @@ impl UserData for LuaInstance {
             this.ctx.dom_mut().unparent(this.referent);
             Ok(MultiValue::new())
         });
-        methods.add_method("Clone", |_, this, ()| {
+        methods.add_method("GetActor", |_, this, ()| {
+            let dom = this.ctx.dom();
+            let db = this.ctx.database();
+            let mut current = Some(this.referent);
+            while let Some(referent) = current {
+                if dom
+                    .get(referent)
+                    .is_some_and(|i| db.is_subclass_of(i.class(), "Actor"))
+                {
+                    return Ok(Some(LuaInstance::new(referent, this.ctx.clone())));
+                }
+                current = tree::parent_of(&dom, referent);
+            }
+            Ok(None)
+        });
+        methods.add_method("Clone", |lua, this, ()| {
             let copy = tree::deep_clone(&mut this.ctx.dom_mut(), this.referent, None)
                 .ok_or_else(property::missing_instance)?;
             this.ctx.dom_mut().unparent(copy);
+            crate::leaks::created(lua, copy, &this.class()?);
             Ok(LuaInstance::new(copy, this.ctx.clone()))
         });
         methods.add_meta_method(MetaMethod::Index, |lua, this, key: String| {
+            crate::engine::parallel::check_method(lua, &key)?;
             match key.as_str() {
                 "Name" => return this.instance_name()?.into_lua(lua),
                 "ClassName" => return this.class()?.into_lua(lua),
@@ -519,21 +624,32 @@ impl UserData for LuaInstance {
         methods.add_meta_method(
             MetaMethod::NewIndex,
             |lua, this, (key, value): (String, Value)| {
+                crate::engine::parallel::check_write(
+                    lua,
+                    this.ctx.database(),
+                    &this.class()?,
+                    &key,
+                )?;
                 match key.as_str() {
                     "Name" => {
-                        let Value::String(text) = &value else {
-                            return Err(mlua::Error::runtime(format!(
-                                "Unable to assign property Name. string expected, got {}",
-                                value.type_name()
-                            )));
+                        // A number is written as its text, as for any
+                        // string property.
+                        let text = match &value {
+                            Value::String(text) => text.to_str()?.to_string(),
+                            Value::Integer(_) | Value::Number(_) => value.to_string()?,
+                            _ => {
+                                return Err(mlua::Error::runtime(format!(
+                                    "Unable to assign property Name. string expected, got {}",
+                                    value.type_name()
+                                )))
+                            }
                         };
-                        let text = text.to_str()?.to_string();
                         this.ctx.check_write(this.referent)?;
                         this.ctx
                             .dom_mut()
                             .set_name(this.referent, &text)
                             .map_err(|error| mlua::Error::runtime(error.to_string()))?;
-                        return Ok(());
+                        return crate::hooks::wrote(lua);
                     }
                     "ClassName" => {
                         return Err(mlua::Error::runtime(
@@ -566,12 +682,14 @@ impl UserData for LuaInstance {
                                 ));
                             }
                         }
-                        let mut dom = this.ctx.dom_mut();
-                        match target {
-                            Some(_) => dom.set_parent(this.referent, target),
-                            None => dom.unparent(this.referent),
+                        {
+                            let mut dom = this.ctx.dom_mut();
+                            match target {
+                                Some(_) => dom.set_parent(this.referent, target),
+                                None => dom.unparent(this.referent),
+                            }
                         }
-                        return Ok(());
+                        return crate::hooks::wrote(lua);
                     }
                     _ => {}
                 }
@@ -583,7 +701,7 @@ impl UserData for LuaInstance {
                     }
                 }
                 if property::set(&this.ctx, this.referent, &key, &value)? {
-                    return Ok(());
+                    return crate::hooks::wrote(lua);
                 }
                 Err(this.not_a_member(&key))
             },
@@ -600,7 +718,7 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
     table.set(
         "new",
         lua.create_function(
-            move |_, (class, parent): (String, Option<Value>)| -> Result<InstanceRef> {
+            move |lua, (class, parent): (String, Option<Value>)| -> Result<InstanceRef> {
                 if ctx.database().class(&class).is_none() {
                     return Err(mlua::Error::runtime(format!(
                         "Unable to create an Instance of type {class}"
@@ -608,7 +726,7 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
                 }
                 if not_creatable::is_blocked(&class) {
                     return Err(mlua::Error::runtime(format!(
-                        "Unable to create an Instance of type {class}: it is not creatable"
+                        "Unable to create an Instance of type \"{class}\""
                     )));
                 }
                 let target = match &parent {
@@ -623,9 +741,25 @@ pub(crate) fn constructors(lua: &Lua, ctx: Ctx) -> Result<Table> {
                     ctx.dom_mut().unparent(referent);
                 }
                 defaults::apply(&ctx, &class, referent);
+                crate::leaks::created(lua, referent, &class);
                 Ok(LuaInstance::new(referent, ctx.clone()))
             },
         )?,
     )?;
     Ok(table)
+}
+
+/// A run's hook called from a method: Luau hands the script the hook's own
+/// message, without the traceback mlua adds on the way through Rust.
+fn untraced(error: mlua::Error) -> mlua::Error {
+    match error {
+        mlua::Error::RuntimeError(message) => mlua::Error::RuntimeError(
+            message
+                .split("\nstack traceback:")
+                .next()
+                .unwrap_or_default()
+                .to_owned(),
+        ),
+        other => other,
+    }
 }

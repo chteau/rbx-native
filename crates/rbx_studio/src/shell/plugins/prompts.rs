@@ -38,8 +38,88 @@ impl Shell {
         kind: PromptKind,
         cx: &mut Context<Self>,
     ) {
-        self.plugins.prompts.queue.push((id, plugin, kind));
-        cx.notify();
+        match kind {
+            PromptKind::OpenFiles {
+                extensions,
+                multiple,
+            } => self.plugin_open_files(id, extensions, multiple, cx),
+            PromptKind::SaveFile { suggested } => self.plugin_save_selection(id, suggested, cx),
+            kind => {
+                self.plugins.prompts.queue.push((id, plugin, kind));
+                cx.notify();
+            }
+        }
+    }
+
+    /// `StudioService:PromptImportFile[s]Async`: the system's file chooser.
+    /// A pick with the wrong extension counts as cancelled, as Studio's
+    /// filtered dialog can't return one.
+    fn plugin_open_files(
+        &mut self,
+        id: UiId,
+        extensions: Vec<String>,
+        multiple: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple,
+            prompt: None,
+        });
+        cx.spawn(async move |this, cx| {
+            let paths = match picked.await {
+                Ok(Ok(Some(paths))) => Some(paths),
+                _ => None,
+            };
+            let paths = paths.filter(|paths| {
+                extensions.is_empty()
+                    || paths.iter().all(|path| {
+                        path.extension().is_some_and(|e| {
+                            extensions
+                                .iter()
+                                .any(|want| want.eq_ignore_ascii_case(&e.to_string_lossy()))
+                        })
+                    })
+            });
+            let _ = this.update(cx, |shell, cx| {
+                shell.plugin_input(Input::PromptAnswered(id, Answer::Paths(paths)), cx)
+            });
+        })
+        .detach();
+    }
+
+    /// `plugin:PromptSaveSelectionAsync`: Save to File for the selection.
+    fn plugin_save_selection(&mut self, id: UiId, suggested: String, cx: &mut Context<Self>) {
+        let roots = self.selected_all().to_vec();
+        let mut name = if suggested.is_empty() {
+            "Model".to_owned()
+        } else {
+            suggested
+        };
+        if !name.ends_with(".rbxm") && !name.ends_with(".rbxmx") {
+            name.push_str(".rbxm");
+        }
+        let directory = self
+            .path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| ".".into());
+        let picked = cx.prompt_for_new_path(&directory, Some(&name));
+        cx.spawn(async move |this, cx| {
+            let path = match picked.await {
+                Ok(Ok(Some(path))) => Some(path),
+                _ => None,
+            };
+            let _ = this.update(cx, |shell, cx| {
+                if let Some(path) = &path {
+                    shell.export_to(crate::shell::export::Export::Model, &roots, path, cx);
+                }
+                let answer = Answer::Paths(path.map(|p| vec![p]));
+                shell.plugin_input(Input::PromptAnswered(id, answer), cx)
+            });
+        })
+        .detach();
     }
 
     /// Answers the front prompt and moves on to the next.
@@ -72,6 +152,8 @@ impl Shell {
             PromptKind::BrickColor { initial } => self.brick_prompt(initial, cx),
             PromptKind::HttpPermission { host } => self.http_prompt(plugin, &host, cx),
             PromptKind::Menu { title, items } => self.menu_prompt(&title, &items, window, cx),
+            // The system's own file chooser, never queued (`plugin_prompt`).
+            PromptKind::OpenFiles { .. } | PromptKind::SaveFile { .. } => return None,
         })
     }
 

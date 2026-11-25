@@ -33,6 +33,7 @@ All under `<relay>/v1/rooms/<room>`; `GET /health` answers `ok`.
 | `GET /ops?since=<seq>` | Op log entries after `seq`; answers at once unless the log's head is `seq`, then long-polls (up to 20 s) |
 | `POST /ops/fill` | Hand the log a peer read earlier to a relay that lacks it |
 | `GET /ws` | WebSocket: send `UserState` texts, receive snapshot texts |
+| `GET /play?pid=<16 hex>` | WebSocket for Local Run play: binary `[to u64 BE][sealed]` in, `[from u64 BE][sealed]` out (`to` 0: every other end); kept and read by nothing, 600 messages a second per end |
 
 ## Op log
 

@@ -220,11 +220,13 @@ fn build(
     referent: Ref,
     budget: &mut u32,
 ) -> Option<Emitter> {
-    if !bool_or(properties, "Enabled", true) {
-        return None;
-    }
-
-    let rate = float_or(properties, "Rate", 20.0).max(0.0);
+    // A disabled emitter spawns nothing on its own, but what it already
+    // spawned lives out its life and `Emit` still works, so it stays.
+    let rate = if bool_or(properties, "Enabled", true) {
+        float_or(properties, "Rate", 20.0).max(0.0)
+    } else {
+        0.0
+    };
     let lifetime = number_range_or(properties, "Lifetime", (5.0, 10.0));
     let direction_id = normal_id_or(properties, "EmissionDirection", NormalId::Top);
 

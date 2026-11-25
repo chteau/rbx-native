@@ -22,6 +22,7 @@ mod material;
 mod mesh;
 mod outline;
 mod particles;
+pub use particles::particle_burst;
 mod pass;
 mod patch;
 mod pipeline;
@@ -82,7 +83,7 @@ use trail::Trails;
 use translucent::Translucent;
 
 pub use cue::OverlayColors;
-pub use gui::{gui_particle_burst, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
+pub use gui::{gui_particle_burst, measure_text, GuiBox, GuiTextEdit, GuiTextLine, GuiTextMap};
 use isolation::Surroundings;
 pub use isolation::ISOLATION_BACKDROP;
 pub use lines::{Fill, Segment};
@@ -380,6 +381,7 @@ impl Renderer {
                 &layout,
                 &decor.groups,
                 quality,
+                scene.resolved_file_meshes(),
             ),
             sky,
             stars,
@@ -1145,7 +1147,7 @@ impl Renderer {
         let (light, lamp) = if lighting.sun_direction.y >= 0.0 {
             (lighting.sun_direction, Lamp::Sun)
         } else {
-            (-lighting.sun_direction, Lamp::Fill)
+            (lighting.fill_direction(), Lamp::Fill)
         };
         let frustum = self
             .camera

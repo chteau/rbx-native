@@ -1,0 +1,42 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "dy_30": -26.371,
+      "spin_1": 5,
+      "spin_30": 5
+    },
+    {
+      "dy_30": -26.371,
+      "spin_1": 5,
+      "spin_30": 5
+    },
+    {
+      "dy_30": -26.371,
+      "spin_1": 5,
+      "spin_30": 5
+    },
+    {
+      "dy_30": -25.54,
+      "spin_1": 5,
+      "spin_30": 5
+    },
+    {
+      "dy_30": -25.54,
+      "spin_1": 5,
+      "spin_30": 5
+    }
+  ],
+  "result": {
+    "dy_30": -26.371,
+    "spin_1": 5.0,
+    "spin_30": 5.0
+  },
+  "source": "real Roblox server, place 3086963177 version 537, joined with Sober",
+  "spread": {
+    "dy_30": 0.8309999999999995,
+    "spin_1": 0.0,
+    "spin_30": 0.0
+  },
+  "status": "recorded"
+}

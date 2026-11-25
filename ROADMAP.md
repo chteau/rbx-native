@@ -1200,7 +1200,7 @@ both the plain fetch failure and the silent fall back to a default
     you type.
 - [x] **`luau-lsp` integration**: autocomplete, hover, Go to Definition
   and diagnostics in the script editor, from `luau-lsp` spoken to over
-  stdio (`luau_lsp`). A pinned release (1.70.0) is built into `rbxstudio`
+  stdio (`luau_lsp`). A pinned release (1.70.1) is built into `rbxstudio`
   by `build.rs`, checked against its SHA-256, and unpacked into the cache
   folder on first use; `RBX_STUDIO_LUAU_LSP` runs another.
   - **The place as a workspace**: every script is written to a scratch
@@ -3472,7 +3472,81 @@ both the plain fetch failure and the silent fall back to a default
     the server `fps` metric (a `Heartbeat` count) stays meaningful under
     `UseFixedSimulation` is likewise unchecked.
 
+### Local Run (`rbx_sim`, `rbx_lua::server`, `shell::local_run`)
+Our own Roblox runtime, written from scratch, behind the "Local Run" beta
+(off by default). Nothing in it is copied or translated from Roblox code:
+behaviour is measured against a real server and client and written down as
+goldens. Plan and status in `docs/research/local-run/PLAN.md`.
+- [x] **Play (local), Run (local) and Server & Clients** in the Test tab:
+  the place plays in the 3D view with no Roblox client, Run is the server
+  alone, Server & Clients is a server plus 1 to 8 players in detachable
+  tabs. Collaborators join a run as players over the co-edit room.
+- [x] **Runtime**: a server VM and a client VM per player on Luau 0.748
+  with Roblox's flags, Deferred signals, Roblox's wait and timeout rules,
+  our own replication (FilteringEnabled, ordering, network ownership,
+  RemoteEvent/RemoteFunction argument rules), StreamingEnabled.
+- [x] **Physics and characters**: Rapier stepped at Roblox's adaptive
+  rates, contacts, constraints and movers, terrain collision and water,
+  unions through `rbx_csg`; Humanoids (R6 and R15, walk, jump, climb,
+  seats, swimming, death), avatars (yours when signed in, cached offline,
+  the Rig Builder noob otherwise), our own PlayerModule and Animate.
+- [x] **Game API**: 74% of the members game scripts can reach (functions
+  66%, events 74%, properties 79%), counted from the API dump in
+  `docs/research/local-run/COVERAGE.md`. DataStores and MemoryStore are
+  live online and local offline, with a read-only guard for real games.
+- [x] **Conformance**: about 3,500 goldens recorded from a real server and
+  client (`docs/research/local-run/CONFORMANCE.md`), 56 rows still off,
+  re-recorded weekly by `scripts/rerecord-goldens.sh`; a daily watchdog
+  files what a new API dump adds.
+- [x] **Look and sound**: lighting, sky, materials, shadows and particles
+  fitted to the real client (mean ΔE 1.55 over 76 scenes in
+  `crates/rbx_viewer/fidelity`), runtime GUI with a clean-room core GUI,
+  3D sound, video and text-to-speech.
+- [x] **Orthographic Play camera**: with the Orthographic Camera beta on, a
+  game camera set to Orthographic draws flat over black, and
+  `WorldToViewportPoint`/`WorldToScreenPoint`/`ViewportPointToRay`/
+  `ScreenPointToRay` project per `OrthographicMode` (measured in Studio
+  Play 2026-11-25: rays start on the 0.1 stud near plane and run down the
+  look vector, `OrthographicSize` spans the named axis). With the beta off
+  the `ProjectionType` write is ignored, like Studio. `DiagonalFieldOfView`
+  reads `2·atan((1 + aspect²)·tan²(FOV/2))` (Studio squares the tangent,
+  checked at two aspect ratios) and `MaxAxisFieldOfView`
+  `2·atan(max(aspect, 1)·tan(FOV/2))`; writing either sets `FieldOfView`.
+- [x] **Debugging a run**: Remote Inspector (calls per player with
+  arguments, size, rate and the firing script, flagged over Roblox's
+  limits), Leak Finder (connections never disconnected, nil-parented
+  instances, growing tables), MicroProfiler and ScriptProfiler, the
+  Network Simulator over the run's own link.
+- [x] **Integration tests**: `*.integration.spec` files run from
+  `rbxlua test` on a fresh server with clients (add and remove players,
+  act, run for, wait until, eval on a client), seeded, with the same JUnit
+  output (`docs/testing.md`).
+- [x] **Bot players for load tests**: `rbxlua loadtest` and the Load test
+  dock drive scripted players that walk, jump, click and fire remotes,
+  watching server step time, memory and DataStore calls.
+- [x] **Record and replay**: a run saves a `.rbxnrec` and replays it with a
+  per-frame hash, so a replay that drifts says where.
+- [x] **Offline**: Test › Offline packs a place's meshes, textures,
+  sounds, animations and packages; with them a run needs no network.
+- [ ] 📋 **Still open**: the off conformance rows (buoyancy, pathfinding,
+  terrain edges, BallSocket drift, jump apex), plugins inside a run,
+  `CollectionService:CreateCollection`, `ControllerManager` character
+  controllers, `FieldOfViewMode` keeping its angle when the window resizes
+  (not measured), and opening a `.rbxnrec` in the repro viewer.
+
 ### Platform
+- [x] **Offline mode** (`rbx_net`): every outside request goes through
+  one gate, which refuses at once while offline (no network detected,
+  Settings › Account's switch, or `RBX_NATIVE_OFFLINE=1`) and re-probes
+  when a request fails to connect; a title bar pill shows it. Checked with
+  the whole editor under `unshare -n` on 2026-11-25: startup, Home, My
+  Games, Free kits, Rig Builder, plugins and Play (local) work from the
+  cache; Creator Store searches, plugin installs and the key check say
+  they're offline.
+- [ ] 📋 **Offline: grey out what can't work**: Save/Publish to Roblox,
+  Game Settings, Version History, Data Stores and Link to Roblox Place stay
+  clickable offline, where all they can do is fail. They should be
+  disabled with a reason while offline (about half a day).
 - [x] Linux (X11), the daily-driven target.
 - [x] Windows: asset cache and settings now fall back to
   `%LOCALAPPDATA%`/`%APPDATA%` when no `XDG_*`/`HOME` is set; the
@@ -3829,21 +3903,10 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   editor version and a note), which opens read-only in its own window with
   the session on the timeline and its errors, chat and marks in Output.
   Copy bug report puts a Markdown summary on the clipboard. Format in
-  `docs/repro-format.md`. Replaying a Local Run `.rbxnrec` the same way
-  waits for Local Run.
-- [ ] 📋 **Integration tests on Local Run**: `rbxlua test` already runs
-  TestEZ/Jest-Lua specs headlessly for CI. Next is running whole-game
-  tests on Local Run (a server and clients, physics, remotes, players
-  joining) from the same command, with the same JUnit output.
-- [ ] 📋 **Remote inspector**: every RemoteEvent and RemoteFunction call
-  per player during Local Run, with arguments, size, rate and the script
-  that fired it, flagging calls over Roblox's limits.
-- [ ] 📋 **Bot players for load tests**: 20 to 50 scripted players that
-  walk, jump, click and fire remotes on a local server, while server load,
-  memory and DataStore calls are watched.
-- [ ] 📋 **Leak finder**: over a Local Run session, connections never
-  disconnected, instances piling up parented to nil and tables that keep
-  growing.
+  `docs/repro-format.md`. Opening a Local Run `.rbxnrec` the same way is
+  still to do (see Local Run under "What's been implemented").
+- Integration tests, the Remote Inspector, bot players and the Leak Finder
+  landed with Local Run, see its section under "What's been implemented".
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
@@ -3943,7 +4006,7 @@ nothing for most of this batch too.
 | `FollowRotationBoneBehavior`, `FollowTwistBoneBehavior` | Locked. Creating one needs `InternalTest` | Nothing to build |
 | `TestCoordinatorService`, `AppHandle`, `ParticipantHandle` | Inert. `GetService` returns nil | Nothing to build |
 | `CollectionService:GetCollections`, `GetAllCollections` | `GetCollections(root)` answers (an empty list in a place with none); `GetAllCollections` needs `RobloxScript`. The Collections beta is off | See the betas below |
-| `RunService.BindToSimulationParallel`, `BindToAnimationParallel` | Callable. Gameplay only | Local Run's business |
+| `RunService.BindToSimulationParallel`, `BindToAnimationParallel` | Callable. Gameplay only | Local Run runs them (serially) |
 | `Workspace.NextGenerationPhysicsSolver` | A `RolloutState` (`Default`), not a bool. Gameplay only | Round-trips |
 | `AvatarCollisionRules` hitbox, `BodyPartsCollidableOnDeath`, `TouchAndQueryDetectionMode` | Gameplay only | Round-trips |
 | `AudioStreamReader`, `AudioStreamWriter` | Creatable. Nothing plays audio here | Round-trips |
@@ -4008,8 +4071,8 @@ there. What each does live, and where it stands here:
 | MaterialVariant Alpha Mode | `MaterialVariant.AlphaMode`, default Opaque (Overlay 0, Transparency 1, TintMask 2, Opaque 3); the row shows under Appearance only with the beta on | Built behind a beta of the same name (PR #407) |
 | Collections | `CollectionService:CreateCollection(query)` returns a `CollectionHandle` (`Query`, `Root`, `Destroy`), no `GetInstances` | Not built: the handle's reads and callbacks aren't discoverable yet |
 | CreateAssetAsync Lua API | `AssetService:CreateAssetAsync` exists | Not built: an upload API, nothing for the editor to draw |
-| Mixed Content for CreateSurfaceAppearance | `AssetService:CreateSurfaceAppearanceAsync{ColorMap = Content}` returns a `SurfaceAppearance`; local `rbxasset://` content is refused in the client | Local Run's business (runtime API) |
-| Solid Modeling On Meshes | `GeometryService:SubtractAsync` takes a `MeshPart` and returns a `MeshPart`; `FragmentAsync` is new | Editor half built behind a beta of the same name ("CSG on meshes" under Editor); runtime half is Local Run's |
+| Mixed Content for CreateSurfaceAppearance | `AssetService:CreateSurfaceAppearanceAsync{ColorMap = Content}` returns a `SurfaceAppearance`; local `rbxasset://` content is refused in the client | Local Run has it (runtime API) |
+| Solid Modeling On Meshes | `GeometryService:SubtractAsync` takes a `MeshPart` and returns a `MeshPart`; `FragmentAsync` is new | Editor half built behind a beta of the same name ("CSG on meshes" under Editor); Local Run has the runtime half |
 | New Video API | `VideoPlayer` (Looping, PlaybackSpeed, Volume, TimeLength, IsPlaying, Resolution) and a `VideoDisplay` GuiObject (VideoColor3, VideoTransparency, ScaleType, ResampleMode, TileSize) | Not built: no video decoding here |
 | AvatarAbilities Character Controller Library | No new creatable class beyond `ControllerManager` | Not built: nothing to mirror yet |
 | Animation Graph State Machines | `AnimationGraphDefinition` creatable | Already here (Animation) |
@@ -4076,8 +4139,9 @@ there. What each does live, and where it stands here:
   go flat over black. Nothing on `dev` draws a Play camera itself (Play is
   the real client, live views only swap the Explorer's tree, replays draw
   the recorded camera as a dot and a line over the edit view, and the
-  Device Simulator shows the edit camera or the embedded client), so what
-  is left is the Play camera in Local Run, 0.3.0.
+  Device Simulator shows the edit camera or the embedded client). Local
+  Run's Play camera does it now too, measured against Studio Play (see
+  Local Run under "What's been implemented").
 - [ ] 📋 **Material layering and finer PBR response** (Mid 2027): PBR
   textures layered under custom masks, plus controls for specular response
   and more accurate scattering and reflection. This lands in the material
@@ -4189,7 +4253,9 @@ there. What each does live, and where it stands here:
 - [ ] ⚠️ **Multiple client views** (Late 2026), **Teleports in Studio** and
   **on-device testing** (both Early 2027), and **early testing** with up to
   10 friends (Late 2026). All four ride on the
-  [sandbox Play](#play--test-workflow).
+  [sandbox Play](#play--test-workflow). Locally, Local Run already covers
+  the first two (Server & Clients with up to 8 players, teleports between
+  mapped places) and collaborators joining a run as players.
   - Multiple clients means several real clients joined to the same sandbox
     server. Each mirror `LocalScript` already reports its own state.
   - Teleports need a second sandbox place in the same universe.
@@ -4306,10 +4372,10 @@ These aren't missing features, they require Roblox's own closed-source
 game engine (rendering, physics, replication, anti-cheat) to exist at all,
 and no amount of reverse engineering changes that:
 
-- **Playing or testing a live game with real physics and client/server
-  replication.** rbx-native can never have a native "Play" button in the
-  way Studio does, see [Play / Test workflow](#play--test-workflow) for
-  the private sandbox that stands in for it.
+- **Playing a game on Roblox's own engine without Roblox.** Local Run (a
+  beta) plays places on our own clean-room runtime, physics and
+  replication included, close to the real thing but never bit-exact; the
+  [sandbox Play](#play--test-workflow) stays the reference.
 - **Team Create**: proprietary real-time collaboration, no public
   equivalent API.
 - **Toolbox/marketplace parity**: the Toolbox dock searches the Creator
@@ -4328,8 +4394,9 @@ and no amount of reverse engineering changes that:
   already exists. Roblox's baked `MeshData` itself is read where a union
   has no tree or its tree will not carve (versions 2, 4 and 5, see
   "What's been implemented").
-- **Physics simulation and anti-cheat**: proprietary physics engine, no
-  real server authority possible from rbx-native. That covers Roblox's new
+- **Roblox's exact physics and anti-cheat**: Local Run simulates physics
+  with Rapier, fitted to recorded goldens, but Roblox's solver itself is
+  closed, and no real server authority is possible from rbx-native. That covers Roblox's new
   Server Authority model too: client prediction, rollback and resimulation
   are engine behaviour, so only its settings can be edited here (see
   Play / Test).

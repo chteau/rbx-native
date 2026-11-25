@@ -21,6 +21,7 @@ fn stroke(band: [f32; 2], join: GuiJoin) -> GuiStroke {
         on_text: false,
         thickness: band[1] - band[0],
         scaled: false,
+        gradient: None,
     }
 }
 

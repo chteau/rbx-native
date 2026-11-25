@@ -239,7 +239,7 @@ mod tests {
     // `Enabled` is a membership change for emitters (see `particles::plan`),
     // so a re-plan has to be able to both drop one and bring it back.
     #[test]
-    fn replanning_particles_drops_a_disabled_emitter_and_brings_it_back() {
+    fn replanning_particles_stills_a_disabled_emitter_and_brings_it_back() {
         let mut dom = effects_place();
         let database = ReflectionDatabase::embedded();
         let mut scene = Scene::from_dom(&dom, &database).unwrap();
@@ -249,12 +249,14 @@ mod tests {
         dom.set_property(Ref::new(EMITTER), "Enabled", Variant::Bool(false))
             .unwrap();
         scene.replan_effect(&dom, &database, EffectKind::Particles);
-        assert!(scene.particle_emitters().is_empty());
+        assert_eq!(scene.particle_emitters().len(), 1);
+        assert_eq!(scene.particle_emitters()[0].rate, 0.0);
 
         dom.set_property(Ref::new(EMITTER), "Enabled", Variant::Bool(true))
             .unwrap();
         scene.replan_effect(&dom, &database, EffectKind::Particles);
         assert_eq!(scene.particle_emitters().len(), 1);
+        assert!(scene.particle_emitters()[0].rate > 0.0);
     }
 
     // A `MeshPart` whose mesh landed has its box suppressed, but its emitter

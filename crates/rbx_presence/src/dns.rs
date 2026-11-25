@@ -15,7 +15,7 @@ pub fn name_servers(host: &str) -> Vec<SocketAddr> {
     let Some((_, zone)) = host.split_once('.') else {
         return Vec::new();
     };
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = rbx_net::config()
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(5)))
         .build()

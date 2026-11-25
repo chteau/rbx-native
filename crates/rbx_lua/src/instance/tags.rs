@@ -63,6 +63,7 @@ pub(crate) fn service_call(
         args.front(),
         Some(Value::UserData(data)) if data.is::<LuaInstance>()
     );
+    let names_instance = names_instance || (args.len() >= 2 && args.front() == Some(&Value::Nil));
     if !is_service || !names_instance || lua.app_data_ref::<std::rc::Rc<Engine>>().is_none() {
         return Ok(None);
     }

@@ -28,6 +28,7 @@ pub(crate) const OPEN_VARIABLE: &str = "RBX_STUDIO_SHORTCUTS";
 fn filtered(store: &Store, query: &str) -> Vec<&'static Spec> {
     let query = query.trim().to_lowercase();
     ALL.iter()
+        .filter(|spec| spec.command.available())
         .filter(|spec| {
             query.is_empty()
                 || spec.name.to_lowercase().contains(&query)
@@ -320,8 +321,9 @@ mod tests {
     use crate::shortcuts::{Category, Command, Store, ALL};
 
     #[test]
-    fn empty_query_lists_everything() {
-        assert_eq!(filtered(&Store::default(), "  ").len(), ALL.len());
+    fn empty_query_lists_everything_available() {
+        let available = ALL.iter().filter(|s| s.command.available()).count();
+        assert_eq!(filtered(&Store::default(), "  ").len(), available);
     }
 
     #[test]

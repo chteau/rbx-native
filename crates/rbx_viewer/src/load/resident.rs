@@ -141,6 +141,7 @@ impl Resident {
         &mut self,
         references: &[AssetRef],
     ) -> (HashMap<AssetRef, Arc<Image>>, Vec<String>) {
+        self.images.drop_stale_editables();
         match &self.fetcher {
             Some(fetcher) => (
                 self.images.take(references, Want::Image, fetcher),
@@ -165,6 +166,7 @@ impl Resident {
         &mut self,
         references: &[AssetRef],
     ) -> (HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>, Vec<String>) {
+        self.meshes.drop_stale_editables();
         match &self.fetcher {
             Some(fetcher) => (
                 self.meshes.take(references, Want::Mesh, fetcher),
@@ -529,6 +531,13 @@ impl<T: Clone> Table<T> {
     /// of re-fetching it from the disk cache in the same millisecond. The
     /// request after that, the edit the harness is actually measuring, goes
     /// through as normal.
+    /// Drops what a script's editable object decoded to at a version it has
+    /// since left, so a canvas painted every frame does not pile up copies.
+    fn drop_stale_editables(&mut self) {
+        self.entries
+            .retain(|reference, _| !crate::textures::editable_stale(reference));
+    }
+
     fn forget(&mut self, reference: &AssetRef) {
         self.entries.remove(reference);
         self.warned.retain(|held| held != reference);

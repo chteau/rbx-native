@@ -1,0 +1,467 @@
+--!nonstrict
+-- The social and account services in Local Run: GroupService and
+-- UserService read Roblox's public web APIs (kept for offline runs; the
+-- run's own players, user ids below 1, are answered here), SocialService
+-- has no friends to invite (its feedback prompt sends nothing),
+-- PolicyService gives an adult's policy in a
+-- country without extra rules, VoiceChatService reports voice off, and
+-- AvatarEditorService's and GroupService's prompts open the editor's own
+-- dialog, nothing saved to the account.
+local host = ...
+
+local M = {}
+
+local function fail(message)
+	error(message, 0)
+end
+
+local function typeName(value)
+	if value == nil then
+		return "nil"
+	end
+	if type(value) == "number" then
+		return "double"
+	end
+	return typeof(value)
+end
+
+local function int64(value)
+	-- Like any number argument, a numeric string converts ("123").
+	if type(value) == "string" and tonumber(value) then
+		value = tonumber(value)
+	end
+	if type(value) ~= "number" then
+		fail("Unable to cast " .. typeName(value) .. " to int64")
+	end
+	return math.floor(value)
+end
+
+local function user(value)
+	if type(value) ~= "number" then
+		fail("Unable to cast " .. typeName(value) .. " to User")
+	end
+	return math.floor(value)
+end
+
+local function isPlayer(value)
+	return typeof(value) == "Instance" and value:IsA("Player")
+end
+
+local function clientOnly(method)
+	if host.server() then
+		fail(method .. " can only be called from the client")
+	end
+end
+
+-- A SocialService/PolicyService player argument: nil first, then the
+-- client-only rule of `clientSide` calls, then the type.
+local function playerArg(method, player, clientSide)
+	if player == nil then
+		fail("Argument 1 missing or nil")
+	end
+	if clientSide and host.server() then
+		fail(method .. " Must be called from a local script.")
+	end
+	if not isPlayer(player) then
+		fail(method .. ": player must be a Player")
+	end
+end
+
+local function localPlayer()
+	return game:GetService("Players").LocalPlayer
+end
+
+-- An empty, finished listing.
+local function emptyPages()
+	return host.pages("StandardPages", {}, 50)
+end
+
+-- Dialog answers: kind -> what the dialog said, read by the waiting call.
+local answers = {}
+
+local function promptAndWait(kind, player, id)
+	answers[kind] = nil
+	host.prompt(kind, player, id or 0)
+	while answers[kind] == nil do
+		task.wait()
+	end
+	local answer = answers[kind]
+	answers[kind] = nil
+	return answer
+end
+
+local GROUPS = {}
+
+function GROUPS.GetGroupInfoAsync(_, groupId)
+	groupId = int64(groupId)
+	local found = host.web("https://groups.roblox.com/v1/groups/" .. groupId, "GET", nil, "GroupService:GetGroupInfoAsync()")
+	local roles = host.web("https://groups.roblox.com/v1/groups/" .. groupId .. "/roles", "GET", nil, "GroupService:GetGroupInfoAsync()")
+	local list = {}
+	for _, role in roles.roles or {} do
+		table.insert(list, { Name = role.name, Rank = role.rank })
+	end
+	local owner = found.owner
+	return {
+		Name = found.name,
+		Id = found.id,
+		Owner = owner and { Name = owner.username, Id = owner.userId } or nil,
+		Description = found.description or "",
+		EmblemUrl = "",
+		Roles = list,
+	}
+end
+
+function GROUPS.GetGroupsAsync(_, userId)
+	userId = user(userId)
+	if userId < 1 then
+		task.wait()
+		return {}
+	end
+	local found = host.web(
+		"https://groups.roblox.com/v2/users/" .. userId .. "/groups/roles",
+		"GET",
+		nil,
+		"GroupService:GetGroupsAsync()"
+	)
+	local list = {}
+	for _, entry in found.data or {} do
+		table.insert(list, {
+			Name = entry.group.name,
+			Id = entry.group.id,
+			EmblemUrl = "",
+			EmblemId = 0,
+			Rank = entry.role.rank,
+			Role = entry.role.name,
+			IsPrimary = entry.isPrimaryGroup == true,
+			IsInClan = false,
+		})
+	end
+	return list
+end
+
+function GROUPS.GetRolesInGroupAsync(self, userId, groupId)
+	groupId = int64(groupId)
+	for _, group in GROUPS.GetGroupsAsync(self, userId) do
+		if group.Id == groupId then
+			return { { Name = group.Role, Rank = group.Rank } }
+		end
+	end
+	return {}
+end
+
+function GROUPS.GetAlliesAsync(_, groupId)
+	int64(groupId)
+	return emptyPages()
+end
+GROUPS.GetEnemiesAsync = GROUPS.GetAlliesAsync
+
+function GROUPS.PromptJoinAsync(_, groupId)
+	clientOnly("GroupService:PromptJoinAsync()")
+	groupId = int64(groupId)
+	local joined = promptAndWait("GroupService.PromptJoinAsync", localPlayer(), groupId)
+	return if joined then Enum.GroupMembershipStatus.Joined else Enum.GroupMembershipStatus.None
+end
+
+local USERS = {}
+
+local function localInfo(userId)
+	local player = game:GetService("Players"):GetPlayerByUserId(userId)
+	if player then
+		return { Id = userId, Username = player.Name, DisplayName = player.DisplayName, HasVerifiedBadge = false }
+	end
+end
+
+function USERS.GetUserInfosByUserIdsAsync(_, userIds)
+	if type(userIds) ~= "table" then
+		fail("Unable to cast " .. typeName(userIds) .. " to Array")
+	end
+	if #userIds > 200 then
+		fail("UserService:GetUserInfosByUserIdsAsync(): too many user ids, at most 200")
+	end
+	local out, remote = {}, {}
+	for _, userId in userIds do
+		userId = int64(userId)
+		local here = localInfo(userId)
+		if here then
+			table.insert(out, here)
+		elseif userId > 0 then
+			table.insert(remote, userId)
+		end
+	end
+	if #remote > 0 then
+		local body = host.encode({ userIds = remote, excludeBannedUsers = false })
+		local found = host.web("https://users.roblox.com/v1/users", "POST", body, "UserService:GetUserInfosByUserIdsAsync()")
+		for _, user in found.data or {} do
+			table.insert(out, {
+				Id = user.id,
+				Username = user.name,
+				DisplayName = user.displayName,
+				HasVerifiedBadge = user.hasVerifiedBadge == true,
+			})
+		end
+	else
+		task.wait()
+	end
+	return out
+end
+
+function USERS.GetUserFromGlobalUserIdAsync(_, userId)
+	return int64(userId)
+end
+
+local SOCIAL = {}
+
+function SOCIAL.CanSendGameInviteAsync(_, player)
+	playerArg("SocialService:CanSendGameInviteAsync", player, true)
+	task.wait()
+	return false
+end
+
+function SOCIAL.CanSendCallInviteAsync(_, player)
+	playerArg("SocialService:CanSendCallInviteAsync", player, true)
+	task.wait()
+	return false
+end
+
+local socialId = nil
+
+function SOCIAL.PromptGameInvite(self, player)
+	socialId = host.id(self)
+	playerArg("SocialService:PromptGameInvite", player, true)
+	host.notify(player, "Invite friends", "Local Run has no friends to invite.")
+	task.defer(host.fire, socialId, "GameInvitePromptClosed", player, {})
+end
+
+function SOCIAL.PromptPhoneBook(self, player)
+	socialId = host.id(self)
+	playerArg("SocialService:PromptPhoneBook", player, true)
+	host.notify(player, "Call friends", "Local Run has no friends to call.")
+	task.defer(host.fire, socialId, "PhoneBookPromptClosed", player)
+end
+
+function SOCIAL.PromptLinkSharingAsync(_, player)
+	playerArg("SocialService:PromptLinkSharingAsync", player, true)
+	host.notify(player, "Share", "Local Run has no links to share.")
+	task.wait()
+	return Enum.PromptLinkSharingResult.PlayerLeft
+end
+
+function SOCIAL.GetPlayersByPartyId(_)
+	return {}
+end
+
+function SOCIAL.GetPartyAsync(_)
+	task.wait()
+	return {}
+end
+
+function SOCIAL.GetEventRsvpStatusAsync(_)
+	task.wait()
+	return Enum.RsvpStatus.None
+end
+
+function SOCIAL.GetUpcomingExperienceEventsAsync(_)
+	task.wait()
+	return {}
+end
+
+-- No experience events offline: an id names none (the result is optional).
+function SOCIAL.GetExperienceEventAsync(_, eventId)
+	if type(eventId) ~= "string" and type(eventId) ~= "number" then
+		fail(`Unable to cast {typeName(eventId)} to string`)
+	end
+	task.wait()
+	return nil
+end
+
+-- The feedback prompt: the editor shows a notice, nothing is sent. A
+-- live server's call does nothing (golden WebServices).
+function SOCIAL.PromptFeedbackSubmissionAsync(_, options)
+	if options ~= nil and type(options) ~= "table" then
+		fail(`Unable to cast {typeName(options)} to Dictionary`)
+	end
+	if host.server() then
+		return
+	end
+	host.notify(localPlayer(), "Feedback (test)", "The game asks for feedback. A Local Run sends none.")
+	task.wait()
+end
+
+-- Not switched on yet on Roblox.
+function SOCIAL.PromptRateExperienceAsync(_)
+	fail("SocialService:PromptRateExperienceAsync is not yet enabled.")
+end
+
+-- No experience events offline (see GetExperienceEventAsync). Roblox's
+-- server-side error names GetEventRsvpStatusAsync.
+function SOCIAL.PromptRsvpToEventAsync(_, eventId)
+	if host.server() then
+		fail("SocialService:GetEventRsvpStatusAsync must be called on the client.")
+	end
+	if type(eventId) ~= "string" and type(eventId) ~= "number" then
+		fail(`Unable to cast {typeName(eventId)} to string`)
+	end
+	task.wait()
+	fail(`SocialService:PromptRsvpToEventAsync(): event {eventId} was not found`)
+end
+
+function SOCIAL.ShowSelfView(_) end
+function SOCIAL.HideSelfView(_) end
+
+local POLICY = {}
+
+function POLICY.GetPolicyInfoForPlayerAsync(_, player)
+	playerArg("PolicyService:GetPolicyInfoForPlayerAsync", player)
+	task.wait()
+	return {
+		AreAdsAllowed = true,
+		ArePaidRandomItemsRestricted = false,
+		AllowedExternalLinkReferences = { "Discord", "Facebook", "Twitch", "YouTube", "X", "GitHub", "Guilded" },
+		IsContentSharingAllowed = true,
+		IsEligibleToPurchaseCommerceProduct = true,
+		IsEligibleToPurchaseSubscription = true,
+		IsPaidItemTradingAllowed = true,
+		IsSubjectToChinaPolicies = false,
+		IsEndlessContentAutoplayAllowed = true,
+		IsEndlessContentLoadAllowed = true,
+		IsPhotoToAvatarAllowed = true,
+		IsThirdPartyAccountLinkingAllowed = true,
+	}
+end
+
+function POLICY.CanViewBrandProjectAsync(_, player)
+	playerArg("PolicyService:CanViewBrandProjectAsync", player)
+	task.wait()
+	return true
+end
+
+local VOICE = {}
+
+function VOICE.IsVoiceEnabledForUserIdAsync(_, userId)
+	int64(userId)
+	task.wait()
+	return false
+end
+
+function VOICE.GetChatGroupsAsync(_)
+	task.wait()
+	return {}
+end
+
+-- AvatarEditorService: each prompt asks the editor's dialog and answers
+-- through its Completed event; a confirmed save changes nothing on the
+-- account.
+local AVATAR = {}
+local avatarId = nil
+local saving = {} -- prompt kind -> the extra values its Completed event carries
+
+local ACCESSORY = {
+	HairAccessory = "Hair",
+	FaceAccessory = "Face",
+	NeckAccessory = "Neck",
+	ShoulderAccessory = "Shoulder",
+	FrontAccessory = "Front",
+	BackAccessory = "Back",
+	WaistAccessory = "Waist",
+	Hat = "Hat",
+	TShirtAccessory = "TShirt",
+	ShirtAccessory = "Shirt",
+	PantsAccessory = "Pants",
+	JacketAccessory = "Jacket",
+	SweaterAccessory = "Sweater",
+	ShortsAccessory = "Shorts",
+	LeftShoeAccessory = "LeftShoe",
+	RightShoeAccessory = "RightShoe",
+	DressSkirtAccessory = "DressSkirt",
+	EyebrowAccessory = "Eyebrow",
+	EyelashAccessory = "Eyelash",
+}
+
+function AVATAR.GetAccessoryType(_, assetType)
+	if typeof(assetType) ~= "EnumItem" then
+		fail("Unable to cast " .. typeName(assetType) .. " to AvatarAssetType")
+	end
+	local name = ACCESSORY[assetType.Name]
+	return if name then Enum.AccessoryType[name] else Enum.AccessoryType.Unknown
+end
+
+local function avatarPrompt(method, extra)
+	return function(self, ...)
+		avatarId = host.id(self)
+		clientOnly("AvatarEditorService:" .. method .. "()")
+		local kind = "AvatarEditorService." .. method
+		saving[kind] = extra and extra(...) or {}
+		local id = select(1, ...)
+		host.prompt(kind, localPlayer(), if type(id) == "number" then id else 0)
+	end
+end
+
+AVATAR.PromptSaveAvatar = avatarPrompt("PromptSaveAvatar", function(description)
+	return { description }
+end)
+AVATAR.PromptCreateOutfit = avatarPrompt("PromptCreateOutfit", function()
+	return { nil }
+end)
+AVATAR.PromptDeleteOutfit = avatarPrompt("PromptDeleteOutfit")
+AVATAR.PromptRenameOutfit = avatarPrompt("PromptRenameOutfit")
+AVATAR.PromptUpdateOutfit = avatarPrompt("PromptUpdateOutfit")
+AVATAR.PromptSetFavorite = avatarPrompt("PromptSetFavorite")
+AVATAR.PromptAllowInventoryReadAccess = avatarPrompt("PromptAllowInventoryReadAccess")
+
+function AVATAR.GetFavoriteAsync(_)
+	task.wait()
+	return false
+end
+
+local AVATAR_EVENTS = {
+	PromptSaveAvatarCompleted = true,
+	PromptCreateOutfitCompleted = true,
+	PromptDeleteOutfitCompleted = true,
+	PromptRenameOutfitCompleted = true,
+	PromptUpdateOutfitCompleted = true,
+	PromptSetFavoriteCompleted = true,
+	PromptAllowInventoryReadAccessCompleted = true,
+}
+
+local SOCIAL_EVENTS = {
+	GameInvitePromptClosed = true,
+	PhoneBookPromptClosed = true,
+	CallInviteStateChanged = true,
+	ShareSheetClosed = true,
+}
+
+local TABLES = {
+	GroupService = GROUPS,
+	UserService = USERS,
+	SocialService = SOCIAL,
+	PolicyService = POLICY,
+	VoiceChatService = VOICE,
+	AvatarEditorService = AVATAR,
+}
+
+function M.member(class, id, key)
+	if (class == "AvatarEditorService" and AVATAR_EVENTS[key]) or (class == "SocialService" and SOCIAL_EVENTS[key]) then
+		return host.signal(id, key), true
+	end
+	local members = TABLES[class]
+	local member = members and members[key]
+	return member, member ~= nil
+end
+
+-- The editor's dialog closed on one of this module's prompts.
+function M.finished(kind, _, _, confirmed)
+	if kind == "GroupService.PromptJoinAsync" then
+		answers[kind] = confirmed
+		return
+	end
+	if not avatarId then
+		return
+	end
+	local event = string.gsub(kind, "^AvatarEditorService%.", "") .. "Completed"
+	local result = if confirmed then Enum.AvatarPromptResult.Success else Enum.AvatarPromptResult.PermissionDenied
+	local extra = saving[kind] or {}
+	saving[kind] = nil
+	host.fire(avatarId, event, result, table.unpack(extra))
+end
+
+return M

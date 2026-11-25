@@ -75,6 +75,12 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
       TimeScale: {Float32: 1.0}, Transparency: {NumberSequence: seq(0.0)}, ZIndex: {Int32: 1}
     }}
   };
+  # Properties the pinned rbx-dom predates on classes it has, as a new
+  # Camera and Play's camera read them back in Studio 0.748, Orthographic
+  # Camera beta on or off. rbx-dom's own value wins.
+  def measured_properties: {
+    Camera: {ProjectionType: {Enum: 0}, OrthographicSize: {Float32: 35.0}, OrthographicMode: {Enum: 0}}
+  };
   {
     Source: ("rojo-rbx/rbx-dom@" + $rev),
     License: "MIT, Copyright (c) 2018-2025 The Rojo Developers",
@@ -99,7 +105,7 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
             | with_entries({key: .value, value: .key})) as $moved
         | map_values($moved[.] // .)
         | delpaths([saved_as_own_name[$class][]? | [.]])),
-      Defaults: ((.DefaultProperties // {})
+      Defaults: ((measured_properties[$class] // {}) + (.DefaultProperties // {})
         | with_entries(if [.value | .. | nulls] | length > 0
             then .value = (infinite[$class][.key] // .value) else . end)
         | with_entries(select(.value | supported and exact)))

@@ -1,0 +1,67 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "client_speed": 16,
+      "played": "true:true",
+      "respect_filtering": "false",
+      "server_speed": 16,
+      "server_stopped_speed": 0,
+      "stopped": "false",
+      "volume": 0.5
+    },
+    {
+      "client_speed": 16,
+      "played": "true:true",
+      "respect_filtering": "false",
+      "server_speed": 16,
+      "server_stopped_speed": 0,
+      "stopped": "false",
+      "volume": 0.5
+    },
+    {
+      "client_speed": 16,
+      "played": "true:true",
+      "respect_filtering": "false",
+      "server_speed": 16,
+      "server_stopped_speed": 0,
+      "stopped": "false",
+      "volume": 0.5
+    },
+    {
+      "client_speed": 16,
+      "played": "true:true",
+      "respect_filtering": "false",
+      "server_speed": 16,
+      "server_stopped_speed": 0,
+      "stopped": "false",
+      "volume": 0.5
+    },
+    {
+      "client_speed": 16,
+      "played": "true:true",
+      "respect_filtering": "false",
+      "server_speed": 16,
+      "server_stopped_speed": 0,
+      "stopped": "false",
+      "volume": 0.5
+    }
+  ],
+  "result": {
+    "client_speed": 16.0,
+    "played": "true:true",
+    "respect_filtering": "false",
+    "server_speed": 16.0,
+    "server_stopped_speed": 0.0,
+    "stopped": "false",
+    "volume": 0.5
+  },
+  "source": "real Roblox server, place 3086963177 version 554, joined with Sober",
+  "spread": {
+    "client_speed": 0.0,
+    "server_speed": 0.0,
+    "server_stopped_speed": 0.0,
+    "volume": 0.0
+  },
+  "status": "recorded"
+}

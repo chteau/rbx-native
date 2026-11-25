@@ -111,6 +111,8 @@ fn wrapping_overflows_on_height_and_automatic_size_or_scaling_absorbs_it() {
     let scaled = label(&mut dom, gui, "Settings menu", (100, 20));
     dom.set_property(scaled, "TextScaled", Variant::Bool(true))
         .unwrap();
+    dom.set_property(scaled, "TextWrapped", Variant::Bool(true))
+        .unwrap();
     assert_eq!(overflowing(&dom, Some(PLAIN)), [wrapped]);
 }
 

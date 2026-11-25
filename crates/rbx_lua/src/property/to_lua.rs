@@ -81,7 +81,12 @@ pub(crate) fn variant_to_lua(
             Content::Uri(uri) => uri.clone().into_lua(lua),
             // Internal instance references have no URL form; scripts rarely read
             // this shape, so it is exposed as empty rather than left unsupported.
-            Content::Object(_) => String::new().into_lua(lua),
+            Content::Object(referent) => {
+                match crate::server::editable_image::editable_content(lua, *referent)? {
+                    Some(content) => Ok(content),
+                    None => String::new().into_lua(lua),
+                }
+            }
         },
         other => Err(mlua::Error::runtime(format!(
             "reading {name} is not supported yet: {} has no Luau representation",

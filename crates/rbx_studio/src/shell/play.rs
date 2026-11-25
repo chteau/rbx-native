@@ -334,7 +334,12 @@ fn embed_give_up(watch: &ClientWatch) -> Option<EmbedError> {
 fn wait_healthy(url: &str, token: &str) -> bool {
     let deadline = Instant::now() + HEALTH_BUDGET;
     loop {
-        if ureq::get(url).header(TOKEN_HEADER, token).call().is_ok() {
+        if rbx_net::agent()
+            .get(url)
+            .header(TOKEN_HEADER, token)
+            .call()
+            .is_ok()
+        {
             return true;
         }
         if Instant::now() >= deadline {
@@ -355,7 +360,7 @@ fn session_id() -> String {
 impl Shell {
     /// The ribbon's Play tile.
     pub(in crate::shell) fn play_start(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.play.phase != Phase::Idle {
+        if self.play.phase != Phase::Idle || self.offline_refuses("Play (real client)", cx) {
             return;
         }
         self.play.main_window = crate::pointer_lock::window_id(window);

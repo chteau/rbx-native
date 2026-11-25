@@ -305,7 +305,11 @@ impl Loaded {
         // `_any`: a part an isolation hides still gets its plan kept in
         // step, or its decals would come back where it stood before the edit
         // once the isolation ends. Assembly is what leaves them undrawn.
-        let Some(placement) = self.scene.placement_of_any(part) else {
+        let Some(placement) = self
+            .scene
+            .placement_of_any(part)
+            .or_else(|| Some(self.scene.decal_mesh(part)?.0))
+        else {
             return;
         };
         let faces = textures::faces(dom, database, part, &placement);

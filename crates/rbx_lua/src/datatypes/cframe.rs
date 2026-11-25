@@ -6,7 +6,7 @@ use rbx_dom::{CFrameData, Vector3Data};
 use super::from_userdata;
 use super::vector3::LuaVector3;
 
-mod ops;
+pub(crate) mod ops;
 
 const IDENTITY: [f32; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
 

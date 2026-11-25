@@ -95,6 +95,9 @@ pub(crate) struct GameSettingsWindow {
 impl Shell {
     /// Brings Game Settings forward, opening it if it isn't.
     pub(crate) fn open_game_settings(&mut self, cx: &mut Context<Self>) {
+        if self.offline_refuses("Game Settings", cx) {
+            return;
+        }
         self.show_game_settings(Tab::BasicInfo, cx);
     }
 

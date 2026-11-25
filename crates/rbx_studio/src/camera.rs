@@ -106,6 +106,12 @@ fn field_of_view(camera: &Instance) -> f32 {
     }
 }
 
+/// [`orthographic`] for `Workspace.CurrentCamera`: the place's in Edit, a
+/// player's own in a running game.
+pub(crate) fn current_ortho(dom: &WeakDom) -> Option<(f32, OrthoAxis)> {
+    orthographic(dom.get(current_camera(dom)?)?)
+}
+
 /// The camera's orthographic span, `None` while its `ProjectionType` is
 /// Perspective (or missing, Roblox's default).
 fn orthographic(camera: &Instance) -> Option<(f32, OrthoAxis)> {

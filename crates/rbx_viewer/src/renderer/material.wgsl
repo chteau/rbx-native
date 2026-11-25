@@ -28,13 +28,15 @@ const KIND_FORCE_FIELD: u32 = 3u;
 const KIND_GLASS: u32 = 4u;
 const KIND_WATER: u32 = 5u;
 // The instance buffer's kind word also carries `scene::material::VariantAlpha`
-// above the kind's own byte (see `renderer::instance`).
+// above the kind's own byte, then the face flags, then a block's surfaces
+// (see `renderer::instance`).
 const KIND_MASK: u32 = 0xffu;
 const VARIANT_ALPHA_SHIFT: u32 = 8u;
-const VARIANT_ALPHA_MASK: u32 = 0xffu;
+const VARIANT_ALPHA_MASK: u32 = 0x3u;
 // A block or a wedge: tiled from a corner of each face (see `anchored_face`).
-const FACE_ANCHORED: u32 = 0x10000u;
-const FACE_CURVED: u32 = 0x20000u;
+const FACE_ANCHORED: u32 = 0x400u;
+const FACE_CURVED: u32 = 0x800u;
+const SURFACES_SHIFT: u32 = 12u;
 const VARIANT_ALPHA_OVERLAY: u32 = 1u;
 const VARIANT_ALPHA_TRANSPARENCY: u32 = 2u;
 const VARIANT_ALPHA_TINT_MASK: u32 = 3u;
@@ -104,6 +106,10 @@ const FORCE_FIELD_INTERSECTION_STUDS: f32 = 1.0;
 // `exp2(shininess * (dot(n, h) - 1))`.
 const SHININESS_MIN: f32 = 1.0;
 const SHININESS_MAX: f32 = 11.0;
+// The least of Plastic's strength, and of a metal's reflection, a
+// `SurfaceAppearance` keeps at full roughness (see `mapped_shade`).
+const APPEARANCE_SPEC_FLOOR: f32 = 0.5;
+const APPEARANCE_METAL_FLOOR: f32 = 0.2;
 
 /// Everything a surface shader knows before its material is applied.
 struct MaterialInput {
@@ -238,8 +244,22 @@ struct Mapped {
     // `MaterialInput`'s, passed through.
     pattern: f32,
     edge: f32,
+    // A `SurfaceAppearance`'s maps (see `mapped_shade`).
+    appearance: bool,
     // The colour map's alpha, which only a `Transparency` variant cuts on.
     coverage: f32,
+}
+
+/// How much of Plastic's normal map reaches the shading: the real client's
+/// plastic shows no grain from a few studs away (the `noob` fidelity scene:
+/// a torso 8 studs off and the floor around it carry 0.04 and 0.06 grey
+/// levels of fine detail there against 1.9 and 0.95 at 0.4 here).
+const PLASTIC_GRAIN: f32 = 0.03;
+
+/// Plastic's normal: its map's tilt scaled down to [`PLASTIC_GRAIN`].
+fn plastic_normal(mapped: Mapped) -> vec3<f32> {
+    let flat = normalize(mapped.geometric_normal);
+    return normalize(mix(flat, mapped.normal, PLASTIC_GRAIN));
 }
 
 /// Whether a material shades procedurally whatever maps it is handed: Neon is
@@ -265,7 +285,7 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
         // `tangent_normal` hands straight back.
         var surface = plastic(
             mapped.base_albedo,
-            mapped.normal,
+            plastic_normal(mapped),
             mapped.world_position,
             mapped.reflectance,
         );
@@ -286,11 +306,23 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
     // every textured material is scaled from Plastic's own strength so the two
     // never look like they belong to different renderers. The two used to
     // drift, this file kept its own stale copy of the number.
-    surface.spec_strength = lighting.calibration.y * (1.0 - mapped.roughness);
+    //
+    // A `SurfaceAppearance` keeps some of it however rough it is, roughness
+    // blurring its reflection more than taking it away: the real client's
+    // Overlay cone tinted orange shows a sky sheen (blue 51 in
+    // `surface_appearance`, 16 when it faded with roughness).
+    let glossy = 1.0 - mapped.roughness;
+    surface.spec_strength = lighting.calibration.y
+        * select(glossy, max(glossy, APPEARANCE_SPEC_FLOOR), mapped.appearance);
     // A metal reflects its own colour where a dielectric reflects white, and
-    // the smoother it is the more of the sky it shows.
+    // the smoother it is the more of the sky it shows. A rough metal in a
+    // `SurfaceAppearance` still mirrors some (the grid metalness cone's white
+    // lines are as dim as the real client's at this share, not paint white).
     surface.spec_tint = mix(vec3<f32>(1.0), surface.albedo, mapped.metalness);
-    surface.reflectance = max(mapped.reflectance, mapped.metalness * (1.0 - mapped.roughness));
+    surface.reflectance = max(
+        mapped.reflectance,
+        mapped.metalness * select(glossy, max(glossy, APPEARANCE_METAL_FLOOR), mapped.appearance)
+    );
     if mapped.kind == KIND_GLASS {
         surface.reflectance = max(surface.reflectance, GLASS_REFLECTANCE);
     }
@@ -646,4 +678,75 @@ fn material_mapped(input: MaterialInput) -> Mapped {
     }
     mapped.normal = normalize(mapped.normal);
     return mapped;
+}
+
+// A block face's `*Surface` pattern (`scene::Part::surfaces`), drawn as the
+// real client does on its 2022 materials (the `studs` fidelity scene): a
+// rounded square per stud, raised for Studs, sunk and shaded for Inlet, the two
+// in a checker for Universal, and a groove along the diagonals of every
+// two-stud square for Weld and Glue. Sizes are read off that scene's pictures.
+const SURFACE_GLUE: u32 = 1u;
+const SURFACE_WELD: u32 = 2u;
+const SURFACE_STUDS: u32 = 3u;
+const SURFACE_INLET: u32 = 4u;
+// Half the stud's width and its corner radius, in studs.
+const STUD_HALF: f32 = 0.3;
+const STUD_CORNER: f32 = 0.08;
+// How wide its sloped rim is, and how far that rim turns the normal.
+const STUD_BEVEL: f32 = 0.07;
+const STUD_TILT: f32 = 0.9;
+// What is left of the colour at the bottom of an inlet or a groove.
+const RECESS_SHADE: f32 = 0.4;
+const GROOVE_HALF: f32 = 0.05;
+
+/// `Enum.NormalId` of a face from its object-space axis.
+fn normal_id(axis: vec3<f32>) -> u32 {
+    let positive = axis.x + axis.y + axis.z > 0.0;
+    let along = select(select(2u, 1u, axis.y != 0.0), 0u, axis.x != 0.0);
+    return select(along + 3u, along, positive);
+}
+
+fn surface_relief(input: ptr<function, MaterialInput>, surfaces: u32, extent: vec3<f32>) {
+    let axis = dominant_axis((*input).object_normal);
+    let pattern = (surfaces >> (3u * normal_id(axis))) & 7u;
+    if pattern == 0u {
+        return;
+    }
+    let frame = face_frame(axis);
+    let corner = 0.5 * vec2<f32>(dot(abs(frame.u), extent), dot(abs(frame.v), extent));
+    let p = vec2<f32>(dot((*input).object_studs, frame.u), dot((*input).object_studs, frame.v)) + corner;
+
+    if pattern == SURFACE_GLUE || pattern == SURFACE_WELD {
+        let square = fract(p * 0.5) - 0.5;
+        let groove = 2.0 * min(abs(square.x - square.y), abs(square.x + square.y)) / sqrt(2.0);
+        if groove < GROOVE_HALF {
+            (*input).albedo *= RECESS_SHADE;
+        }
+        return;
+    }
+
+    let cell = floor(p);
+    let checker = (i32(cell.x) + i32(cell.y)) % 2 == 0;
+    let raised = pattern == SURFACE_STUDS || (pattern != SURFACE_INLET && checker);
+    let local = fract(p) - 0.5;
+    let q = abs(local) - vec2<f32>(STUD_HALF - STUD_CORNER);
+    let outside = max(q, vec2<f32>(0.0));
+    let d = length(outside) + min(max(q.x, q.y), 0.0) - STUD_CORNER;
+    if d > 0.0 {
+        return;
+    }
+    if d < -STUD_BEVEL {
+        if !raised {
+            (*input).albedo *= RECESS_SHADE;
+        }
+        return;
+    }
+    // Outward from the stud's centre, across its rim.
+    var across = sign(local) * select(vec2<f32>(0.0, 1.0), vec2<f32>(1.0, 0.0), q.x > q.y);
+    if outside.x > 0.0 && outside.y > 0.0 {
+        across = sign(local) * normalize(outside);
+    }
+    let slope = select(-STUD_TILT, STUD_TILT, raised);
+    let tangent = (*input).rotation * (frame.u * across.x + frame.v * across.y);
+    (*input).world_normal = normalize(normalize((*input).world_normal) + tangent * slope);
 }

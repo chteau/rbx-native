@@ -47,7 +47,7 @@ pub use particles::gui_particle_burst;
 use particles::Sims;
 use space::Space;
 use text::Typesetter;
-pub use text::{GuiTextEdit, GuiTextLine, GuiTextMap};
+pub use text::{measure_text, GuiTextEdit, GuiTextLine, GuiTextMap};
 pub(crate) use viewport::Look as FrameLook;
 use viewport::Viewports;
 
@@ -254,6 +254,7 @@ impl Gui {
             gui.fonts(&mut faces);
         }
         self.text.adopt(fonts, &faces);
+        text::share_faces(fonts, &faces);
 
         self.planned = screens.to_vec();
         self.screens = pseudo::localized(&self.planned, self.pseudo);

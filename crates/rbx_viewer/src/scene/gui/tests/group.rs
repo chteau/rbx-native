@@ -80,7 +80,8 @@ fn a_default_canvas_group_is_still_marked_but_tints_nothing() {
 
 // "Descendants of `CanvasGroup` will be rendered as a flattened texture only
 // when the ancestor `LayerCollector` has its `ZIndexBehavior` set to
-// `Sibling`."
+// `Sibling`." The real client then fades and tints the group's own
+// background alone (`gui_canvas_groups`).
 #[test]
 fn a_canvas_group_under_global_z_index_is_never_flattened() {
     let (mut dom, gui) = screen_gui();
@@ -91,6 +92,16 @@ fn a_canvas_group_under_global_z_index_is_never_flattened() {
         .unwrap();
     dom.set_property(group, "GroupTransparency", Variant::Float32(0.5))
         .unwrap();
+    dom.set_property(
+        group,
+        "GroupColor3",
+        Variant::Color3(rbx_dom::Color3Data {
+            r: 0.0,
+            g: 1.0,
+            b: 1.0,
+        }),
+    )
+    .unwrap();
     frame(
         &mut dom,
         group,
@@ -100,5 +111,11 @@ fn a_canvas_group_under_global_z_index_is_never_flattened() {
 
     let elements = resolve(&screens(&dom), VIEWPORT);
 
+    // The class default background, a grey, times the cyan tint.
+    let grey = srgb_to_linear(163.0 / 255.0);
     assert_eq!(elements[0].group, None);
+    assert_eq!(elements[0].background_alpha, 0.5);
+    assert_eq!(elements[0].background[0], 0.0);
+    assert!((elements[0].background[1] - grey).abs() < 0.01);
+    assert_eq!(elements[1].background_alpha, 1.0);
 }
