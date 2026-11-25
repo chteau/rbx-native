@@ -555,6 +555,15 @@ fn evaluate(
         return None;
     }
     let tree = parsed.root;
+    let baked = || fallback.and_then(baked::of_bytes);
+    if parsed.meshes {
+        if let Some(baked) = baked() {
+            return Some(Some(Evaluated {
+                tree,
+                mesh: Some(Arc::new(baked.mesh.into())),
+            }));
+        }
+    }
     if let Ok(solid) = csg::evaluate(&tree, bake) {
         return Some(Some(Evaluated {
             tree,
@@ -563,9 +572,7 @@ fn evaluate(
     }
     Some(Some(Evaluated {
         tree,
-        mesh: fallback
-            .and_then(baked::of_bytes)
-            .map(|baked| Arc::new(baked.mesh.into())),
+        mesh: baked().map(|baked| Arc::new(baked.mesh.into())),
     }))
 }
 
