@@ -28,7 +28,7 @@ pub(crate) use fit::{
 };
 pub(crate) use wrap::Hsr;
 
-use super::material::{Catalog, Slot};
+use super::material::{Catalog, Kind, Slot};
 use super::shape::{FILE_MESH, HEAD_MESH};
 
 const MESH_PART: &str = "MeshPart";
@@ -518,7 +518,18 @@ fn from_mesh_part(
         _ => super::FALLBACK_COLOR,
     };
 
-    let material = materials.slot_for(properties, database);
+    let mut material = materials.slot_for(properties, database);
+    // Real Studio draws a textured Neon MeshPart as a SmoothPlastic one,
+    // lit and with no glow, opaque or see-through alike; only an
+    // untextured one is neon.
+    if texture.is_some() && material.kind == Kind::Neon {
+        let mut plain = properties.clone();
+        if let Some(value) = database.enum_value("Material", "SmoothPlastic") {
+            plain.insert("Material".to_owned(), Variant::Enum(value));
+        }
+        material = materials.slot_for(&plain, database);
+    }
+    let alpha = super::alpha(properties, material.kind);
 
     Some(Entry {
         referent,
@@ -529,8 +540,10 @@ fn from_mesh_part(
         fit,
         color: color.map(|channel| super::srgb_to_linear(f32::from(channel) / 255.0)),
         tint: [1.0; 3],
-        reveals_color: true,
-        alpha: super::alpha(properties, material.kind),
+        // A see-through MeshPart keeps its image's own alpha: in Studio
+        // the texels with none vanish once Transparency is above 0.
+        reveals_color: alpha >= 1.0,
+        alpha,
         reflectance: super::number(properties.get("Reflectance")).clamp(0.0, 1.0),
         casts_shadow: super::casts_shadow(properties),
         dressing: clothing::dressing(dom, referent).map(Box::new),
