@@ -159,11 +159,15 @@ impl Link {
 
 /// A message left the queue (written, or given up on).
 fn dequeued(stats: &Stats, bytes: &[u8]) {
-    let _ = stats
-        .queued
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |q| {
-            Some(q.saturating_sub(bytes.len() as u64))
-        });
+    let mut q = stats.queued.load(Ordering::Relaxed);
+    while let Err(now) = stats.queued.compare_exchange_weak(
+        q,
+        q.saturating_sub(bytes.len() as u64),
+        Ordering::Relaxed,
+        Ordering::Relaxed,
+    ) {
+        q = now;
+    }
 }
 
 impl Drop for Link {
