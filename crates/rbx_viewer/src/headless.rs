@@ -1108,6 +1108,19 @@ impl Headless {
         std::mem::take(&mut self.warnings)
     }
 
+    /// The font families whose text fell back to the system's sans-serif,
+    /// as `rbxasset://` references, see `Loaded::missing_fonts`.
+    pub(crate) fn missing_fonts(&self) -> Vec<String> {
+        let mut families: Vec<String> = Vec::new();
+        for face in self.loaded.missing_fonts() {
+            let family = crate::assets::describe(&face.family);
+            if !families.contains(&family) {
+                families.push(family);
+            }
+        }
+        families
+    }
+
     /// Every file mesh the current scene resolved, for a hit test against
     /// the triangles actually drawn, see [`crate::pick::parts_along`]. A
     /// handle onto the renderer's own copies rather than a duplicate of them,

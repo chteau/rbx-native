@@ -2,9 +2,13 @@
 //! compared, and must stay within its golden's tolerance (see
 //! `rbx_viewer::fidelity` and `crates/rbx_viewer/fidelity/goldens.json`).
 //!
-//! Needs a GPU. Without one the test says so and passes, as `isolation.rs`
-//! does. A scene whose assets could not be fetched (offline, no cache) is
-//! skipped with the reason: its picture would be missing them.
+//! Needs a GPU that draws at full size. Without one the test says so and
+//! passes, as `isolation.rs` does: a software adapter or a small integrated
+//! GPU starts with 256 or 512 px materials and a 4096 px sun map, and that
+//! alone moves the material scenes past their goldens. A scene whose assets could not be fetched (offline, no cache) is
+//! skipped with the reason: its picture would be missing them. So is one
+//! whose font family no source has (Builder Sans on a machine with no
+//! Roblox client installed): its text would be the OS's own sans-serif.
 
 use rbx_viewer::fidelity::{self, metrics};
 
@@ -35,6 +39,10 @@ fn every_scene_stays_within_its_golden() {
                 return;
             }
         };
+        if let Some(why) = fidelity::reduced() {
+            println!("skipped: {why}");
+            return;
+        }
         if !warnings.is_empty() {
             println!("{}: skipped, loading warned: {warnings:?}", scene.name);
             continue;

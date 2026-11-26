@@ -271,8 +271,8 @@ pub(crate) fn connect_route(
     }
     let (socket, _) = tungstenite::connect(request)?;
     match socket.get_ref() {
-        MaybeTlsStream::Plain(stream) => stream.set_read_timeout(Some(read_timeout))?,
-        MaybeTlsStream::Rustls(stream) => stream.get_ref().set_read_timeout(Some(read_timeout))?,
+        MaybeTlsStream::Plain(stream) => crate::tick::set(stream, read_timeout)?,
+        MaybeTlsStream::Rustls(stream) => crate::tick::set(stream.get_ref(), read_timeout)?,
         _ => {}
     }
     Ok(socket)
@@ -759,12 +759,15 @@ impl Worker {
                     let Ok(json) = serde_json::to_string(&sealed) else {
                         return Outcome::Failed("cannot encode state".into());
                     };
-                    if let Err(error) = socket.send(Message::text(json)) {
+                    if let Err(error) = crate::tick::send(&mut socket, Message::text(json)) {
                         return Outcome::Failed(error.to_string());
                     }
                     last_sent = Instant::now();
                 }
                 self.dirty = false;
+            }
+            if let Err(error) = crate::tick::flush(&mut socket) {
+                return Outcome::Failed(error.to_string());
             }
             match socket.read() {
                 Ok(Message::Text(text)) => {
@@ -780,11 +783,7 @@ impl Worker {
                     return Outcome::Failed("relay closed the connection".into())
                 }
                 Ok(_) => {}
-                Err(WsError::Io(error))
-                    if matches!(
-                        error.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                    ) => {}
+                Err(error) if crate::tick::nothing_read(&error, READ_TIMEOUT) => {}
                 Err(error) => return Outcome::Failed(error.to_string()),
             }
         }

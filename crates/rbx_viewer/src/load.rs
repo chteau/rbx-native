@@ -17,7 +17,7 @@ use rbx_reflection::ReflectionDatabase;
 pub(crate) use fetcher::Source;
 pub(crate) use resident::{Answered, Resident};
 
-use crate::fonts::Library;
+use crate::fonts::{Face, Library};
 use crate::lighting::{self, Lighting, LocalLight};
 use crate::renderer::World;
 use crate::scene::{unknown_part_types, Scene};
@@ -281,6 +281,22 @@ impl Loaded {
 
     pub(crate) fn scene(&self) -> &Scene {
         &self.scene
+    }
+
+    /// The faces the GUI text wants that never landed, whose text the
+    /// typesetter sets in the system's sans-serif instead. A family missing
+    /// from every source (Builder Sans is in no Studio content package, only
+    /// in an installed client) lands here, not in the warnings.
+    pub(crate) fn missing_fonts(&self) -> Vec<Face> {
+        self.scene
+            .gui_fonts()
+            .into_iter()
+            .filter(|face| {
+                self.fonts
+                    .entry_of(face)
+                    .is_none_or(|entry| !self.fonts.faces.contains_key(&entry.asset))
+            })
+            .collect()
     }
 
     /// Re-reads every `Decal`/`Texture` hanging off `part` into the decor
