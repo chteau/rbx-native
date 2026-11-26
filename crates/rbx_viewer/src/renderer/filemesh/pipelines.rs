@@ -42,12 +42,14 @@ impl Pipelines {
 
 /// Builds one set. `layouts` is the whole bind group table, frame, the
 /// textured pass's image, materials, then the appearance set, from which each
-/// variant keeps the groups it actually binds.
+/// variant keeps the groups it actually binds. `scene_depth`: whether a
+/// translucent set reads the opaque scene's depth at group 3.
 pub(super) fn build(
     device: &wgpu::Device,
     target: Target,
     layouts: &Layouts<'_>,
     translucent: bool,
+    scene_depth: bool,
 ) -> Pipelines {
     // Each variant's own image is the *last* group, above the frame and
     // materials every surface shader shares: the plain layout is then a prefix
@@ -85,7 +87,7 @@ pub(super) fn build(
                 // both faces.
                 cull: None,
                 translucent,
-                scene_depth: translucent,
+                scene_depth: translucent && scene_depth,
                 ..Surface::new(label, shader, layouts, buffers)
             },
         )

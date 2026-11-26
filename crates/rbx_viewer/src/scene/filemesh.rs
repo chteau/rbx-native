@@ -328,6 +328,29 @@ pub(crate) fn plan(dom: &WeakDom, database: &ReflectionDatabase, materials: &mut
     }
 }
 
+/// [`plan`] for the instances under `root` alone, wherever it sits: a
+/// `ViewportFrame` draws its own meshes, out of the workspace.
+pub(crate) fn plan_under(
+    dom: &WeakDom,
+    database: &ReflectionDatabase,
+    root: Ref,
+    materials: &mut Catalog,
+) -> Plan {
+    let entries = super::descendants_of(dom, root)
+        .filter(|&referent| super::is_drawable(dom, database, referent))
+        .filter_map(|referent| {
+            from_mesh_part(dom, database, referent, materials)
+                .or_else(|| from_special_mesh_child(dom, database, referent, materials))
+        })
+        .collect::<Vec<_>>();
+    let poses = skinned::Poses::plan(dom, database, &entries);
+    Plan {
+        entries,
+        poses,
+        ..Plan::default()
+    }
+}
+
 /// Resolves a plan against downloaded assets.
 ///
 /// Returns the renderer-ready instances alongside the set of referents that

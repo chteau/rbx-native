@@ -16,7 +16,7 @@ use super::{
     Viewport,
 };
 use crate::fonts::Face;
-use crate::scene::Part;
+
 
 /// One `UDim2`: a fraction of the parent box plus a pixel offset, per axis.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -223,10 +223,10 @@ impl Screen {
         collect_fonts_of(&self.roots, &self.groups, into);
     }
 
-    /// Every `ViewportFrame` part on the screen, see `viewport::each_part`.
-    pub(crate) fn viewport_parts(&mut self, apply: &mut impl FnMut(&mut Part)) {
+    /// Every `ViewportFrame` on the screen, see `viewport::each_viewport`.
+    pub(crate) fn viewports(&mut self, apply: &mut impl FnMut(&mut Viewport)) {
         for root in &mut self.roots {
-            viewport::each_part(root, apply);
+            viewport::each_viewport(root, apply);
         }
     }
 }

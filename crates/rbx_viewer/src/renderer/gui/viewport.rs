@@ -11,6 +11,10 @@
 //! bind group 0 in full, so this pass carries stand-ins for the shadow maps,
 //! the probe and the light buffers it never actually reads.
 //!
+//! Its `MeshPart`s and file `SpecialMesh`es draw through the file mesh
+//! pipelines (see `renderer::filemesh`), textured, after the shapes: the
+//! same batches the workspace's meshes draw in, rebuilt for each frame.
+//!
 //! Baked whenever the frame's tree is laid out, not per frame: nothing in a
 //! `ViewportFrame` moves in this viewer, and its pixel size is only known
 //! once its box is.
@@ -26,13 +30,14 @@ use wgpu::util::DeviceExt;
 
 use super::atlas::Atlas;
 use crate::quality::{QualityLevel, QualityProfile};
+use crate::renderer::filemesh::FileMeshes;
 use crate::renderer::geometry::Meshes;
 use crate::renderer::lighting::LightingRaw;
-use crate::renderer::pipeline::{self, Frame, Shared, Target, DEPTH_FORMAT};
+use crate::renderer::pipeline::{self, Bindings, Frame, Shared, Target, DEPTH_FORMAT};
 use crate::renderer::shadow::{Fit, Lamp};
 use crate::scene::{
     linear_to_srgb, srgb_to_linear, GuiElement, GuiImageScale, GuiViewCamera, GuiViewport, Painted,
-    Part,
+    Part, Resolved,
 };
 use batch::{batch, pixels, target};
 use lighting::{lighting_of, StandIns, NO_SKY};
@@ -52,6 +57,8 @@ pub(super) struct Viewports {
     frame: Frame,
     lighting: wgpu::Buffer,
     meshes: Meshes,
+    /// The frame's file meshes, re-batched for each bake.
+    filemesh: FileMeshes,
     /// Clamped and linear, like a canvas': the texture is sampled over
     /// exactly its own rectangle.
     sampler: wgpu::Sampler,
@@ -116,6 +123,16 @@ impl Viewports {
         let (opaque, blended) =
             pipeline::shape_pipelines(device, TARGET, &layout, material_layout, false);
 
+        // No scene depth to read: nothing opaque is bound for a frame's
+        // translucent meshes to measure against.
+        let filemesh = FileMeshes::with_depth(
+            device,
+            queue,
+            (TARGET, false),
+            (&layout, material_layout),
+            &Resolved::default(),
+            quality,
+        );
         let mut quality = QualityLevel::default().profile();
         quality.render_distance = f32::INFINITY;
         quality.env_reflections = false;
@@ -126,6 +143,7 @@ impl Viewports {
             frame,
             lighting,
             meshes: Meshes::new(device, []),
+            filemesh,
             sampler: device.create_sampler(&wgpu::SamplerDescriptor {
                 label: Some("rbxview viewport frame"),
                 address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -173,7 +191,7 @@ impl Viewports {
                 .iter()
                 .filter(|part| part.is_drawn())
                 .collect();
-            if viewport.alpha <= 0.0 || parts.is_empty() {
+            if viewport.alpha <= 0.0 || (parts.is_empty() && viewport.meshes.instances.is_empty()) {
                 continue;
             }
             let Some(size) = pixels(&element.rect) else {
@@ -241,10 +259,18 @@ impl Viewports {
             )),
         );
 
+        self.filemesh
+            .rebuild(device, queue, &viewport.meshes.resolved());
+        self.filemesh.prepare(queue, eye);
         let (instances, runs) = batch(parts, eye);
         for run in &runs {
             self.meshes.ensure(device, run.kind);
         }
+        // Never empty: a frame of meshes alone still binds a buffer.
+        let instances = match instances.is_empty() {
+            true => vec![bytemuck::Zeroable::zeroed()],
+            false => instances,
+        };
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("rbxview viewport frame instances"),
             contents: bytemuck::cast_slice(&instances),
@@ -297,23 +323,33 @@ impl Viewports {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&self.opaque);
-            pass.set_bind_group(0, &self.frame.bind_group, &[]);
-            pass.set_bind_group(1, materials, &[]);
-            pass.set_vertex_buffer(1, buffer.slice(..));
-            let mut blending = false;
-            for run in &runs {
-                // The runs are ordered opaque first, so one switch is all it
-                // takes, and the blended pipeline's own depth state then
-                // keeps a translucent part from hiding what sits behind it.
-                if run.blended && !blending {
-                    pass.set_pipeline(&self.blended);
-                    blending = true;
+            let bindings = Bindings {
+                frame: &self.frame.bind_group,
+                materials,
+                scene_depth: None,
+            };
+            // Opaque shapes, opaque meshes, then what blends: the runs are
+            // ordered opaque first, and each pipeline's own depth state
+            // keeps a translucent part from hiding what sits behind it.
+            for blended in [false, true] {
+                if blended {
+                    self.filemesh.draw_opaque(&mut pass, bindings);
                 }
-                if let Some(mesh) = self.meshes.get(run.kind) {
-                    mesh.draw_range(&mut pass, run.instances.clone());
+                let mut runs = runs.iter().filter(|run| run.blended == blended).peekable();
+                if runs.peek().is_none() {
+                    continue;
+                }
+                pass.set_pipeline(if blended { &self.blended } else { &self.opaque });
+                pass.set_bind_group(0, &self.frame.bind_group, &[]);
+                pass.set_bind_group(1, materials, &[]);
+                pass.set_vertex_buffer(1, buffer.slice(..));
+                for run in runs {
+                    if let Some(mesh) = self.meshes.get(run.kind) {
+                        mesh.draw_range(&mut pass, run.instances.clone());
+                    }
                 }
             }
+            self.filemesh.draw_blended(&mut pass, bindings);
         }
         queue.submit(std::iter::once(encoder.finish()));
         texture

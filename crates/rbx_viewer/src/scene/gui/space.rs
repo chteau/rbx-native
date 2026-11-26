@@ -23,7 +23,7 @@ use super::style::Styled;
 use crate::fonts::Face;
 use crate::scene::beam::{world_cframe, ParentMap};
 use crate::scene::Placement;
-use crate::scene::{Catalog, Part};
+use crate::scene::Catalog;
 
 const BILLBOARD_CLASS: &str = "BillboardGui";
 const SURFACE_CLASS: &str = "SurfaceGui";
@@ -126,10 +126,10 @@ impl SpaceGui {
         collect_fonts_of(&self.roots, &self.groups, into);
     }
 
-    /// Every `ViewportFrame` part on the canvas, see `Screen::viewport_parts`.
-    pub(crate) fn viewport_parts(&mut self, apply: &mut impl FnMut(&mut Part)) {
+    /// Every `ViewportFrame` on the canvas, see `Screen::viewports`.
+    pub(crate) fn viewports(&mut self, apply: &mut impl FnMut(&mut super::Viewport)) {
         for root in &mut self.roots {
-            super::plan::each_viewport_part(root, apply);
+            super::plan::each_viewport(root, apply);
         }
     }
 }

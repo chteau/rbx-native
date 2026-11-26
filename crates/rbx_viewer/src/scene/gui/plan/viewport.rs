@@ -5,9 +5,14 @@
 //! material catalog) so the renderer can draw them through its ordinary
 //! shape pipelines, into a texture of the frame's own pixel size.
 //!
+//! `MeshPart`s and file `SpecialMesh`es under it are planned too (see
+//! [`meshes`]), and draw as their real meshes once those are in.
+//!
 //! What ends up in that texture is then an image as far as the GUI is
 //! concerned: `ImageColor3`/`ImageTransparency` are read like an
 //! `ImageLabel`'s, and the renderer composites the texture exactly as one.
+
+mod meshes;
 
 use std::collections::BTreeMap;
 
@@ -19,6 +24,7 @@ use rbx_reflection::ReflectionDatabase;
 use super::props::{alpha, color, float};
 use crate::camera::NEAR_PLANE;
 use crate::scene::{self, cframe_matrix, Catalog, Part};
+pub(crate) use meshes::ViewportMeshes;
 
 const FRAME_CLASS: &str = "ViewportFrame";
 const CAMERA_CLASS: &str = "Camera";
@@ -85,6 +91,8 @@ pub(crate) struct Viewport {
     /// nested `GuiObject`s are unsupported by Roblox itself, so nothing under
     /// the frame is anything but 3D content or a `Camera`.
     pub(crate) parts: Vec<Part>,
+    /// The meshes among them.
+    pub(crate) meshes: ViewportMeshes,
 }
 
 /// `None` for any class but a `ViewportFrame`.
@@ -107,6 +115,12 @@ pub(in crate::scene::gui) fn read(
         .filter(|&referent| scene::is_drawable(dom, database, referent))
         .filter_map(|referent| scene::build_part(dom, database, referent, materials))
         .collect();
+    let meshes = ViewportMeshes::new(scene::filemesh::plan_under(
+        dom,
+        database,
+        instance.referent(),
+        materials,
+    ));
 
     // "The direction of the light source from position (0, 0, 0)": the docs
     // never say which way round, but read as the direction the light *travels*
@@ -124,6 +138,7 @@ pub(in crate::scene::gui) fn read(
         tint: color(properties, "ImageColor3", [1.0, 1.0, 1.0]),
         alpha: alpha(properties, "ImageTransparency"),
         parts,
+        meshes,
     })
 }
 
@@ -222,15 +237,19 @@ fn find<'a>(
         })
 }
 
-/// Every part of every `ViewportFrame` in `node`'s subtree, for the material
-/// re-read a scene does once the packs have landed (see
-/// `Scene::resolve_materials`), a frame's parts point at the same layers
-/// the workspace's do, and go plastic-then-textured the same way.
-pub(in crate::scene::gui) fn each_part(node: &mut super::Node, apply: &mut impl FnMut(&mut Part)) {
+/// Every `ViewportFrame` in `node`'s subtree, for what a scene joins to
+/// them once assets land: the material re-read (see
+/// `Scene::resolve_materials`), a frame's parts pointing at the same
+/// layers the workspace's do, and its meshes (see
+/// `Scene::resolve_viewport_meshes`).
+pub(in crate::scene::gui) fn each_viewport(
+    node: &mut super::Node,
+    apply: &mut impl FnMut(&mut Viewport),
+) {
     if let Some(viewport) = &mut node.viewport {
-        viewport.parts.iter_mut().for_each(&mut *apply);
+        apply(viewport);
     }
     for child in &mut node.children {
-        each_part(child, apply);
+        each_viewport(child, apply);
     }
 }
