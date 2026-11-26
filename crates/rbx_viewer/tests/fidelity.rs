@@ -4,7 +4,9 @@
 //!
 //! Needs a GPU. Without one the test says so and passes, as `isolation.rs`
 //! does. A scene whose assets could not be fetched (offline, no cache) is
-//! skipped with the reason: its picture would be missing them.
+//! skipped with the reason: its picture would be missing them. So is one
+//! whose font family no source has (Builder Sans on a machine with no
+//! Roblox client installed): its text would be the OS's own sans-serif.
 
 use rbx_viewer::fidelity::{self, metrics};
 
