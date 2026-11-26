@@ -672,8 +672,18 @@ impl Scene {
             self.file_mesh_plan.texture_refs(),
         );
         let (viewport_meshes, viewport_textures) = self.viewport_mesh_assets();
-        meshes.extend(viewport_meshes.into_iter().filter(|m| !meshes.contains(m)).collect::<Vec<_>>());
-        textures.extend(viewport_textures.into_iter().filter(|t| !textures.contains(t)).collect::<Vec<_>>());
+        meshes.extend(
+            viewport_meshes
+                .into_iter()
+                .filter(|m| !meshes.contains(m))
+                .collect::<Vec<_>>(),
+        );
+        textures.extend(
+            viewport_textures
+                .into_iter()
+                .filter(|t| !textures.contains(t))
+                .collect::<Vec<_>>(),
+        );
         (meshes, textures)
     }
 

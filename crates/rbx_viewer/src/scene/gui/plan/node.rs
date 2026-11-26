@@ -17,7 +17,6 @@ use super::{
 };
 use crate::fonts::Face;
 
-
 /// One `UDim2`: a fraction of the parent box plus a pixel offset, per axis.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub(in crate::scene::gui) struct Span {

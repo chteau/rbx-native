@@ -417,9 +417,15 @@ fn a_textured_neon_mesh_part_is_plain_and_a_see_through_one_keeps_its_alpha() {
         let referent = Ref::new(id);
         let mut instance = Instance::new(referent, "MeshPart", "Flash");
         let properties = instance.properties_mut();
-        properties.insert("MeshId".to_string(), Variant::String("rbxassetid://1".to_string()));
+        properties.insert(
+            "MeshId".to_string(),
+            Variant::String("rbxassetid://1".to_string()),
+        );
         if texture {
-            properties.insert("TextureID".to_string(), Variant::String("rbxassetid://2".to_string()));
+            properties.insert(
+                "TextureID".to_string(),
+                Variant::String("rbxassetid://2".to_string()),
+            );
         }
         properties.insert("Material".to_string(), Variant::Enum(288));
         properties.insert("Transparency".to_string(), Variant::Float32(transparency));
@@ -430,7 +436,12 @@ fn a_textured_neon_mesh_part_is_plain_and_a_see_through_one_keeps_its_alpha() {
     }
 
     let plan = planned(&dom);
-    let entry = |id| plan.entries.iter().find(|e| e.referent == Ref::new(id)).unwrap();
+    let entry = |id| {
+        plan.entries
+            .iter()
+            .find(|e| e.referent == Ref::new(id))
+            .unwrap()
+    };
     assert_eq!(entry(1).material.kind, Kind::Plastic);
     assert_eq!(entry(2).material.kind, Kind::Neon);
     assert!(entry(1).reveals_color);

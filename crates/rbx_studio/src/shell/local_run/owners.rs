@@ -64,7 +64,11 @@ impl StudioOwners {
         }
     }
 
-    fn resolve(&self, universe: u64, lookup: impl FnOnce() -> Result<Creators, String>) -> Result<Creators, String> {
+    fn resolve(
+        &self,
+        universe: u64,
+        lookup: impl FnOnce() -> Result<Creators, String>,
+    ) -> Result<Creators, String> {
         let mut known = self.known.lock().unwrap_or_else(|e| e.into_inner());
         if let Some((at, creators)) = known.get(&universe) {
             if at.elapsed() < FRESH {
@@ -128,7 +132,10 @@ mod tests {
     #[test]
     fn offline_uses_what_an_online_lookup_kept() {
         let file = scratch("offline");
-        assert_eq!(owners(file.clone()).resolve(42, || Ok(creators(5))), Ok(creators(5)));
+        assert_eq!(
+            owners(file.clone()).resolve(42, || Ok(creators(5))),
+            Ok(creators(5))
+        );
         let offline = || Err("offline: Offline mode is on".to_owned());
         assert_eq!(owners(file.clone()).resolve(42, offline), Ok(creators(5)));
         // Another experience was never looked up: no owners to check with.

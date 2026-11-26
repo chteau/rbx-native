@@ -38,9 +38,10 @@ impl Client {
         if self.require_api_key().is_ok() {
             let info = self.introspect()?;
             owners.add(Owner::User(info.authorized_user_id));
-            let manages_groups = info.scopes.iter().any(|s| {
-                s.name == "legacy-group" && s.operations.iter().any(|o| o == "manage")
-            });
+            let manages_groups = info
+                .scopes
+                .iter()
+                .any(|s| s.name == "legacy-group" && s.operations.iter().any(|o| o == "manage"));
             if manages_groups {
                 for group in self.manageable_groups()? {
                     owners.add(Owner::Group(group.id));
@@ -79,7 +80,12 @@ mod tests {
         let owners = client(&root).asset_owners(42).unwrap();
         assert_eq!(owners.users, [925308243]);
         assert_eq!(owners.groups, [7, 9]);
-        let paths: Vec<String> = log.lock().unwrap().iter().map(|c| c.path().to_owned()).collect();
+        let paths: Vec<String> = log
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|c| c.path().to_owned())
+            .collect();
         assert_eq!(
             paths,
             [

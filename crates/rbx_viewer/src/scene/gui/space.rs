@@ -22,8 +22,8 @@ use super::plan::{
 use super::style::Styled;
 use crate::fonts::Face;
 use crate::scene::beam::{world_cframe, ParentMap};
-use crate::scene::Placement;
 use crate::scene::Catalog;
+use crate::scene::Placement;
 
 const BILLBOARD_CLASS: &str = "BillboardGui";
 const SURFACE_CLASS: &str = "SurfaceGui";

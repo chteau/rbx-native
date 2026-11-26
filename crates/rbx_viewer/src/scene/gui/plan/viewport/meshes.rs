@@ -80,7 +80,16 @@ impl ViewportMeshes {
 /// in the same places, which is all a layout compares them for.
 impl PartialEq for ViewportMeshes {
     fn eq(&self, other: &Self) -> bool {
-        let key = |i: &ResolvedInstance| (i.referent, i.mesh.clone(), i.texture.clone(), i.model, i.color, i.alpha);
+        let key = |i: &ResolvedInstance| {
+            (
+                i.referent,
+                i.mesh.clone(),
+                i.texture.clone(),
+                i.model,
+                i.color,
+                i.alpha,
+            )
+        };
         Arc::ptr_eq(&self.plan, &other.plan)
             && self.instances.len() == other.instances.len()
             && self
