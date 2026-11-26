@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-26
+
+- **EditableMesh follow-ups.** `CreateEditableMeshAsync` and `CreateEditableImageAsync` check who owns the asset now, like Studio: you, a group your key can manage, or the experience's owner, in Edit and in Play (local). I keep the answer on disk so offline still knows it, and offline with nothing kept the load fails like Studio's does with no network. MeshParts and SpecialMeshes inside a ViewportFrame draw as their real meshes with textures instead of grey boxes, so OpenArena's bot heads and menu banner show up. A textured Neon MeshPart doesn't glow anymore and a see-through one keeps its texture's alpha, I checked both in real Studio, that was OpenArena's white muzzle flash. And the "Maximum event re-entrancy depth exceeded" spam is gone, the cap only counts a handler firing its own event now. (@chteau)
+
 ## 2026-11-25
 
 - **EditableMesh and EditableImage for real.** Scripts can make them now, in Play (local) and in the command bar and plugins. Every AssetService constructor is there (from nothing, from an asset id, from another editable, `CreateMeshPartAsync` and `CreateDataModelContentAsync`), plus every vertex, face, normal, UV, colour, bone and FACS method, the batch calls, raycasts and closest-point queries, and EditableImage's pixel buffers and draw calls. The viewport redraws whatever a script changes, live. I recorded goldens for every method from a real Roblox server and client, so the ids, the errors, how a quad gets split and the blend maths match. I checked Edit in real Studio too: there the editables work without the Local Run beta, there's no memory budget and a fixed-size mesh can still grow, so ours do the same. OpenArena's weapons, pickups and ejected brass, which get rebuilt every frame, show up and animate in Play (local) now. (@chteau)
