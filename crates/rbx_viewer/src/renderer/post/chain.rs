@@ -11,7 +11,31 @@ use super::targets::Level;
 use super::Post;
 
 impl Post {
-    /// Builds the bloom and full-frame blur chains where each is enabled, then
+    /// Takes what glows out of the frame as it stands: called between the
+    /// opaque and the translucent halves, so only opaque surfaces bloom.
+    /// Studio draws a see-through Neon part with no glow at all, where a
+    /// threshold on the finished frame lit a halo round one at Transparency
+    /// 0.4 (still over 1 in the HDR frame) as wide as an opaque one's.
+    pub(in crate::renderer) fn seed_bloom(&self, encoder: &mut wgpu::CommandEncoder) {
+        let Some(targets) = &self.targets else {
+            return;
+        };
+        let Some(first) = targets.chain.first() else {
+            return;
+        };
+        if self.intensity() > 0.0 {
+            pass(
+                encoder,
+                "rbxview bloom threshold",
+                &first.view,
+                &self.threshold,
+                &[&self.uniform_bind, &targets.scene_source],
+                true,
+            );
+        }
+    }
+
+    /// Builds the bloom (from what [`Post::seed_bloom`] took) and full-frame blur chains where each is enabled, then
     /// writes the graded, tone-mapped frame to `target`.
     ///
     /// The resolve always runs, it is the only pass that writes the final
@@ -31,14 +55,6 @@ impl Post {
         };
 
         if self.intensity() > 0.0 {
-            pass(
-                encoder,
-                "rbxview bloom threshold",
-                &first.view,
-                &self.threshold,
-                &[&self.uniform_bind, &targets.scene_source],
-                true,
-            );
             self.downsample_chain(encoder, "rbxview bloom downsample", &targets.chain);
             // Back down the chain, each level adding its own blur into the
             // wider one below it.
