@@ -184,15 +184,7 @@ pub fn memorystore_budget(players: usize) -> f64 {
 
 /// The resident memory of this process, MB (0 where unknown).
 pub fn resident_mb() -> f64 {
-    std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|status| {
-            status
-                .lines()
-                .find_map(|l| l.strip_prefix("VmRSS:"))
-                .and_then(|v| v.split_whitespace().next()?.parse::<f64>().ok())
-        })
-        .map_or(0.0, |kb| kb / 1024.0)
+    rbx_lua::profiler::resident_mb()
 }
 
 fn instance_count(dom: &WeakDom) -> usize {

@@ -237,3 +237,20 @@ fn string_arg(args: &[Value], function: &str) -> mlua::Result<String> {
         ))),
     }
 }
+
+/// What this process holds, in MB: its resident set, as Studio's
+/// `Stats:GetTotalMemoryUsageMb` is its own process's (0 where unknown).
+pub fn resident_mb() -> f64 {
+    use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System};
+    let Ok(pid) = sysinfo::get_current_pid() else {
+        return 0.0;
+    };
+    let mut system = System::new();
+    system.refresh_processes_specifics(
+        ProcessesToUpdate::Some(&[pid]),
+        ProcessRefreshKind::new().with_memory(),
+    );
+    system
+        .process(pid)
+        .map_or(0.0, |p| p.memory() as f64 / (1024.0 * 1024.0))
+}
