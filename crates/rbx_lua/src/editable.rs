@@ -21,7 +21,7 @@ use rbx_dom::Ref;
 
 use crate::ctx::Ctx;
 use crate::datatypes::content::{LuaContent, Source};
-use crate::server::{AssetSource, Physics};
+use crate::server::{AssetOwners, AssetSource, Physics};
 use image::LuaEditableImage;
 use mesh::LuaEditableMesh;
 
@@ -62,6 +62,15 @@ static FALLBACK_ASSETS: OnceLock<Arc<dyn AssetSource>> = OnceLock::new();
 /// Sets where Edit's editables download assets from.
 pub fn set_asset_source(source: Arc<dyn AssetSource>) {
     let _ = FALLBACK_ASSETS.set(source);
+}
+
+/// Whose assets Edit's editables may open, and where their creators are
+/// kept for offline use.
+static EDIT_OWNERS: OnceLock<(Arc<dyn AssetOwners>, Option<PathBuf>)> = OnceLock::new();
+
+/// Turns on Edit's asset permission check, as Studio has it.
+pub fn set_asset_owners(owners: Arc<dyn AssetOwners>, cache_dir: Option<PathBuf>) {
+    let _ = EDIT_OWNERS.set((owners, cache_dir));
 }
 
 /// The referent an `EditableImage`/`EditableMesh` handle is published under,
@@ -106,7 +115,9 @@ pub(crate) struct Env {
     /// The simulation, told about runtime `MeshPart`s; none in Edit.
     pub(crate) physics: Option<Rc<dyn Physics>>,
     pub(crate) assets: Option<Arc<dyn AssetSource>>,
-    pub(crate) owners: Vec<u64>,
+    pub(crate) owners: Option<Arc<dyn AssetOwners>>,
+    /// `game.GameId`: whose experience the place is.
+    pub(crate) universe: u64,
     pub(crate) cache_dir: Option<PathBuf>,
     /// A client, whose editables come out of a memory budget.
     pub(crate) client: bool,
@@ -116,16 +127,25 @@ pub(crate) struct Env {
 
 impl Env {
     /// Edit's: the command bar's or a plugin's.
-    pub(crate) fn edit(ctx: &Ctx) -> Env {
-        Env {
+    pub(crate) fn edit(lua: &Lua, ctx: &Ctx) -> Result<Env> {
+        let universe = match crate::studio::game_member(lua, "GameId")? {
+            Some(Value::Integer(id)) => id as u64,
+            Some(Value::Number(id)) => id as u64,
+            _ => 0,
+        };
+        let (owners, cache_dir) = EDIT_OWNERS
+            .get()
+            .map_or((None, None), |(o, c)| (Some(o.clone()), c.clone()));
+        Ok(Env {
             ctx: ctx.clone(),
             physics: None,
             assets: None,
-            owners: Vec::new(),
-            cache_dir: None,
+            owners,
+            universe,
+            cache_dir,
             client: false,
             edit: true,
-        }
+        })
     }
 
     fn assets(&self) -> Option<Arc<dyn AssetSource>> {

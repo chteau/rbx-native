@@ -1512,7 +1512,10 @@ fn run_session(
     session.set_services(rbx_lua::server::Services {
         cache_dir: Some(web.0.clone()),
         // The sandbox place's owner, whose assets the editables tests open.
-        asset_owners: vec![SANDBOX_OWNER],
+        asset_owners: Some(std::sync::Arc::new(rbx_lua::server::Creators {
+            users: vec![SANDBOX_OWNER],
+            groups: Vec::new(),
+        })),
         ..Default::default()
     });
     // A test's verdict mustn't hang on how loaded the machine is.

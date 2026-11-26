@@ -123,6 +123,7 @@ pub(crate) fn services(path: &Path, mode: DataMode) -> rbx_lua::server::Services
         place_id: link.as_ref().map_or(0, |l| l.place_id as i64),
         game_id: link.as_ref().map_or(0, |l| l.universe_id as i64),
         web_lookups: true,
+        asset_owners: Some(super::owners::shared()),
         ..Default::default()
     }
 }

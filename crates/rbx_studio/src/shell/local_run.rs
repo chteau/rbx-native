@@ -28,6 +28,7 @@ mod avatars;
 pub(crate) mod badges;
 pub(crate) mod data;
 mod offline;
+pub(in crate::shell) mod owners;
 mod remote;
 mod replay;
 mod sound;

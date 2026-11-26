@@ -53,7 +53,7 @@ pub use query::{QueryFilter, QueryHit, QueryShape};
 pub use remote::{decode_all, encode_args, Caller, Outgoing, Packet, To, Wire};
 pub(crate) use services::product_info;
 pub use services::{
-    set_text_measure, web_cache_file, Arrival, AssetSource, Device, LiveData, Notice,
+    set_text_measure, web_cache_file, Arrival, AssetOwners, AssetSource, Creators, Device, LiveData, Notice,
     PurchasePrompt, Services, StreamRequest, TeleportRequest, TextMeasure, WebSession,
 };
 pub use terrain::{TerrainOp, TerrainReply};

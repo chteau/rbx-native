@@ -11,7 +11,7 @@ mod entries;
 mod memory;
 mod ordered;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 #[cfg(test)]
 mod tests_entries;
 #[cfg(test)]
