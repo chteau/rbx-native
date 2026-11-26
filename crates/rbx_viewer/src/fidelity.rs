@@ -457,6 +457,19 @@ fn draw(scene: &Scene, place: &WeakDom) -> Result<(Vec<u8>, Vec<String>), String
     Ok((pixels, warnings))
 }
 
+/// Why this machine's frames can't be held to the goldens, which were drawn
+/// with full-size materials and sun map: a GPU with little memory of its own
+/// (a software adapter, most integrated ones) starts smaller. Only known once
+/// a scene has been rendered, as that opens the device.
+pub fn reduced() -> Option<String> {
+    crate::gpu::reduced().then(|| {
+        format!(
+            "this GPU draws {} px materials, the goldens are full size",
+            crate::gpu::material_resolution()
+        )
+    })
+}
+
 /// Where the committed references and goldens live.
 pub fn dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fidelity")

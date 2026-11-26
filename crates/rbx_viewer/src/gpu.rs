@@ -189,6 +189,20 @@ fn shadow_side_cap(small: bool, max_texture_side: u32) -> u32 {
     cap.min(max_texture_side)
 }
 
+/// Whether this GPU draws below the full-size materials and sun map, having
+/// started lean (see [`device`]) or stepped down since: a different picture
+/// by design, which one measured at full size can't be held to.
+pub(crate) fn reduced() -> bool {
+    reduced_at(
+        material_resolution(),
+        SHADOW_SIDE_CAP.load(Ordering::Relaxed),
+    )
+}
+
+fn reduced_at(material_side: u32, shadow_cap: u32) -> bool {
+    material_side < resolution_at(0) || shadow_cap <= SMALL_GPU_SHADOW_SIDE
+}
+
 /// `full` cut `cut` times, never past this GPU's cap or under
 /// [`MIN_SHADOW_SIDE`] (unless `full` itself is smaller).
 fn cut_side(full: u32, cut: u8, cap: u32) -> u32 {
@@ -656,7 +670,7 @@ pub(crate) fn for_tests() -> Option<(wgpu::Device, wgpu::Queue)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{cut_side, shadow_side_cap, small_memory, Rung, MAX_LEAN, SHADOW_OFF};
+    use super::{cut_side, reduced_at, shadow_side_cap, small_memory, Rung, MAX_LEAN, SHADOW_OFF};
     use crate::quality::QualityLevel;
 
     fn ladder(from: Rung) -> Vec<Rung> {
@@ -803,5 +817,8 @@ mod tests {
         assert_eq!(cut_side(8192, 0, shadow_side_cap(false, 16384)), 8192);
         // A GPU whose textures top out under the map is capped there too.
         assert_eq!(cut_side(8192, 0, shadow_side_cap(false, 4096)), 4096);
+        assert!(!reduced_at(1024, shadow_side_cap(false, 16384)));
+        assert!(reduced_at(256, shadow_side_cap(false, 16384)));
+        assert!(reduced_at(1024, shadow_side_cap(true, 16384)));
     }
 }
