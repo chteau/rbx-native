@@ -13,7 +13,7 @@ license.workspace = true
 # Same Luau as `rbx_lua`'s mlua. `luau-codegen` adds the native code
 # generator's library to the link; mlua itself keeps running scripts in the
 # interpreter, since that only changes with mlua's own `luau-jit`.
-mlua-sys = { version = "0.12", features = ["luau", "luau-codegen"] }
+mlua-sys = { version = "0.14", features = ["luau", "luau-codegen"] }
 
 [build-dependencies]
 # Builds the shim against the very Luau headers mlua-sys compiled.

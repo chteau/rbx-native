@@ -1,6 +1,6 @@
 [package]
 name = "rbx_studio"
-version = "0.2.2"
+version = "0.2.3"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -35,6 +35,9 @@ rbx_binary = { path = "../rbx_binary" }
 # opening a place straight from Roblox. Already in the tree through
 # `rbx_viewer`'s asset fetches.
 rbx_cloud = { path = "../rbx_cloud" }
+# Each material's default physical properties (Mass, CurrentPhysicalProperties).
+rbx_materials = { path = "../rbx_materials" }
+rbx_sim = { path = "../rbx_sim" }
 # Play/Test without Studio: probe, channel, tunnel, launcher, embedding.
 rbx_play = { path = "../rbx_play" }
 # The Security Audit dock runs the whole-place remote/script audit.
@@ -80,6 +83,8 @@ rbx_viewer = { path = "../rbx_viewer" }
 # files with this crate's already-tested `is_xml`/`serialize`.
 rbx_xml = { path = "../rbx_xml" }
 rbx_wasm = { path = "../rbx_wasm" }
+# One permission model for MCP clients and plugins.
+rbx_permissions = { path = "../rbx_permissions" }
 # Lossless Luau parser the script graph is built from.
 full_moon = { version = "3", features = ["luau"] }
 # Format Document in the script editor and the Command Bar. Built on the same
@@ -115,6 +120,7 @@ serde = { version = "1", features = ["derive"] }
 # dock's plain-JSON search calls) is the same feature `rbx_cloud` already
 # turns on for its own `ureq`.
 ureq = { version = "3", features = ["json"] }
+rbx_net = { path = "../rbx_net" }
 # `luau-lsp` names files by `file://` URI; converting a path both ways,
 # Windows drive letters and percent-escapes included, is exactly this. Already
 # in the tree (under `ureq`), at this version.

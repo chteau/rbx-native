@@ -1,8 +1,10 @@
 //! `rbxlua`: runs a Luau script against a place/model file and, optionally,
-//! writes the mutated DOM back out; `rbxlua test` runs the place's specs.
+//! writes the mutated DOM back out; `rbxlua test` runs the place's specs;
+//! `rbxlua loadtest` runs it with bot players.
 
 mod args;
 mod dom_io;
+mod loadtest;
 mod test;
 
 use std::process::ExitCode;
@@ -14,8 +16,19 @@ fn main() -> ExitCode {
     let _program = argv.next();
     let mut argv = argv.peekable();
     if matches!(argv.peek().map(String::as_str), Some("--help" | "-h")) {
-        println!("{}\n{}", args::usage(), test::USAGE);
+        println!("{}\n{}\n{}", args::usage(), test::USAGE, loadtest::USAGE);
         return ExitCode::SUCCESS;
+    }
+    if argv.peek().map(String::as_str) == Some("loadtest") {
+        argv.next();
+        return match loadtest::parse(argv) {
+            Ok(parsed) => loadtest::run(parsed),
+            Err(err) => {
+                eprintln!("error: {err}");
+                eprintln!("{}", loadtest::USAGE);
+                ExitCode::from(2)
+            }
+        };
     }
     if argv.peek().map(String::as_str) == Some("test") {
         argv.next();

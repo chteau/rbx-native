@@ -43,8 +43,8 @@ modules:
     sources:
       - type: git
         url: https://github.com/JohnnyMorganz/luau-lsp.git
-        tag: 1.70.0
-        commit: 876d84b8caf4454c8df806ddc9eee0565228d7b6
+        tag: 1.70.1
+        commit: 0382dc76ca9b73df3c8e7c9cd85a8dd493cbd0ae
         x-checker-data:
           type: git
           tag-pattern: ^([\d.]+)$

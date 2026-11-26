@@ -50,6 +50,13 @@ pub(super) fn faces(
         })
         .collect();
     found.extend(worn(dom, referent, placement));
+    let base = match part.properties().get("Color3uint8") {
+        Some(&Variant::Color3uint8 { r, g, b }) => [r, g, b],
+        _ => scene::FALLBACK_COLOR,
+    };
+    for (_, face) in &mut found {
+        face.base = base;
+    }
     found
 }
 
@@ -63,6 +70,83 @@ pub(crate) fn asset_uri(value: &Variant) -> Option<&str> {
         Variant::String(text) => Some(text),
         Variant::Content(rbx_dom::Content::Uri(uri)) => Some(uri),
         _ => None,
+    }
+}
+
+/// A legacy ContentId property (`MeshId`, `TextureID`), or its `Content`
+/// twin when the legacy one is unset: Studio now saves a MeshPart's mesh
+/// and texture under `MeshContent`/`TextureContent` alone.
+pub(crate) fn content_property<'a>(
+    properties: &'a std::collections::BTreeMap<String, Variant>,
+    legacy: &str,
+) -> Option<&'a Variant> {
+    let set = |value: &&Variant| asset_uri(value).is_some_and(|uri| !uri.is_empty());
+    properties.get(legacy).filter(set).or_else(|| {
+        let stem = legacy
+            .strip_suffix("Id")
+            .or_else(|| legacy.strip_suffix("ID"))
+            .unwrap_or(legacy);
+        properties.get(&format!("{stem}Content")).filter(set)
+    })
+}
+
+const EDITABLE: &str = "editable/";
+
+/// The key a `Content::Object` property's `EditableImage`/`EditableMesh` is
+/// drawn under: its pixels or triangles come from `rbx_dom::editable`, never
+/// from a download.
+pub(crate) fn editable_key(value: &Variant) -> Option<AssetRef> {
+    match value {
+        Variant::Content(rbx_dom::Content::Object(referent))
+            if rbx_dom::editable::get(*referent).is_some() =>
+        {
+            Some(AssetRef::Thumb(format!("{EDITABLE}{}", referent.value())))
+        }
+        _ => None,
+    }
+}
+
+/// [`editable_key`] with the object's version in it, for a 3D pass that
+/// keeps what a key decoded to: an edit after the first draw then names new
+/// pixels or triangles instead of finding the first ones cached.
+pub(crate) fn editable_version_key(value: &Variant) -> Option<AssetRef> {
+    let Variant::Content(rbx_dom::Content::Object(referent)) = value else {
+        return None;
+    };
+    let version = rbx_dom::editable::get(*referent)?.version();
+    Some(AssetRef::Thumb(format!(
+        "{EDITABLE}{}@{version}",
+        referent.value()
+    )))
+}
+
+/// The referent an [`editable_key`] or [`editable_version_key`] names, and
+/// the version the latter was taken at.
+fn editable_parts(reference: &AssetRef) -> Option<(Ref, Option<u64>)> {
+    let AssetRef::Thumb(key) = reference else {
+        return None;
+    };
+    let key = key.strip_prefix(EDITABLE)?;
+    let (referent, version) = match key.split_once('@') {
+        Some((referent, version)) => (referent, Some(version.parse().ok()?)),
+        None => (key, None),
+    };
+    Some((Ref::new(referent.parse().ok()?), version))
+}
+
+/// The editable object an [`editable_key`] names.
+pub(crate) fn editable_of(reference: &AssetRef) -> Option<rbx_dom::editable::Editable> {
+    rbx_dom::editable::get(editable_parts(reference)?.0)
+}
+
+/// Whether `reference` is an [`editable_version_key`] its object has since
+/// moved past, or one whose object is gone: nothing will ask for it again.
+pub(crate) fn editable_stale(reference: &AssetRef) -> bool {
+    match editable_parts(reference) {
+        Some((referent, Some(version))) => {
+            rbx_dom::editable::get(referent).is_none_or(|editable| editable.version() != version)
+        }
+        _ => false,
     }
 }
 
@@ -80,7 +164,14 @@ fn painted(
     let instance = dom.get(referent)?;
     let properties = instance.properties();
 
-    let reference = AssetRef::parse(asset_uri(properties.get("Texture")?)?).ok()?;
+    // A script's `EditableImage` comes through `TextureContent`.
+    let reference = content_property(properties, "Texture")
+        .and_then(|value| AssetRef::parse(asset_uri(value)?).ok())
+        .or_else(|| {
+            properties
+                .get("TextureContent")
+                .and_then(editable_version_key)
+        })?;
     if reference == AssetRef::Empty {
         return None;
     }
@@ -121,6 +212,7 @@ fn painted(
     Some((
         reference,
         FaceInstance {
+            mesh: None,
             referent,
             kind: placement.kind,
             model: placement.model,
@@ -136,6 +228,7 @@ fn painted(
                 _ => [1.0; 3],
             },
             alpha,
+            base: scene::FALLBACK_COLOR,
         },
     ))
 }
@@ -173,12 +266,14 @@ fn worn(dom: &WeakDom, referent: Ref, placement: &Placement) -> Vec<(AssetRef, F
             faces.push((
                 layer.image.clone(),
                 FaceInstance {
+                    mesh: None,
                     referent: layer.referent,
                     kind: placement.kind,
                     model: placement.model,
                     projection,
                     tint: layer.tint.map(scene::srgb_to_linear),
                     alpha: 1.0,
+                    base: scene::FALLBACK_COLOR,
                 },
             ));
         }
@@ -228,12 +323,14 @@ fn advertised(
     Some((
         reference,
         FaceInstance {
+            mesh: None,
             referent,
             kind: placement.kind,
             model: placement.model,
             projection: face::projection(face, placement.kind, placement.size, Mapping::Stretched),
             tint: [1.0; 3],
             alpha: 1.0,
+            base: scene::FALLBACK_COLOR,
         },
     ))
 }
@@ -282,6 +379,26 @@ mod tests {
 
         assert_eq!(asset_uri(&Variant::Float32(1.0)), None);
         assert_eq!(asset_uri(&Variant::Content(rbx_dom::Content::None)), None);
+    }
+
+    #[test]
+    fn an_unset_content_id_falls_back_to_its_content_twin() {
+        let uri = |s: &str| Variant::Content(rbx_dom::Content::Uri(s.to_string()));
+        let mut properties = std::collections::BTreeMap::new();
+        properties.insert("MeshId".to_string(), Variant::String(String::new()));
+        properties.insert("MeshContent".to_string(), uri("rbxassetid://7"));
+        properties.insert("TextureContent".to_string(), uri("rbxassetid://8"));
+        let read = |name| content_property(&properties, name).and_then(asset_uri);
+        assert_eq!(read("MeshId"), Some("rbxassetid://7"));
+        assert_eq!(read("TextureID"), Some("rbxassetid://8"));
+        properties.insert(
+            "MeshId".to_string(),
+            Variant::String("rbxassetid://9".into()),
+        );
+        assert_eq!(
+            content_property(&properties, "MeshId").and_then(asset_uri),
+            Some("rbxassetid://9")
+        );
     }
 
     fn r6_character(pants: &str, shirt: &str, graphic: &str) -> (WeakDom, Ref) {
@@ -383,6 +500,48 @@ mod tests {
         // 8-stud face for the texture.
         assert_eq!(drawn[0].1.projection.uv_scale[0], 1.0);
         assert!((drawn[1].1.projection.uv_scale[0] - 4.0).abs() < 1e-5);
+    }
+
+    /// A Decal showing a script's `EditableImage` through `TextureContent`
+    /// draws it, under a key that moves with each edit so the edit is
+    /// redrawn, and the key it had before reads as stale.
+    #[test]
+    fn a_decal_draws_an_editable_image_and_its_edits() {
+        use rbx_dom::editable::{lock, publish, Editable, Pixels};
+        let pixels = std::sync::Arc::new(std::sync::Mutex::new(Pixels {
+            width: 1,
+            height: 1,
+            rgba: vec![255; 4],
+            version: 1,
+        }));
+        let image = publish(Editable::Image(pixels.clone()));
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let part = dom.new_instance("Part", "Wall", Some(workspace));
+        let decal = dom.new_instance("Decal", "Decal", Some(part));
+        dom.set_property(decal, "Texture", Variant::String(String::new()))
+            .unwrap();
+        dom.set_property(
+            decal,
+            "TextureContent",
+            Variant::Content(rbx_dom::Content::Object(image)),
+        )
+        .unwrap();
+        let database = ReflectionDatabase::embedded();
+
+        let first = faces(&dom, &database, part, &unit_placement());
+        assert_eq!(first.len(), 1);
+        let before = first[0].0.clone();
+        assert!(matches!(editable_of(&before), Some(Editable::Image(_))));
+        assert!(!editable_stale(&before));
+
+        lock(&pixels).version = 2;
+        let after = faces(&dom, &database, part, &unit_placement())[0].0.clone();
+        assert_ne!(after, before);
+        assert!(editable_stale(&before));
+        assert!(!editable_stale(&after));
+        rbx_dom::editable::withdraw(image);
+        assert!(editable_stale(&after));
     }
 
     /// A place with an ad surface on it draws the creator's own fallback

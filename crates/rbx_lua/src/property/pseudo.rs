@@ -3,7 +3,8 @@
 //!
 //! `Position`, `Orientation` and `Rotation` are all views onto `CFrame`
 //! (Studio computes them, it never serializes them separately); `BrickColor`
-//! is a view onto `Color`, which is all Studio saves.
+//! is a view onto `Color`, which is all Studio saves. A script's `Enabled`
+//! is `Disabled` turned round (only `Disabled` is saved).
 
 use std::f32::consts::PI;
 
@@ -72,11 +73,246 @@ fn write_cframe(ctx: &Ctx, referent: Ref, frame: CFrameData) -> Result<()> {
     Ok(())
 }
 
+type V3 = [f32; 3];
+type Rot = [f32; 9];
+
+const IDENTITY_ROT: Rot = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+
+fn col(r: &Rot, i: usize) -> V3 {
+    [r[i], r[3 + i], r[6 + i]]
+}
+
+fn from_cols(x: V3, y: V3, z: V3) -> Rot {
+    [x[0], y[0], z[0], x[1], y[1], z[1], x[2], y[2], z[2]]
+}
+
+fn cross(a: V3, b: V3) -> V3 {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn normalize(v: V3) -> V3 {
+    let len = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    if len > 0.0 {
+        [v[0] / len, v[1] / len, v[2] / len]
+    } else {
+        v
+    }
+}
+
+fn rot_apply(r: &Rot, v: V3) -> V3 {
+    [
+        r[0] * v[0] + r[1] * v[1] + r[2] * v[2],
+        r[3] * v[0] + r[4] * v[1] + r[5] * v[2],
+        r[6] * v[0] + r[7] * v[1] + r[8] * v[2],
+    ]
+}
+
+fn transpose(r: &Rot) -> Rot {
+    [r[0], r[3], r[6], r[1], r[4], r[7], r[2], r[5], r[8]]
+}
+
+fn rot_mul(a: &Rot, b: &Rot) -> Rot {
+    let (bx, by, bz) = (col(b, 0), col(b, 1), col(b, 2));
+    from_cols(rot_apply(a, bx), rot_apply(a, by), rot_apply(a, bz))
+}
+
+fn vec_data(v: V3) -> Vector3Data {
+    Vector3Data {
+        x: v[0],
+        y: v[1],
+        z: v[2],
+    }
+}
+
+fn is_attachment(ctx: &Ctx, referent: Ref) -> Result<bool> {
+    let dom = ctx.dom();
+    let instance = dom.get(referent).ok_or_else(missing_instance)?;
+    Ok(ctx
+        .database()
+        .is_subclass_of(instance.class(), "Attachment"))
+}
+
+/// The parent BasePart's frame (identity otherwise) and the attachment's own.
+fn attachment_frames(ctx: &Ctx, referent: Ref) -> Result<Option<(CFrameData, CFrameData)>> {
+    if !is_attachment(ctx, referent)? {
+        return Ok(None);
+    }
+    let Some(local) = cframe(ctx, referent)? else {
+        return Ok(None);
+    };
+    let parent = ctx.dom().parent(referent);
+    let parent_part = parent.filter(|&p| {
+        ctx.dom()
+            .get(p)
+            .is_some_and(|i| ctx.database().is_subclass_of(i.class(), "BasePart"))
+    });
+    let parent_frame = match parent_part {
+        Some(p) => cframe(ctx, p)?,
+        None => None,
+    }
+    .unwrap_or(CFrameData {
+        position: vec_data([0.0; 3]),
+        rotation: IDENTITY_ROT,
+    });
+    Ok(Some((parent_frame, local)))
+}
+
+/// An attachment's world position, `None` when it isn't on a part.
+pub(crate) fn attachment_world_position(ctx: &Ctx, referent: Ref) -> Option<[f64; 3]> {
+    let (parent, local) = attachment_frames(ctx, referent).ok()??;
+    let p = world_frame(&parent, &local).position;
+    Some([f64::from(p.x), f64::from(p.y), f64::from(p.z)])
+}
+
+fn world_frame(parent: &CFrameData, local: &CFrameData) -> CFrameData {
+    let p = rot_apply(
+        &parent.rotation,
+        [local.position.x, local.position.y, local.position.z],
+    );
+    CFrameData {
+        position: Vector3Data {
+            x: p[0] + parent.position.x,
+            y: p[1] + parent.position.y,
+            z: p[2] + parent.position.z,
+        },
+        rotation: rot_mul(&parent.rotation, &local.rotation),
+    }
+}
+
+fn attachment_get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Option<Value>> {
+    let Some((parent, local)) = attachment_frames(ctx, referent)? else {
+        return Ok(None);
+    };
+    let world = world_frame(&parent, &local);
+    let value = match name {
+        "Axis" => LuaVector3(vec_data(col(&local.rotation, 0))),
+        "SecondaryAxis" => LuaVector3(vec_data(col(&local.rotation, 1))),
+        "WorldAxis" => LuaVector3(vec_data(col(&world.rotation, 0))),
+        "WorldSecondaryAxis" => LuaVector3(vec_data(col(&world.rotation, 1))),
+        "WorldPosition" => LuaVector3(world.position),
+        "WorldOrientation" => {
+            let (rx, ry, rz) = LuaCFrame(world).to_euler_angles_yxz();
+            LuaVector3::new(to_deg(rx), to_deg(ry), to_deg(rz))
+        }
+        "WorldCFrame" => return LuaCFrame(world).into_lua(lua).map(Some),
+        _ => return Ok(None),
+    };
+    value.into_lua(lua).map(Some)
+}
+
+fn attachment_set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
+    let Some((parent, mut local)) = attachment_frames(ctx, referent)? else {
+        return Ok(false);
+    };
+    let inverse = transpose(&parent.rotation);
+    let x = col(&local.rotation, 0);
+    let y = col(&local.rotation, 1);
+    let rebuild_x = |axis: V3, secondary: V3| {
+        let x = normalize(axis);
+        let z = normalize(cross(x, secondary));
+        from_cols(x, cross(z, x), z)
+    };
+    let rebuild_y = |axis: V3, secondary: V3| {
+        let y = normalize(secondary);
+        let z = normalize(cross(axis, y));
+        from_cols(cross(y, z), y, z)
+    };
+    match name {
+        "Axis" | "WorldAxis" | "SecondaryAxis" | "WorldSecondaryAxis" => {
+            let v = vector3_arg(name, value)?;
+            let mut v = [v.x, v.y, v.z];
+            if name.starts_with("World") {
+                v = rot_apply(&inverse, v);
+            }
+            local.rotation = if name.ends_with("SecondaryAxis") {
+                rebuild_y(x, v)
+            } else {
+                rebuild_x(v, y)
+            };
+        }
+        "WorldPosition" => {
+            let w = vector3_arg(name, value)?;
+            let rel = rot_apply(
+                &inverse,
+                [
+                    w.x - parent.position.x,
+                    w.y - parent.position.y,
+                    w.z - parent.position.z,
+                ],
+            );
+            local.position = vec_data(rel);
+        }
+        "WorldOrientation" => {
+            let d = vector3_arg(name, value)?;
+            let world = LuaCFrame::from_euler_angles_yxz(to_rad(d.x), to_rad(d.y), to_rad(d.z))
+                .0
+                .rotation;
+            local.rotation = rot_mul(&inverse, &world);
+        }
+        "WorldCFrame" => {
+            let Value::UserData(data) = value else {
+                return Err(mlua::Error::runtime(
+                    "Unable to assign property WorldCFrame. CFrame expected",
+                ));
+            };
+            let world = data
+                .borrow::<LuaCFrame>()
+                .map_err(|_| {
+                    mlua::Error::runtime(format!(
+                        "Unable to assign property WorldCFrame. CFrame expected, got {}",
+                        value.type_name()
+                    ))
+                })?
+                .0;
+            let rel = rot_apply(
+                &inverse,
+                [
+                    world.position.x - parent.position.x,
+                    world.position.y - parent.position.y,
+                    world.position.z - parent.position.z,
+                ],
+            );
+            local = CFrameData {
+                position: vec_data(rel),
+                rotation: rot_mul(&inverse, &world.rotation),
+            };
+        }
+        _ => return Ok(false),
+    }
+    write_cframe(ctx, referent, local)?;
+    Ok(true)
+}
+
+fn is_script(ctx: &Ctx, referent: Ref) -> Result<bool> {
+    let dom = ctx.dom();
+    let instance = dom.get(referent).ok_or_else(missing_instance)?;
+    Ok(ctx
+        .database()
+        .is_subclass_of(instance.class(), "BaseScript"))
+}
+
 /// Reads a pseudo-property, returning `Ok(None)` for anything that isn't one so
 /// the caller falls back to the generic reflected-property path.
 pub(crate) fn get(lua: &Lua, ctx: &Ctx, referent: Ref, name: &str) -> Result<Option<Value>> {
     match name {
+        "Axis" | "SecondaryAxis" | "WorldAxis" | "WorldSecondaryAxis" | "WorldPosition"
+        | "WorldOrientation" | "WorldCFrame" => attachment_get(lua, ctx, referent, name),
         "ClockTime" => super::clock::get(ctx, referent),
+        // Plugins and Open Cloud only (NewApis `next_gen_solver`).
+        "NextGenerationPhysicsSolver" => Err(mlua::Error::runtime(
+            "The current thread cannot read 'NextGenerationPhysicsSolver' (lacking capability PluginOrOpenCloud)",
+        )),
+        "Enabled" if is_script(ctx, referent)? => {
+            let disabled = super::get(lua, ctx, referent, "Disabled")?;
+            Ok(Some(Value::Boolean(!matches!(
+                disabled,
+                Some(Value::Boolean(true))
+            ))))
+        }
         "Position" => {
             let Some(frame) = cframe(ctx, referent)? else {
                 return Ok(None);
@@ -159,11 +395,52 @@ fn brick_color_expected(value: &Value) -> mlua::Error {
     ))
 }
 
+/// A text object's `TextScaled` and `TextWrapped`, which the real client
+/// keeps together: turning `TextScaled` on turns `TextWrapped` on, turning
+/// `TextWrapped` off turns `TextScaled` off, and the other two writes touch
+/// only themselves (recorded live with the `gui_text_scaled` fidelity scene).
+/// False for every other write, which takes the generic path.
+fn text_fit_set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
+    let (coupled, on) = match (name, value) {
+        ("TextScaled", Value::Boolean(true)) => ("TextWrapped", true),
+        ("TextWrapped", Value::Boolean(false)) => ("TextScaled", false),
+        _ => return Ok(false),
+    };
+    let has_both = {
+        let dom = ctx.dom();
+        let instance = dom.get(referent).ok_or_else(missing_instance)?;
+        ctx.database()
+            .resolve_property(instance.class(), coupled)
+            .is_some()
+    };
+    if !has_both {
+        return Ok(false);
+    }
+    let mut dom = ctx.dom_mut();
+    for key in [name, coupled] {
+        dom.set_property(referent, key, Variant::Bool(on))
+            .map_err(|error| mlua::Error::runtime(error.to_string()))?;
+    }
+    Ok(true)
+}
+
 /// Writes a pseudo-property, returning `Ok(false)` for anything that isn't one
 /// so the caller falls back to the generic reflected-property path.
 pub(crate) fn set(ctx: &Ctx, referent: Ref, name: &str, value: &Value) -> Result<bool> {
     match name {
+        "Axis" | "SecondaryAxis" | "WorldAxis" | "WorldSecondaryAxis" | "WorldPosition"
+        | "WorldOrientation" | "WorldCFrame" => attachment_set(ctx, referent, name, value),
         "ClockTime" | "TimeOfDay" => super::clock::set(ctx, referent, name, value),
+        "TextScaled" | "TextWrapped" => text_fit_set(ctx, referent, name, value),
+        "Enabled" if is_script(ctx, referent)? => {
+            let Value::Boolean(enabled) = value else {
+                return Err(mlua::Error::runtime(format!(
+                    "Unable to assign property Enabled. bool expected, got {}",
+                    value.type_name()
+                )));
+            };
+            super::set(ctx, referent, "Disabled", &Value::Boolean(!enabled))
+        }
         // Unassigning a model's `PrimaryPart` resets its pivot.
         "PrimaryPart" if value.is_nil() => {
             let mut dom = ctx.dom_mut();

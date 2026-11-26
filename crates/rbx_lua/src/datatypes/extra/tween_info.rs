@@ -20,7 +20,7 @@ pub(crate) struct LuaTweenInfo {
     pub(crate) direction: String,
 }
 
-fn enum_item(lua: &Lua, enum_name: &str, item: &str) -> Result<Value> {
+pub(super) fn enum_item(lua: &Lua, enum_name: &str, item: &str) -> Result<Value> {
     let lookup = |value: Value, key: &str| -> Result<Value> {
         match value {
             Value::Table(table) => table.get(key),

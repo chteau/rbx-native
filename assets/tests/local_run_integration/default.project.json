@@ -1,0 +1,24 @@
+{
+	"name": "local-run-integration",
+	"tree": {
+		"$className": "DataModel",
+		"Workspace": { "$className": "Workspace" },
+		"Players": { "$className": "Players" },
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Remotes": {
+				"$className": "Folder",
+				"Ping": { "$className": "RemoteEvent" },
+				"Add": { "$className": "RemoteFunction" }
+			}
+		},
+		"ServerScriptService": {
+			"$className": "ServerScriptService",
+			"Game": { "$path": "src/server" }
+		},
+		"ServerStorage": {
+			"$className": "ServerStorage",
+			"Specs": { "$path": "src/specs" }
+		}
+	}
+}

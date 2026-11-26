@@ -30,7 +30,7 @@ fn copy_into(
 
 /// The `ChildData2` document: every source part in the operation's own
 /// space, a subtracted or negated one inside a `NegateOperation` as Studio
-/// nests it.
+/// nests it (a `MeshPart` one tagged instead, see [`negated_mesh`]).
 pub(super) fn child_data(
     dom: &WeakDom,
     db: &ReflectionDatabase,
@@ -42,13 +42,36 @@ pub(super) fn child_data(
     for (i, &part) in parts.iter().enumerate() {
         let instance = dom.get(part)?;
         let local = cframe(inverse * frame(&cframe_of(db, instance)));
-        if i > 0 && carves(dom, operation, part) && instance.class() != "NegateOperation" {
+        let carving = i > 0 && carves(dom, operation, part);
+        if carving && db.is_subclass_of(instance.class(), "MeshPart") {
+            negated_mesh(&mut nested, instance, local)?;
+        } else if carving && instance.class() != "NegateOperation" {
             negated(&mut nested, db, instance, local)?;
         } else {
             copy_into(&mut nested, instance, instance.class(), None, local);
         }
     }
     rbx_binary::serialize(&nested).ok()
+}
+
+/// A carving `MeshPart` as Studio's Separate reads it back: the part itself,
+/// tagged `rbxNegated` like Studio's Negate leaves it (at `Transparency` 0.5
+/// when it was not already). Studio 0.748 refuses to separate a union whose
+/// tree wraps a `MeshPart` in a `NegateOperation` ("Part type not supported
+/// in CSG").
+fn negated_mesh(into: &mut WeakDom, part: &Instance, at: CFrameData) -> Option<Ref> {
+    let copy = copy_into(into, part, part.class(), None, at);
+    let mut tags = rbx_dom::attributes::tags(part.properties().get("Tags"));
+    let props = into.get_mut(copy)?.properties_mut();
+    if !tags.contains(&NEGATED_TAG) {
+        tags.push(NEGATED_TAG);
+        props.insert("Transparency".to_owned(), Variant::Float32(0.5));
+    }
+    props.insert(
+        "Tags".to_owned(),
+        Variant::String(rbx_dom::attributes::encode_tags(&tags)),
+    );
+    Some(copy)
 }
 
 /// A `NegateOperation` of `part` made in `into` at `at`, the way Studio

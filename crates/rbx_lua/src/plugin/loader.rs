@@ -6,7 +6,6 @@ use std::path::Path;
 use rbx_dom::{Ref, Variant, WeakDom};
 
 use super::api::{Manifest, Origin, PluginSource, SourceBody};
-use super::native::parse_permission;
 
 /// Reads one plugin: a `.lua`/`.luau` file (`SourceBody::Luau`), a
 /// `.rbxm` (rbx_binary) or `.rbxmx` (rbx_xml) model (`SourceBody::Model`),
@@ -84,7 +83,7 @@ pub fn read_source(path: &Path) -> Result<PluginSource, String> {
 
 /// Parses `plugin.toml`: `name` (required), `version`, `description`,
 /// `entry` (default `init.luau`), `permissions` (strings, see
-/// `native::parse_permission`; an unknown one is an error).
+/// `rbx_permissions::parse_manifest`; an unknown one is an error).
 pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
     let table = text
         .parse::<toml::Table>()
@@ -109,7 +108,8 @@ pub fn parse_manifest(text: &str) -> Result<Manifest, String> {
                 .as_str()
                 .ok_or_else(|| "`permissions` must be an array of strings".to_string())?;
             permissions.push(
-                parse_permission(text).ok_or_else(|| format!("unknown permission `{text}`"))?,
+                rbx_permissions::parse_manifest(text)
+                    .ok_or_else(|| format!("unknown permission `{text}`"))?,
             );
         }
     }
@@ -193,7 +193,7 @@ mod tests {
     use std::sync::atomic::{AtomicU32, Ordering};
 
     use super::*;
-    use crate::plugin::api::Permission;
+    use crate::plugin::api::{Capability, Permission};
 
     fn temp_dir() -> PathBuf {
         static N: AtomicU32 = AtomicU32::new(0);
@@ -233,7 +233,10 @@ mod tests {
         };
         assert_eq!(
             manifest.permissions,
-            vec![Permission::DomRead, Permission::Http("example.com".into())]
+            vec![
+                Permission::Capability(Capability::ReadPlace),
+                Permission::Host("example.com".into())
+            ]
         );
     }
 

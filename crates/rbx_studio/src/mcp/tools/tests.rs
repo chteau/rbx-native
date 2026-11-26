@@ -2,7 +2,7 @@ use rbx_dom::{Variant, WeakDom};
 use rbx_reflection::ReflectionDatabase;
 use serde_json::{json, Value};
 
-use super::{call, finished, resolve};
+use super::{call, finished, needs_roblox, resolve};
 use crate::mcp::{PlayState, Session, Studio};
 use crate::properties::Properties;
 
@@ -171,4 +171,34 @@ fn a_call_for_another_studio_is_refused_by_this_one() {
         json!({ "target_file": "game.ServerScriptService.GameLoop", "studio_id": "a1" }),
     );
     assert!(!failed);
+}
+
+#[test]
+fn offline_refuses_only_the_tools_that_call_roblox() {
+    for tool in [
+        "search_asset",
+        "insert_asset",
+        "import_model",
+        "upload_image",
+        "http_get",
+    ] {
+        assert!(needs_roblox(tool, &json!({})), "{tool}");
+    }
+    assert!(needs_roblox(
+        "start_stop_play",
+        &json!({ "is_start": true })
+    ));
+    assert!(!needs_roblox(
+        "start_stop_play",
+        &json!({ "is_start": false })
+    ));
+    for tool in [
+        "save_place",
+        "execute_luau",
+        "script_read",
+        "store_image",
+        "screen_capture",
+    ] {
+        assert!(!needs_roblox(tool, &json!({})), "{tool}");
+    }
 }

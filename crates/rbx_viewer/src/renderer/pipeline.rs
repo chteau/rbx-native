@@ -453,6 +453,8 @@ pub(super) struct Surface<'a> {
     /// Blend instead of replacing, and stop writing depth: what a part with a
     /// `Transparency` between 0 and 1 needs so it hides nothing behind it.
     pub(super) translucent: bool,
+    /// The blend a translucent surface uses in place of [`ALPHA_BLENDING`].
+    pub(super) blend: Option<wgpu::BlendState>,
     pub(super) bias: wgpu::DepthBiasState,
     /// Reversed-Z (see camera.rs) makes closer mean a *bigger* depth value, so
     /// the usual `Less` becomes `Greater`. The decal pass needs `GreaterEqual`
@@ -484,6 +486,7 @@ impl Surface<'_> {
             buffers,
             cull: Some(wgpu::Face::Back),
             translucent: false,
+            blend: None,
             bias: wgpu::DepthBiasState::default(),
             compare: wgpu::CompareFunction::Greater,
             scene_depth: false,
@@ -543,7 +546,7 @@ pub(super) fn surface(
             targets: &[Some(wgpu::ColorTargetState {
                 format: target.format,
                 blend: Some(if surface.translucent {
-                    ALPHA_BLENDING
+                    surface.blend.unwrap_or(ALPHA_BLENDING)
                 } else {
                     wgpu::BlendState::REPLACE
                 }),

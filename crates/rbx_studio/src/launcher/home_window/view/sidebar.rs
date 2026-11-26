@@ -228,6 +228,11 @@ impl HomeWindow {
             }
             KeyState::Ready { owner, .. } => (owner.clone(), "Key needs attention", ui::red()),
             KeyState::Checking => ("Your key".to_string(), "Checking\u{2026}", tokens::text3()),
+            _ if rbx_net::is_offline() => (
+                "Your key".to_string(),
+                "Can\u{2019}t check offline",
+                tokens::text3(),
+            ),
             _ => (
                 "Your key".to_string(),
                 "Couldn\u{2019}t check",

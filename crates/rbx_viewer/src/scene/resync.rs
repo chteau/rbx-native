@@ -3,6 +3,7 @@
 
 mod pieces;
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use rbx_dom::{Ref, WeakDom};
@@ -13,6 +14,7 @@ use super::{
     bounds, build_part, is_drawable, Part, Placement, Scene, UnionEvaluations, WORKSPACE_CLASS,
 };
 use crate::changes::Rebuild;
+use crate::textures::MeshFace;
 
 /// What the renderer now has to show for one referent after
 /// [`Scene::resync_part`], every pass either rewrites its record for it or
@@ -463,6 +465,41 @@ impl Scene {
         (!part.suppressed || standing.pieces > 0).then(|| part.placement())
     }
 
+    /// Where `referent`'s decals land when a resolved file mesh draws in
+    /// place of its box: the box's placement (the unit space a projection
+    /// is measured in) and the mesh. `None` for a part drawing its box, one
+    /// an isolation hides, and a skinned mesh, whose surface moves with
+    /// bones the decal pass does not follow.
+    pub(crate) fn decal_mesh(&self, referent: Ref) -> Option<(Placement, MeshFace)> {
+        let part = self.standing_part(referent)?;
+        if !part.suppressed || part.isolated_out {
+            return None;
+        }
+        let resolved = &self.resolved_file_meshes;
+        if resolved.rigs.contains_key(&referent) {
+            return None;
+        }
+        let instance = &resolved.instances[resolved.slot_of(referent)?];
+        let placement = part.placement();
+        let face = MeshFace {
+            key: MeshFace::key_of(&instance.mesh),
+            to_unit: placement.model.inverse() * instance.model,
+        };
+        Some((placement, face))
+    }
+
+    /// [`Scene::decal_mesh`] for every part that has one.
+    pub(crate) fn decal_meshes(&self) -> HashMap<Ref, MeshFace> {
+        self.resolved_file_meshes
+            .instances
+            .iter()
+            .filter_map(|instance| {
+                let (_, face) = self.decal_mesh(instance.referent)?;
+                Some((instance.referent, face))
+            })
+            .collect()
+    }
+
     /// `referent`'s own box, wherever it stands in `parts`.
     fn standing_part(&self, referent: Ref) -> Option<&Part> {
         self.parts.get(self.standing.get(&referent)?.whole?)
@@ -561,9 +598,20 @@ impl Scene {
 
     /// Whether any `BillboardGui`/`SurfaceGui` canvas this scene placed hangs
     /// off `referent`: through `Adornee`, which can name a part anywhere,
-    /// not only the container's parent.
-    pub(crate) fn adorns(&self, referent: Ref) -> bool {
-        self.gui_spaces.iter().any(|gui| gui.adornee == referent)
+    /// not only the container's parent, or a model holding it (a canvas
+    /// on a model hangs off the middle of its parts).
+    pub(crate) fn adorns(&self, dom: &WeakDom, referent: Ref) -> bool {
+        if self.gui_spaces.is_empty() {
+            return false;
+        }
+        let mut at = Some(referent);
+        while let Some(here) = at {
+            if self.gui_spaces.iter().any(|gui| gui.adornee == here) {
+                return true;
+            }
+            at = dom.parent(here);
+        }
+        false
     }
 }
 

@@ -20,6 +20,7 @@ serde_json = "1"
 sha2 = "0.10"
 # Same blocking client and features `rbx_cloud` uses.
 ureq = { version = "3", features = ["json", "gzip"] }
+rbx_net = { path = "../rbx_net" }
 # Query strings, forms and Figma links (`rbx_studio`).
 url = "2"
 

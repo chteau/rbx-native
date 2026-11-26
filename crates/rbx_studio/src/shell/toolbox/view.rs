@@ -119,7 +119,13 @@ impl Shell {
                 .text_size(tokens::text_sm())
                 .line_height(tokens::line_sm())
                 .text_color(tokens::text_error())
-                .child(format!("Couldn't reach the Creator Store: {err}"))
+                .child(
+                    div()
+                        .w_full()
+                        .px(px(12.))
+                        .text_center()
+                        .child(unreachable("the Creator Store", err)),
+                )
                 .into_any_element(),
             Load::Ready if toolbox.ids.is_empty() => h_flex()
                 .flex_1()
@@ -320,4 +326,14 @@ pub(super) fn segment(id: String, label: &'static str, on: bool) -> Stateful<Div
         .when(on, |this| this.bg(tokens::accent_soft()))
         .hover(|this| tokens::hover_fx(this).bg(tokens::hover()))
         .child(label)
+}
+
+/// Why `what` didn't answer: offline gets one plain line instead of the
+/// request's error chain.
+pub(crate) fn unreachable(what: &str, err: &str) -> String {
+    if rbx_net::is_offline_message(err) {
+        format!("You\u{2019}re offline, so {what} can\u{2019}t be reached.")
+    } else {
+        format!("Couldn\u{2019}t reach {what}: {err}")
+    }
 }

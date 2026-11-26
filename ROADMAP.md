@@ -1200,7 +1200,7 @@ both the plain fetch failure and the silent fall back to a default
     you type.
 - [x] **`luau-lsp` integration**: autocomplete, hover, Go to Definition
   and diagnostics in the script editor, from `luau-lsp` spoken to over
-  stdio (`luau_lsp`). A pinned release (1.70.0) is built into `rbxstudio`
+  stdio (`luau_lsp`). A pinned release (1.70.1) is built into `rbxstudio`
   by `build.rs`, checked against its SHA-256, and unpacked into the cache
   folder on first use; `RBX_STUDIO_LUAU_LSP` runs another.
   - **The place as a workspace**: every script is written to a scratch
@@ -3069,6 +3069,23 @@ both the plain fetch failure and the silent fall back to a default
     at all, even a raw XTest click sent by hand, while Chee was using the
     PC. That's delivery, not mapping, and I haven't pinned it down.
 
+- [x] **Unified agentic permission** (Creator Roadmap, Late 2026): one
+  permission model (`rbx_permissions`) for MCP clients and every kind of
+  plugin (Roblox, rbx-native Luau, WASM), and one page, Settings ›
+  Permissions, to see and change it per agent. Capabilities: Look at your
+  game, Edit your game, Script injection, Selection, Run code & playtest,
+  Connect to the internet (per host), Publish & manage assets, Files on
+  this computer. MCP clients get Studio 0.748's MCP Permissions shape
+  (Safe / Balanced / Full access, Custom once changed, Deny/Allow per
+  capability, never a prompt; Balanced by default, so uploads and file
+  access start off). Plugins get Studio's plugin manager rules: a Roblox
+  plugin is asked for each new HTTP host and for Script Injection the first
+  time it changes a script in the place; an rbx-native plugin's
+  `plugin.toml` sets its defaults. Every older check (the `dom.write`
+  guard, `hasPermission`, the debugger API, HttpService hosts, the WASM
+  grants) reads the one store now. Studio keeps MCP permissions per game on
+  the Roblox account; ours are local and global, and OCALE (Open Cloud
+  Luau Execution) has no caller here yet to gate.
 - [x] **Require-by-string and case-only script names over MCP.** Edit's
   `execute_luau`, the command bar and plugins now take
   `require("./Sibling")`, `require("../Up")`, `require("@self/Child")` and
@@ -3217,6 +3234,38 @@ both the plain fetch failure and the silent fall back to a default
   ring only that handle stays drawn (the held ring whole), and a trackball
   drag hides every ring, as in Studio. Transform and Edit Pivot keep their
   combined classic handles.
+- [x] **CSG on meshes** (`rbx_lua::csg::mesh`, behind the "Solid Modeling
+  On Meshes" beta, default off). Union, Intersect and Negate take
+  `MeshPart`s: the mesh (`rbx_mesh`, LOD 0) carves as its own triangles,
+  fitted to the part the way the renderer fits it (`InitialSize` to
+  `Size`), painted the part's colour. A mesh that isn't closed (an open
+  edge, or an edge three or more triangles share, collapsed triangles
+  counted) is refused with Studio's "The mesh has non-manifold geometry
+  and cannot be used in solid modeling.", both measured in Studio 0.748
+  (an open 40-triangle box and its own `headA.mesh`). What Studio 0.748
+  does, measured with the beta on and off (it behaves the same either
+  way): the Model tab's Union, Intersect and Negate with any `MeshPart`
+  operand make a `MeshPart` named "MeshPart", white, Plastic, framed on
+  the result's bounds, whose mesh lives only in memory (`MeshContent`
+  empty, no tree), so Separate stays greyed, and the saved `.rbxl` or
+  `.rbxlx` keeps only its collision (`PhysicalConfigData`, Default
+  fidelity) and mass: it reopens as a plain box.
+  `GeometryService:SubtractAsync`, `UnionAsync` and `SubtractAsync` with
+  a mesh return a `MeshPart` the same way. Here the result stays a
+  `UnionOperation`/`IntersectOperation` with the `MeshPart` in its
+  `ChildData2` (a negated one as the `MeshPart` itself tagged
+  `rbxNegated`: Studio refuses to separate one wrapped in a
+  `NegateOperation`, "Part type not supported in CSG"), so the shape
+  saves in its `SolidMeshHolder`, real Studio opens it with the same
+  geometry, and Separate gives the `MeshPart` back in both. Open: a mesh
+  made of nested shells (asset 3587876365, an outer and an inner surface
+  both facing out) leaves about 1% open edges in our BSP, and Studio
+  draws a bake that isn't closed as a small stand-in; the tree is fine
+  and separates. The viewer draws a tree with
+  a `MeshPart` leaf from the union's own bake, since it has no mesh to
+  carve it with. Studio's own mesh unions read back as the box Studio
+  reopens them as. The runtime half (`GeometryService` returning a
+  `MeshPart`, `FragmentAsync`) is Local Run's.
 
 ### Play / Test (`rbx_play`, `shell::play`)
 - [x] **Play without Roblox Studio** (`crates/rbx_play`, `shell/play`):
@@ -3440,7 +3489,100 @@ both the plain fetch failure and the silent fall back to a default
     the server `fps` metric (a `Heartbeat` count) stays meaningful under
     `UseFixedSimulation` is likewise unchecked.
 
+### Local Run (`rbx_sim`, `rbx_lua::server`, `shell::local_run`)
+Our own Roblox runtime, written from scratch, behind the "Local Run" beta
+(off by default). Nothing in it is copied or translated from Roblox code:
+behaviour is measured against a real server and client and written down as
+goldens. Plan and status in `docs/research/local-run/PLAN.md`.
+- [x] **Play (local), Run (local) and Server & Clients** in the Test tab:
+  the place plays in the 3D view with no Roblox client, Run is the server
+  alone, Server & Clients is a server plus 1 to 8 players in detachable
+  tabs. Collaborators join a run as players over the co-edit room.
+- [x] **Runtime**: a server VM and a client VM per player on Luau 0.748
+  with Roblox's flags, Deferred signals, Roblox's wait and timeout rules,
+  our own replication (FilteringEnabled, ordering, network ownership,
+  RemoteEvent/RemoteFunction argument rules), StreamingEnabled.
+- [x] **Physics and characters**: Rapier stepped at Roblox's adaptive
+  rates, contacts, constraints and movers, terrain collision and water,
+  unions through `rbx_csg`; Humanoids (R6 and R15, walk, jump, climb,
+  seats, swimming, death), avatars (yours when signed in, cached offline,
+  the Rig Builder noob otherwise), our own PlayerModule and Animate.
+- [x] **Game API**: 74% of the members game scripts can reach (functions
+  66%, events 74%, properties 79%), counted from the API dump in
+  `docs/research/local-run/COVERAGE.md`. DataStores and MemoryStore are
+  live online and local offline, with a read-only guard for real games.
+- [x] **Conformance**: about 3,500 goldens recorded from a real server and
+  client (`docs/research/local-run/CONFORMANCE.md`), 56 rows still off,
+  re-recorded weekly by `scripts/rerecord-goldens.sh`; a daily watchdog
+  files what a new API dump adds.
+- [x] **Look and sound**: lighting, sky, materials, shadows and particles
+  fitted to the real client (mean ΔE 1.55 over 76 scenes in
+  `crates/rbx_viewer/fidelity`), runtime GUI with a clean-room core GUI,
+  3D sound, video and text-to-speech.
+- [x] **Orthographic Play camera**: with the Orthographic Camera beta on, a
+  game camera set to Orthographic draws flat over black, and
+  `WorldToViewportPoint`/`WorldToScreenPoint`/`ViewportPointToRay`/
+  `ScreenPointToRay` project per `OrthographicMode` (measured in Studio
+  Play 2026-11-25: rays start on the 0.1 stud near plane and run down the
+  look vector, `OrthographicSize` spans the named axis). With the beta off
+  the `ProjectionType` write is ignored, like Studio. `DiagonalFieldOfView`
+  reads `2·atan((1 + aspect²)·tan²(FOV/2))` (Studio squares the tangent,
+  checked at two aspect ratios) and `MaxAxisFieldOfView`
+  `2·atan(max(aspect, 1)·tan(FOV/2))`; writing either sets `FieldOfView`.
+- [x] **Debugging a run**: Remote Inspector (calls per player with
+  arguments, size, rate and the firing script, flagged over Roblox's
+  limits), Leak Finder (connections never disconnected, nil-parented
+  instances, growing tables), MicroProfiler and ScriptProfiler, the
+  Network Simulator over the run's own link.
+- [x] **Integration tests**: `*.integration.spec` files run from
+  `rbxlua test` on a fresh server with clients (add and remove players,
+  act, run for, wait until, eval on a client), seeded, with the same JUnit
+  output (`docs/testing.md`).
+- [x] **Bot players for load tests**: `rbxlua loadtest` and the Load test
+  dock drive scripted players that walk, jump, click and fire remotes,
+  watching server step time, memory and DataStore calls.
+- [x] **Record and replay**: a run saves a `.rbxnrec` and replays it with a
+  per-frame hash, so a replay that drifts says where.
+- [x] **Offline**: Test › Offline packs a place's meshes, textures,
+  sounds, animations and packages; with them a run needs no network.
+- [x] **`EditableMesh` and `EditableImage`**: every `AssetService`
+  constructor (`CreateEditableMesh`/`Image`, the `Async` ones from an asset
+  id, an object or DataModel content, `CreateMeshPartAsync`, which stays
+  local, and `CreateDataModelContentAsync`), every vertex, face, normal, UV,
+  colour, bone and FACS method, the batch calls, queries and raycasts,
+  EditableImage's pixel buffers and draw calls with every supported
+  `ImageCombineType`, and the client memory budget. Ids, error messages and
+  results checked against goldens from a real Roblox server and client. The
+  viewport redraws what a script changes, in Play (local) and in the command
+  bar and plugins (no beta needed there, Studio has them in Edit too, and
+  fixed-size meshes grow in Edit like Studio's). OpenArena's MD3 models
+  render and animate. The asset ownership check is real (the signed-in
+  user, the groups their key manages and the experience owner, from Open
+  Cloud, kept on disk for offline), `ViewportFrame`s draw their meshes,
+  textured Neon and see-through MeshParts draw like Studio, and the event
+  re-entrancy cap only counts a handler firing its own event.
+- [ ] 📋 **Still open**: the off conformance rows (buoyancy, pathfinding,
+  terrain edges, BallSocket drift, jump apex), plugins inside a run,
+  `CollectionService:CreateCollection`, `ControllerManager` character
+  controllers, `FieldOfViewMode` keeping its angle when the window resizes
+  (not measured), and opening a `.rbxnrec` in the repro viewer.
+
 ### Platform
+- [x] **Offline mode** (`rbx_net`): every outside request goes through
+  one gate, which refuses at once while offline (no network detected,
+  Settings › Account's switch, or `RBX_NATIVE_OFFLINE=1`) and re-probes
+  when a request fails to connect; a title bar pill shows it. Checked with
+  the whole editor under `unshare -n` on 2026-11-25: startup, Home, My
+  Games, Free kits, Rig Builder, plugins and Play (local) work from the
+  cache; Creator Store searches, plugin installs and the key check say
+  they're offline.
+- [x] **Offline: grey out what can't work**: every command that needs
+  Roblox (Save/Publish to Roblox, Publish All, Link to Roblox Place,
+  Version History, Game Settings, Data Stores, the imports, Upload Item,
+  Reimport, and Home's downloads, New experience, Add by link, Configure
+  and Archive) is greyed out with "You're offline" in the menus, ribbon,
+  command palette, Explorer menu and Home, and the MCP tools that call
+  Roblox refuse at once. All of it comes back live with the network.
 - [x] Linux (X11), the daily-driven target.
 - [x] Windows: asset cache and settings now fall back to
   `%LOCALAPPDATA%`/`%APPDATA%` when no `XDG_*`/`HOME` is set; the
@@ -3606,13 +3748,6 @@ both the plain fetch failure and the silent fall back to a default
   not a default this project should ship opinionated about.
 
 ### Editor
-- [ ] 📋 **`EditableMesh` and `EditableImage` in the Luau runtime**: right
-  now scripts can't make them at all. Needs `AssetService:CreateEditableMesh`,
-  `CreateEditableImage` and `CreateMeshPartAsync`, the vertex/face/UV
-  methods, and the viewport drawing the result live, in Edit and in Play.
-  Found while porting OpenArena: its player and weapon models are
-  vertex-animated MD3s that get rebuilt every frame through `EditableMesh`,
-  so none of them show up in our editor yet (real Roblox runs them fine).
 - [ ] 📋 **The MCP server's AI generation tools and the package flag**:
   `generate_mesh`, `generate_material`, `generate_procedural_model`,
   `segment_mesh` and `generate_texture` are listed with Studio's schemas
@@ -3797,21 +3932,10 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   editor version and a note), which opens read-only in its own window with
   the session on the timeline and its errors, chat and marks in Output.
   Copy bug report puts a Markdown summary on the clipboard. Format in
-  `docs/repro-format.md`. Replaying a Local Run `.rbxnrec` the same way
-  waits for Local Run.
-- [ ] 📋 **Integration tests on Local Run**: `rbxlua test` already runs
-  TestEZ/Jest-Lua specs headlessly for CI. Next is running whole-game
-  tests on Local Run (a server and clients, physics, remotes, players
-  joining) from the same command, with the same JUnit output.
-- [ ] 📋 **Remote inspector**: every RemoteEvent and RemoteFunction call
-  per player during Local Run, with arguments, size, rate and the script
-  that fired it, flagging calls over Roblox's limits.
-- [ ] 📋 **Bot players for load tests**: 20 to 50 scripted players that
-  walk, jump, click and fire remotes on a local server, while server load,
-  memory and DataStore calls are watched.
-- [ ] 📋 **Leak finder**: over a Local Run session, connections never
-  disconnected, instances piling up parented to nil and tables that keep
-  growing.
+  `docs/repro-format.md`. Opening a Local Run `.rbxnrec` the same way is
+  still to do (see Local Run under "What's been implemented").
+- Integration tests, the Remote Inspector, bot players and the Leak Finder
+  landed with Local Run, see its section under "What's been implemented".
 - [ ] Play on Windows (RobloxPlayerBeta) and macOS: never run. Windows
   embeds through `SetParent` (type-checked for the MSVC target only); on
   macOS the client keeps its own window.
@@ -3911,7 +4035,7 @@ nothing for most of this batch too.
 | `FollowRotationBoneBehavior`, `FollowTwistBoneBehavior` | Locked. Creating one needs `InternalTest` | Nothing to build |
 | `TestCoordinatorService`, `AppHandle`, `ParticipantHandle` | Inert. `GetService` returns nil | Nothing to build |
 | `CollectionService:GetCollections`, `GetAllCollections` | `GetCollections(root)` answers (an empty list in a place with none); `GetAllCollections` needs `RobloxScript`. The Collections beta is off | See the betas below |
-| `RunService.BindToSimulationParallel`, `BindToAnimationParallel` | Callable. Gameplay only | Local Run's business |
+| `RunService.BindToSimulationParallel`, `BindToAnimationParallel` | Callable. Gameplay only | Local Run runs them (serially) |
 | `Workspace.NextGenerationPhysicsSolver` | A `RolloutState` (`Default`), not a bool. Gameplay only | Round-trips |
 | `AvatarCollisionRules` hitbox, `BodyPartsCollidableOnDeath`, `TouchAndQueryDetectionMode` | Gameplay only | Round-trips |
 | `AudioStreamReader`, `AudioStreamWriter` | Creatable. Nothing plays audio here | Round-trips |
@@ -3976,8 +4100,8 @@ there. What each does live, and where it stands here:
 | MaterialVariant Alpha Mode | `MaterialVariant.AlphaMode`, default Opaque (Overlay 0, Transparency 1, TintMask 2, Opaque 3); the row shows under Appearance only with the beta on | Built behind a beta of the same name (PR #407) |
 | Collections | `CollectionService:CreateCollection(query)` returns a `CollectionHandle` (`Query`, `Root`, `Destroy`), no `GetInstances` | Not built: the handle's reads and callbacks aren't discoverable yet |
 | CreateAssetAsync Lua API | `AssetService:CreateAssetAsync` exists | Not built: an upload API, nothing for the editor to draw |
-| Mixed Content for CreateSurfaceAppearance | `AssetService:CreateSurfaceAppearanceAsync{ColorMap = Content}` returns a `SurfaceAppearance`; local `rbxasset://` content is refused in the client | Local Run's business (runtime API) |
-| Solid Modeling On Meshes | `GeometryService:SubtractAsync` takes a `MeshPart` and returns a `MeshPart`; `FragmentAsync` is new | Runtime half is Local Run's; the editor half is "CSG on meshes" below |
+| Mixed Content for CreateSurfaceAppearance | `AssetService:CreateSurfaceAppearanceAsync{ColorMap = Content}` returns a `SurfaceAppearance`; local `rbxasset://` content is refused in the client | Local Run has it (runtime API) |
+| Solid Modeling On Meshes | `GeometryService:SubtractAsync` takes a `MeshPart` and returns a `MeshPart`; `FragmentAsync` is new | Editor half built behind a beta of the same name ("CSG on meshes" under Editor); Local Run has the runtime half |
 | New Video API | `VideoPlayer` (Looping, PlaybackSpeed, Volume, TimeLength, IsPlaying, Resolution) and a `VideoDisplay` GuiObject (VideoColor3, VideoTransparency, ScaleType, ResampleMode, TileSize) | Not built: no video decoding here |
 | AvatarAbilities Character Controller Library | No new creatable class beyond `ControllerManager` | Not built: nothing to mirror yet |
 | Animation Graph State Machines | `AnimationGraphDefinition` creatable | Already here (Animation) |
@@ -4044,8 +4168,9 @@ there. What each does live, and where it stands here:
   go flat over black. Nothing on `dev` draws a Play camera itself (Play is
   the real client, live views only swap the Explorer's tree, replays draw
   the recorded camera as a dot and a line over the edit view, and the
-  Device Simulator shows the edit camera or the embedded client), so what
-  is left is the Play camera in Local Run, 0.3.0.
+  Device Simulator shows the edit camera or the embedded client). Local
+  Run's Play camera does it now too, measured against Studio Play (see
+  Local Run under "What's been implemented").
 - [ ] 📋 **Material layering and finer PBR response** (Mid 2027): PBR
   textures layered under custom masks, plus controls for specular response
   and more accurate scattering and reflection. This lands in the material
@@ -4053,13 +4178,6 @@ there. What each does live, and where it stands here:
   `MaterialVariant`, `SurfaceAppearance`). It needs new captures from real
   Studio once it ships, the same discipline the lighting model was built
   under, and not a stretch of today's constants.
-- [ ] 📋 **CSG on meshes** (moved from Late 2025 to Late 2026 in the same
-  post). The from-scratch boolean (`scene::union::csg`) works on primitives. A
-  `MeshPart` operand means feeding it `rbx_mesh` geometry instead. A saved
-  mesh union's baked `MeshData` reads like any other union's; the open
-  question is how its operation tree stores the mesh operand. "Solid
-  Modeling On Meshes" is a Studio beta, switched on for this account on
-  2026-11-20, so a real mesh union can now be made and saved to study.
 
 #### GUI (renderer and UI Editor)
 - [ ] 📋 **UI backdrop blur** (Early 2027): blur whatever is behind a GUI
@@ -4131,11 +4249,6 @@ there. What each does live, and where it stands here:
   it needs a way to list everything in a user's or a group's inventory
   over Open Cloud, which is what decides whether a panel like it can be
   built here.
-- [ ] 📋 **Unified agentic permission** (Late 2026): one control over what
-  Assistant, MCP, plugins and OCALE may access and do. This project plans
-  both an MCP server (above) and a plugin API (see Plugins above). They should
-  share one permission model from the start rather than each getting its
-  own and being reconciled later.
 - [ ] ⚠️ **Scene generation and a new texture generator** (Late 2026)
   belong under [AI content generation](#ai-content-generation) below. They
   have the same backend-agnostic shape, and a generated scene is, in the
@@ -4164,7 +4277,9 @@ there. What each does live, and where it stands here:
 - [ ] ⚠️ **Multiple client views** (Late 2026), **Teleports in Studio** and
   **on-device testing** (both Early 2027), and **early testing** with up to
   10 friends (Late 2026). All four ride on the
-  [sandbox Play](#play--test-workflow).
+  [sandbox Play](#play--test-workflow). Locally, Local Run already covers
+  the first two (Server & Clients with up to 8 players, teleports between
+  mapped places) and collaborators joining a run as players.
   - Multiple clients means several real clients joined to the same sandbox
     server. Each mirror `LocalScript` already reports its own state.
   - Teleports need a second sandbox place in the same universe.
@@ -4281,10 +4396,10 @@ These aren't missing features, they require Roblox's own closed-source
 game engine (rendering, physics, replication, anti-cheat) to exist at all,
 and no amount of reverse engineering changes that:
 
-- **Playing or testing a live game with real physics and client/server
-  replication.** rbx-native can never have a native "Play" button in the
-  way Studio does, see [Play / Test workflow](#play--test-workflow) for
-  the private sandbox that stands in for it.
+- **Playing a game on Roblox's own engine without Roblox.** Local Run (a
+  beta) plays places on our own clean-room runtime, physics and
+  replication included, close to the real thing but never bit-exact; the
+  [sandbox Play](#play--test-workflow) stays the reference.
 - **Team Create**: proprietary real-time collaboration, no public
   equivalent API.
 - **Toolbox/marketplace parity**: the Toolbox dock searches the Creator
@@ -4303,8 +4418,9 @@ and no amount of reverse engineering changes that:
   already exists. Roblox's baked `MeshData` itself is read where a union
   has no tree or its tree will not carve (versions 2, 4 and 5, see
   "What's been implemented").
-- **Physics simulation and anti-cheat**: proprietary physics engine, no
-  real server authority possible from rbx-native. That covers Roblox's new
+- **Roblox's exact physics and anti-cheat**: Local Run simulates physics
+  with Rapier, fitted to recorded goldens, but Roblox's solver itself is
+  closed, and no real server authority is possible from rbx-native. That covers Roblox's new
   Server Authority model too: client prediction, rollback and resimulation
   are engine behaviour, so only its settings can be edited here (see
   Play / Test).

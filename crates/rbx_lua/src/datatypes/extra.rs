@@ -1,5 +1,9 @@
 //! `TweenInfo`, `Ray`, `Random` and `DateTime`.
 
+pub(crate) mod catalog_params;
+pub(crate) mod curve_key;
+pub(crate) mod path2d;
+pub(crate) mod path_waypoint;
 mod random;
 mod tween_info;
 
@@ -237,11 +241,8 @@ fn date_time(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "now",
-        lua.create_function(|_, ()| {
-            let millis = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis() as i64)
-                .unwrap_or(0);
+        lua.create_function(|lua, ()| {
+            let millis = (crate::tape::clock(lua, crate::tape::epoch) * 1000.0) as i64;
             Ok(LuaDateTime { millis })
         })?,
     )?;
@@ -267,8 +268,12 @@ fn date_time(lua: &Lua) -> Result<Table> {
 pub(crate) fn register(lua: &Lua) -> Result<()> {
     let globals = lua.globals();
     globals.set("TweenInfo", tween_info::constructors(lua)?)?;
+    globals.set("PathWaypoint", path_waypoint::constructors(lua)?)?;
+    globals.set("Path2DControlPoint", path2d::constructors(lua)?)?;
     globals.set("Random", random::constructors(lua)?)?;
     globals.set("Ray", ray(lua)?)?;
     globals.set("DateTime", date_time(lua)?)?;
+    curve_key::register(lua)?;
+    catalog_params::register(lua)?;
     Ok(())
 }

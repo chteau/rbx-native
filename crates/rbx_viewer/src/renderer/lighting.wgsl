@@ -14,8 +14,8 @@ struct Uniforms {
 }
 
 struct LightingUniform {
-    // xyz: unit vector pointing at the sun. The second lamp sits at -xyz, which
-    // is where the moon is once the sun has set.
+    // xyz: unit vector pointing at the sun. The second lamp is opposite it by
+    // day and the moon by night (`fill_direction`).
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     fill_color: vec4<f32>,
@@ -51,6 +51,8 @@ struct LightingUniform {
     shadow_lamp: vec4<f32>,
     // x: how many entries of `local_lights` are real. The buffer always holds at
     // least one, so this count is the only thing that says a scene has none.
+    // y: 1 where local lights live in the voxel grid (every Technology but
+    // Future, see `lights.wgsl`).
     locals: vec4<f32>,
     // x: how far geometry is drawn at full strength, in studs, 0 being no limit.
     // y: 1 where the environment terms sample the probe, 0 where they fall back
@@ -86,7 +88,15 @@ struct LightingUniform {
 // in `shade`, so a place that sets it to 0 is matte here whatever this value
 // is (see `shade` for why). Verified against the material-sample fixture
 // (scale 1, glossy) and marked.rbxl (scale 0, matte).
-const PLASTIC_SHININESS: f32 = 30.0;
+const PLASTIC_SHININESS: f32 = 15.0;
+// How much of `spec_strength` the sun's own highlight takes, at
+// EnvironmentSpecularScale 0 and at 1. Fitted on the stage and material
+// fidelity scenes (M9): the real client's sun highlight is broad and about half
+// as strong as the reflection's dial, and does not vanish at scale 0, where
+// a small one is left (`default_lighting`). Refitted with the view-angle
+// Fresnel below (fidelity pass 4).
+const SUN_SPECULAR_AT_ZERO: f32 = 0.15;
+const SUN_SPECULAR_AT_FULL: f32 = 0.35;
 // The strength itself is `lighting.calibration.y`, 0.28 unless the user has
 // recalibrated it (Studio Settings › Viewport › Advanced).
 const PLASTIC_ROUGHNESS: f32 = 0.25;
@@ -198,7 +208,11 @@ fn env_sample(direction: vec3<f32>, level: f32) -> vec3<f32> {
     if lighting.quality.y < 0.5 {
         return sky_flat() * lighting.sky_tint.rgb;
     }
-    return textureSampleLevel(env_cube, env_sampler, direction, level).rgb * lighting.sky_tint.rgb;
+    let sky = textureSampleLevel(env_cube, env_sampler, direction, level).rgb * lighting.sky_tint.rgb;
+    if lighting.fog_color.w > 0.5 {
+        return hazed_sky(sky, direction);
+    }
+    return sky;
 }
 
 /// Mip level a surface of this roughness reflects from, as the level whose
@@ -209,15 +223,24 @@ fn env_level(roughness: f32) -> f32 {
     return clamp(top_mip - PROBE_LOG2_FACE + probe, 0.0, top_mip);
 }
 
+const SKY_UP_GAIN: f32 = 1.4;
+
 /// The sky's own irradiance on a surface, rebuilt from the six cardinal values
 /// the uniform carries: an ambient cube, whose squared weights sum to one for
 /// any unit normal and are exact on the axes themselves.
+///
+/// The light from straight above is lifted by [`SKY_UP_GAIN`] once the sun
+/// is up: the real client lights a floor in shadow by day that much more
+/// than the sky's integral gives (`studio_lighting`'s floor shadow read
+/// 27,58,82 against 39,74,99), while at dusk (`evening`) it gives no more.
 fn sky_ambient(normal: vec3<f32>) -> vec3<f32> {
     let weight = normal * normal;
     let x = select(lighting.sky_irradiance[1], lighting.sky_irradiance[0], normal.x >= 0.0);
-    let y = select(lighting.sky_irradiance[3], lighting.sky_irradiance[2], normal.y >= 0.0);
+    let high = saturate((normalize(lighting.sun_direction.xyz).y - 0.05) / 0.2);
+    let up = lighting.sky_irradiance[2].rgb * mix(1.0, SKY_UP_GAIN, high);
+    let y = select(lighting.sky_irradiance[3].rgb, up, normal.y >= 0.0);
     let z = select(lighting.sky_irradiance[5], lighting.sky_irradiance[4], normal.z >= 0.0);
-    let irradiance = x.rgb * weight.x + y.rgb * weight.y + z.rgb * weight.z;
+    let irradiance = x.rgb * weight.x + y * weight.y + z.rgb * weight.z;
     return irradiance * lighting.tuning.z * lighting.sky_tint.rgb;
 }
 
@@ -265,6 +288,46 @@ fn lamp_visibility(world_position: vec3<f32>, normal: vec3<f32>, facing: f32) ->
     return lit / (taps * taps);
 }
 
+/// How much of the sky a dielectric face mirrors at this angle (Schlick's
+/// curve): a tenth of `spec_strength` looking straight at it, all of it at
+/// grazing. Without it every face facing the camera picked up a sheet of sky,
+/// greying a red part's front to (152, 142, 162) where the real client keeps
+/// it at (112, 29, 31) under the Baseplate template's lighting.
+fn env_fresnel(normal: vec3<f32>, to_eye: vec3<f32>) -> f32 {
+    let grazing = 1.0 - saturate(dot(normal, to_eye));
+    return ENV_F0 + (ENV_F90 - ENV_F0) * pow(grazing, 5.0);
+}
+
+const ENV_F0: f32 = 0.1;
+const ENV_F90: f32 = 0.4;
+
+/// What the sun's highlight is multiplied by at the half vector's angle to
+/// the eye, 1 face-on: the white glare a low sun leaves across a plain floor
+/// toward it (`atmosphere`, `sun_rays`, `morning`: some 100 levels over the
+/// floor where the sun's mirror image would be, still 25 at a dozen degrees
+/// aside). Steeper than Schlick's fifth power, so a sun beside or behind the
+/// eye leaves the far floor as it was (`studio_lighting`, 143 near to 148
+/// far; the surface's own angle to the eye drew 160 far, a fifth power 155).
+fn sun_fresnel(v_dot_h: f32) -> f32 {
+    let away = 1.0 - saturate(v_dot_h);
+    return 1.0 + SUN_FRESNEL_GAIN * pow(away, 5.0) + GLINT_GAIN * pow(away, 8.0);
+}
+
+const SUN_FRESNEL_GAIN: f32 = 24.0;
+const GLINT_GAIN: f32 = 60.0;
+
+/// The fill lamp's direction: opposite the sun by day, the moon by night,
+/// which the real client puts at the sun's direction with X and Y turned round
+/// and Z kept. `crate::lighting::Lighting::fill_direction` is the same.
+fn fill_direction() -> vec3<f32> {
+    let sun = normalize(lighting.sun_direction.xyz);
+    let day = saturate((sun.y + TWILIGHT_BAND) / (2.0 * TWILIGHT_BAND));
+    let moon = vec3<f32>(-sun.x, -sun.y, sun.z);
+    return normalize(mix(moon, -sun, day));
+}
+
+const TWILIGHT_BAND: f32 = 0.1;
+
 /// The whole model, per fragment: two lamps, ambient, specular, environment,
 /// exposure and fog. Returns linear colour clamped to the displayable range,
 /// Roblox squares it down into a gamma-2 target here, which an `*Srgb` render
@@ -276,19 +339,20 @@ fn shade(surface: Surface) -> vec3<f32> {
     let distance = length(offset);
     let to_eye = offset / max(distance, 1e-4);
 
-    // Two lamps, one at L and a dim one at -L: what stops a face turned away
-    // from the sun reading as a flat silhouette.
+    // Two lamps, the sun and a dim fill: what stops a face turned away from
+    // the sun reading as a flat silhouette, and the moon at night.
     let facing = dot(normal, light);
+    let fill_facing = dot(normal, fill_direction());
     // Only the lamp above the horizon is occluded, and only its own term.
     // Ambient and sky irradiance stay whole, which is what makes a Studio
     // shadow on a grey baseplate read as pure blue sky rather than as black.
     let lamp = lighting.shadow_lamp.x;
-    let toward_lamp = select(-facing, facing, lamp > 0.0);
+    let toward_lamp = select(fill_facing, facing, lamp > 0.0);
     let visibility = lamp_visibility(surface.world_position, normal, toward_lamp);
     let sun_lit = select(1.0, visibility, lamp > 0.5);
     let fill_lit = select(1.0, visibility, lamp < -0.5);
     let direct = lighting.sun_color.rgb * saturate(facing) * sun_lit
-        + lighting.fill_color.rgb * saturate(-facing) * fill_lit;
+        + lighting.fill_color.rgb * saturate(fill_facing) * fill_lit;
 
     // Roblox mixes indoor Ambient with OutdoorAmbient by a per-voxel skylight
     // factor. We have no voxel grid, so every surface is treated as open to the
@@ -298,6 +362,7 @@ fn shade(surface: Surface) -> vec3<f32> {
     let half_vector = normalize(light + to_eye);
     let specular = surface.spec_strength
         * exp2(surface.shininess * (dot(normal, half_vector) - 1.0))
+        * sun_fresnel(dot(to_eye, half_vector))
         * saturate(facing)
         * sun_lit;
 
@@ -316,19 +381,14 @@ fn shade(surface: Surface) -> vec3<f32> {
         u32(max(lighting.locals.x, 0.0))
     );
 
-    // The sun's own specular highlight is scaled by EnvironmentSpecularScale
-    // (`tuning.y`), the same dial the environment reflection below is: a place
-    // that turns it to 0 (as many low-poly/stylised places do) reads as matte
-    // in Studio, its flat colours full and unwashed, and adding a broad sun
-    // highlight there is exactly what greyed the greens out. A place that
-    // leaves it at 1 keeps the full highlight. Roblox publishes no formula, so
-    // this ties the direct highlight to the same scale as the reflection it is
-    // physically the sharp end of, matched against Studio on a place with the
-    // scale at 0 (matte) and one at 1 (glossy).
+    // The sun's own highlight follows EnvironmentSpecularScale (`tuning.y`),
+    // the dial the environment reflection below is under, between the two
+    // fitted strengths: a place at scale 0 reads nearly matte, its flat colours
+    // unwashed, but keeps the small highlight the real client leaves there.
     var color = surface.albedo * (direct + ambient + locals.diffuse)
-        + (specular * lighting.sun_color.rgb * lighting.tuning.y
+        + (specular * lighting.sun_color.rgb * mix(SUN_SPECULAR_AT_ZERO, SUN_SPECULAR_AT_FULL, lighting.tuning.y)
             + locals.specular
-            + environment * lighting.tuning.y * surface.spec_strength)
+            + environment * lighting.tuning.y * surface.spec_strength * env_fresnel(normal, to_eye))
             * surface.spec_tint;
     // Reflectance is a straight crossfade to the reflection, with no Fresnel:
     // that is literally what Roblox does. Gated by EnvironmentSpecularScale

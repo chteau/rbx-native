@@ -57,7 +57,7 @@ impl Output {
         self.kinds.push(kind);
     }
 
-    pub(crate) fn push_text(&mut self, kind: LineKind, text: String) {
+    pub fn push_text(&mut self, kind: LineKind, text: String) {
         self.push(kind, vec![PrintPart::Text(text)]);
     }
 

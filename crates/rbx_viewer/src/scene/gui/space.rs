@@ -22,8 +22,8 @@ use super::plan::{
 use super::style::Styled;
 use crate::fonts::Face;
 use crate::scene::beam::{world_cframe, ParentMap};
+use crate::scene::Catalog;
 use crate::scene::Placement;
-use crate::scene::{Catalog, Part};
 
 const BILLBOARD_CLASS: &str = "BillboardGui";
 const SURFACE_CLASS: &str = "SurfaceGui";
@@ -126,10 +126,10 @@ impl SpaceGui {
         collect_fonts_of(&self.roots, &self.groups, into);
     }
 
-    /// Every `ViewportFrame` part on the canvas, see `Screen::viewport_parts`.
-    pub(crate) fn viewport_parts(&mut self, apply: &mut impl FnMut(&mut Part)) {
+    /// Every `ViewportFrame` on the canvas, see `Screen::viewports`.
+    pub(crate) fn viewports(&mut self, apply: &mut impl FnMut(&mut super::Viewport)) {
         for root in &mut self.roots {
-            super::plan::each_viewport_part(root, apply);
+            super::plan::each_viewport(root, apply);
         }
     }
 }
@@ -259,14 +259,17 @@ fn read(
         true => {
             let size = span(properties, "Size");
             let origin = origin(context, adornee)?;
+            let half = half_extents(context, adornee);
             (
                 billboard_canvas(size),
                 Anchor::Billboard {
                     origin,
                     size: studs(size),
                     pixels: pixels(size),
-                    view_offset: vector3(properties, "StudsOffset"),
-                    world_offset: vector3(properties, "StudsOffsetWorldSpace"),
+                    view_offset: vector3(properties, "StudsOffset")
+                        + vector3(properties, "ExtentsOffset") * half,
+                    world_offset: vector3(properties, "StudsOffsetWorldSpace")
+                        + vector3(properties, "ExtentsOffsetWorldSpace") * half,
                     size_offset: vector2(properties, "SizeOffset"),
                 },
             )
@@ -371,7 +374,47 @@ fn origin(context: Context<'_>, adornee: Ref) -> Option<Vec3> {
         return world_cframe(context.dom, context.parents, adornee)
             .map(|frame| frame.w_axis.truncate());
     }
-    Some(context.placements.get(&adornee)?.model.w_axis.truncate())
+    if let Some(placement) = context.placements.get(&adornee) {
+        return Some(placement.model.w_axis.truncate());
+    }
+    // A model (a nameplate hung straight off a character): the middle of
+    // its parts.
+    let (mut low, mut high) = (Vec3::INFINITY, Vec3::NEG_INFINITY);
+    for part in crate::scene::descendants_of(context.dom, adornee) {
+        if let Some(placement) = context.placements.get(&part) {
+            let at = placement.model.w_axis.truncate();
+            low = low.min(at);
+            high = high.max(at);
+        }
+    }
+    (low.x <= high.x).then(|| (low + high) / 2.0)
+}
+
+/// Half the adornee's world bounding box, what `ExtentsOffset` and
+/// `ExtentsOffsetWorldSpace` count in: (0, 1, 0) is the adornee's top.
+/// Nothing for an attachment.
+fn half_extents(context: Context<'_>, adornee: Ref) -> Vec3 {
+    let (mut low, mut high) = (Vec3::INFINITY, Vec3::NEG_INFINITY);
+    for part in crate::scene::descendants_of(context.dom, adornee) {
+        if let Some(placement) = context.placements.get(&part) {
+            // The matrix scales a unit cube to the part.
+            let m = placement.model;
+            let centre = m.w_axis.truncate();
+            let reach =
+                (m.x_axis.truncate().abs() + m.y_axis.truncate().abs() + m.z_axis.truncate().abs())
+                    / 2.0;
+            low = low.min(centre - reach);
+            high = high.max(centre + reach);
+            if part == adornee {
+                break;
+            }
+        }
+    }
+    if low.x <= high.x {
+        (high - low) / 2.0
+    } else {
+        Vec3::ZERO
+    }
 }
 
 fn vector3(properties: &BTreeMap<String, Variant>, name: &str) -> Vec3 {

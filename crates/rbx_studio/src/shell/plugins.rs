@@ -100,6 +100,14 @@ impl Shell {
         let settings_dir =
             crate::settings::default_config_dir().map(|dir| dir.join("plugin-settings"));
         let mut host = PluginHost::new(self.database.clone(), settings_dir);
+        rbx_lua::set_asset_source(rbx_sim::asset_source(std::sync::Arc::new(
+            super::local_run::EditFetcher,
+        )));
+        rbx_lua::set_asset_owners(
+            super::local_run::owners::shared(),
+            super::local_run::owners::cache_dir(),
+        );
+        host.set_permissions(self.permissions.clone());
         let mut wasm = Vec::new();
         self.plugins.built_in.clear();
         for plugin in &found {
@@ -199,6 +207,8 @@ impl Shell {
         };
         if commit_before {
             self.commit_plugin_step();
+            // A plugin reading a `ScriptDocument` reads the text as typed.
+            self.flush_script_edits(cx);
         }
         let context = self.plugin_context();
         // Everything logged so far was already reflected; the host reports
@@ -215,6 +225,7 @@ impl Shell {
             &outcome.changes,
         );
         self.apply_plugin_outcome(outcome, cx);
+        self.reflect_editables(cx);
         if commit_after {
             self.commit_plugin_step();
         }
@@ -297,6 +308,12 @@ impl Shell {
                 .view_bounds
                 .get()
                 .map(|b| [f32::from(b.size.width), f32::from(b.size.height)]),
+            theme: match crate::theme::active().mode {
+                gpui_kit::component::ThemeMode::Light => "Light",
+                _ => "Dark",
+            }
+            .to_owned(),
+            scripts: self.scripts.tabs.all().to_vec(),
         }
     }
 

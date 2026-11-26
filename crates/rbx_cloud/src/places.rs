@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::client::Client;
 use crate::error::{self, CloudError};
 use crate::experiences::Experience;
+use crate::universes::Owner;
 
 #[derive(Deserialize)]
 struct UniverseOfPlaceRaw {
@@ -44,6 +45,45 @@ struct UserRaw {
     name: String,
     #[serde(rename = "displayName")]
     display_name: String,
+    #[serde(default, rename = "hasVerifiedBadge")]
+    has_verified_badge: bool,
+}
+
+/// A user as `users.roblox.com/v1/users/{id}` describes them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UserInfo {
+    pub name: String,
+    pub display_name: String,
+    /// The account carries Roblox's verified badge.
+    pub verified: bool,
+}
+
+#[derive(Deserialize)]
+struct GamesRaw {
+    data: Vec<GameRaw>,
+}
+
+#[derive(Deserialize)]
+struct GameRaw {
+    creator: CreatorRaw,
+}
+
+#[derive(Deserialize)]
+struct CreatorRaw {
+    id: u64,
+    #[serde(rename = "type")]
+    kind: String,
+}
+
+#[derive(Deserialize)]
+struct GroupRaw {
+    owner: Option<GroupOwnerRaw>,
+}
+
+#[derive(Deserialize)]
+struct GroupOwnerRaw {
+    #[serde(rename = "userId")]
+    user_id: u64,
 }
 
 /// `POST users.roblox.com/v1/users` takes at most this many ids per call
@@ -147,17 +187,58 @@ impl Client {
     /// A user's `(username, display name)`, from the same anonymous lookup
     /// as [`Client::user_display_name`].
     pub fn user_names(&self, user_id: u64) -> Result<(String, String), CloudError> {
+        self.user_info(user_id)
+            .map(|info| (info.name, info.display_name))
+    }
+
+    /// A user's names and verified badge, from the same anonymous lookup
+    /// as [`Client::user_display_name`].
+    pub fn user_info(&self, user_id: u64) -> Result<UserInfo, CloudError> {
         let url = format!("https://users.roblox.com/v1/users/{user_id}");
-        let response = self.get_raw(&url, false, true)?;
+        let raw: UserRaw = self.anonymous_json(&url)?;
+        Ok(UserInfo {
+            name: raw.name,
+            display_name: raw.display_name,
+            verified: raw.has_verified_badge,
+        })
+    }
+
+    /// Who made an experience (`games.roblox.com/v1/games`, anonymous, so
+    /// it answers for any public experience, not only the key's).
+    pub fn experience_creator(&self, universe_id: u64) -> Result<Owner, CloudError> {
+        let url = format!("https://games.roblox.com/v1/games?universeIds={universe_id}");
+        let raw: GamesRaw = self.anonymous_json(&url)?;
+        let creator = raw
+            .data
+            .into_iter()
+            .next()
+            .ok_or_else(|| CloudError::UnexpectedShape(format!("no experience {universe_id}")))?
+            .creator;
+        Ok(if creator.kind == "Group" {
+            Owner::Group(creator.id)
+        } else {
+            Owner::User(creator.id)
+        })
+    }
+
+    /// The user who owns a group (`groups.roblox.com/v1/groups/{id}`,
+    /// anonymous); `None` for an ownerless group.
+    pub fn group_owner(&self, group_id: u64) -> Result<Option<u64>, CloudError> {
+        let url = format!("https://groups.roblox.com/v1/groups/{group_id}");
+        let raw: GroupRaw = self.anonymous_json(&url)?;
+        Ok(raw.owner.map(|o| o.user_id))
+    }
+
+    fn anonymous_json<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, CloudError> {
+        let response = self.get_raw(url, false, true)?;
         if !(200..300).contains(&response.status) {
             return Err(error::error_for_status(
-                &url,
+                url,
                 response.status,
                 &response.headers,
             ));
         }
-        let raw: UserRaw = serde_json::from_slice(&response.body)?;
-        Ok((raw.name, raw.display_name))
+        Ok(serde_json::from_slice(&response.body)?)
     }
 
     /// Display names for many users at once (anonymous). A deleted account

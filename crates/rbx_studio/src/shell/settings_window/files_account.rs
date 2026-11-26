@@ -888,6 +888,29 @@ impl SettingsWindow {
                             "Your friends see you in Studio, with the place when it\u{2019}s linked.",
                         )
                         .changed(presence, |shell, cx| shell.set_studio_presence(false, cx)),
+                        {
+                            let offline = rbx_net::forced();
+                            let detected = rbx_net::status() == rbx_net::Status::Detected;
+                            let control = if rbx_net::env_forced() {
+                                readout("On (RBX_NATIVE_OFFLINE)").into_any_element()
+                            } else {
+                                toggle(
+                                    "offline-mode",
+                                    offline,
+                                    self.set(move |shell, cx| shell.set_offline(!offline, cx)),
+                                )
+                                .into_any_element()
+                            };
+                            let local = crate::beta::enabled(crate::shell::LOCAL_RUN_BETA_ID);
+                            Row::new("Offline mode", control)
+                            .describe(match (detected, local) {
+                                (true, true) => "Roblox can\u{2019}t be reached right now, so RbxNative is offline already. Publishing, cloud places, DataStores and Play (real client) wait for the network; Play (local) and cached assets keep working.",
+                                (true, false) => "Roblox can\u{2019}t be reached right now, so RbxNative is offline already. Publishing, cloud places, DataStores and Play wait for the network; cached assets keep working.",
+                                (false, true) => "Work without the network: nothing reaches Roblox or the web. Publishing, cloud places, DataStores and Play (real client) are off; Play (local) and cached assets keep working.",
+                                (false, false) => "Work without the network: nothing reaches Roblox or the web. Publishing, cloud places, DataStores and Play are off; cached assets keep working.",
+                            })
+                            .changed(offline, |shell, cx| shell.set_offline(false, cx))
+                        },
                     ],
                 )
             },

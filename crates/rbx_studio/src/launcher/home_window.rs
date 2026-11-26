@@ -273,10 +273,41 @@ impl HomeWindow {
             _subscriptions: subscriptions,
         };
         this.reload(cx);
+        this.follow_network(cx);
         this.load_session(cx);
         this.apply_capture_state(window, cx);
         this.apply_recent_capture(window, cx);
         this
+    }
+
+    /// Draws again whenever the network comes or goes: what needs Roblox is
+    /// greyed out offline (`crate::offline`).
+    /// Home opens before any editor, so it starts the network watch and
+    /// applies Settings › Account's switch itself.
+    fn follow_network(&mut self, cx: &mut Context<Self>) {
+        if let Some(boot) = self.boot.borrow().as_ref() {
+            rbx_net::set_forced(boot.settings.offline);
+        }
+        rbx_net::watch();
+        cx.spawn(async move |this, cx| {
+            let mut net = rbx_net::status();
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(2))
+                    .await;
+                let now = rbx_net::status();
+                let changed = std::mem::replace(&mut net, now) != now;
+                let alive = this.update(cx, |_, cx| {
+                    if changed {
+                        cx.notify();
+                    }
+                });
+                if alive.is_err() {
+                    return;
+                }
+            }
+        })
+        .detach();
     }
 
     /// The editor's game picker: Home's My Games page, listing, cache and

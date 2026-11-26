@@ -85,9 +85,20 @@ fn a_spec_file_knows_testez_globals() {
     let mut mirror = Mirror::new(root.clone());
     mirror.sync(&dom, &ReflectionDatabase::embedded()).unwrap();
     let client = start(&root).expect("server starts");
-    let reply =
-        wait(client.request("workspace/diagnostic", json!({"previousResultIds": []}))).unwrap();
-    let scripts = diagnostics::parse(&reply, &mirror);
+    // The server analyses the spec files in the background: ask again until
+    // the typo is flagged, rather than trusting one early, partial answer.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(90);
+    let scripts = loop {
+        let reply = wait(client.request("workspace/diagnostic", json!({"previousResultIds": []})));
+        let scripts = reply
+            .map(|reply| diagnostics::parse(&reply, &mirror))
+            .unwrap_or_default();
+        if scripts.iter().any(|(script, _)| *script == typo) || std::time::Instant::now() > deadline
+        {
+            break scripts;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    };
     assert!(
         scripts.iter().all(|(script, _)| *script != spec),
         "the spec should be clean: {scripts:?}"

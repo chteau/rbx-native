@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 use crate::clip::{Clip, Priority};
 use crate::frame::Frame;
-use crate::sample::{sample_joint, wrap};
+use crate::sample::sample_joint;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TrackId(u32);
@@ -47,6 +47,13 @@ pub struct Track {
     pub looped: bool,
     pub priority: Priority,
     pub playing: bool,
+    /// Keeps a track that does not loop among the playing ones when it
+    /// ends, at its last frame but with no weight, firing `Stopped` and
+    /// `DidLoop` instead of `Ended`: what a running game's `AnimationTrack`
+    /// does.
+    pub hold_at_end: bool,
+    /// A held track that reached its end.
+    pub finished: bool,
     weight: f32,
     target: f32,
     /// Weight per second towards `target`.
@@ -63,6 +70,8 @@ impl Track {
             time: 0.,
             speed: 1.,
             playing: false,
+            hold_at_end: false,
+            finished: false,
             weight: 0.,
             target: 1.,
             rate: 0.,
@@ -148,11 +157,12 @@ impl Animator {
         let Some(track) = self.tracks.get_mut(&id) else {
             return;
         };
-        if !track.playing {
+        if !track.playing || track.finished {
             track.time = if speed < 0. { track.length() } else { 0. };
             track.weight = 0.;
         }
         track.playing = true;
+        track.finished = false;
         track.stopping = false;
         track.speed = speed;
         track.fade_to(weight, fade);
@@ -187,6 +197,16 @@ impl Animator {
             if !track.playing {
                 continue;
             }
+            if track.finished {
+                track.weight = fade_step(track, dt);
+                if track.stopping && track.weight <= 0. {
+                    track.playing = false;
+                    track.finished = false;
+                    track.stopping = false;
+                    events.push(Event::Stopped(id));
+                }
+                continue;
+            }
             let length = track.length();
             let from = track.time;
             let mut to = from + dt * track.speed;
@@ -213,15 +233,15 @@ impl Animator {
                 crossed(track, id, from, to, &mut events);
             }
             track.time = to;
+            track.weight = fade_step(track, dt);
 
-            let step = track.rate * dt;
-            track.weight = if (track.target - track.weight).abs() <= step || track.rate == 0. {
-                track.target
-            } else {
-                track.weight + step.copysign(track.target - track.weight)
-            };
-
-            if ended {
+            if ended && track.hold_at_end {
+                track.finished = true;
+                track.weight = 0.;
+                track.target = 0.;
+                events.push(Event::Stopped(id));
+                events.push(Event::DidLoop(id));
+            } else if ended {
                 events.push(Event::Ended(id));
                 track.playing = false;
                 track.weight = 0.;
@@ -241,13 +261,16 @@ impl Animator {
             .tracks
             .values()
             .filter(|t| t.playing && t.weight > 0.)
-            .map(|t| (t, wrap(&t.clip, t.time)))
+            .map(|t| (t, local_time(t)))
             .collect();
         active.sort_by_key(|(t, _)| std::cmp::Reverse(rank(t.priority)));
 
-        let mut joints: Vec<String> = active.iter().flat_map(|(t, _)| t.clip.joints()).collect();
-        joints.sort();
-        joints.dedup();
+        // Borrowed names: this runs for every rig every frame.
+        let joints: std::collections::BTreeSet<&str> = active
+            .iter()
+            .flat_map(|(t, _)| t.clip.keyframes.iter())
+            .flat_map(|k| k.poses.keys().map(String::as_str))
+            .collect();
 
         let mut out = BTreeMap::new();
         for joint in joints {
@@ -259,7 +282,7 @@ impl Animator {
                 let mut group: Vec<(Frame, f32)> = Vec::new();
                 while i < active.len() && rank(active[i].0.priority) == level {
                     let (track, time) = active[i];
-                    if let Some(s) = sample_joint(&track.clip, &joint, time) {
+                    if let Some(s) = sample_joint(&track.clip, joint, time) {
                         group.push((s.transform, track.weight * s.weight));
                     }
                     i += 1;
@@ -272,10 +295,35 @@ impl Animator {
                 total += sum.min(1.);
             }
             if let Some(frame) = average(&parts) {
-                out.insert(joint, frame);
+                out.insert(joint.to_owned(), frame);
             }
         }
         out
+    }
+}
+
+/// Where in its clip a track is: wrapped when the track (not just its clip)
+/// loops, held at the ends when it doesn't.
+fn local_time(track: &Track) -> f32 {
+    if track.looped {
+        let length = track.length();
+        if length <= 0. {
+            0.
+        } else {
+            track.time.rem_euclid(length)
+        }
+    } else {
+        track.time.clamp(0., track.length())
+    }
+}
+
+/// The weight `dt` later, moving linearly towards the target.
+fn fade_step(track: &Track, dt: f32) -> f32 {
+    let step = track.rate * dt;
+    if (track.target - track.weight).abs() <= step || track.rate == 0. {
+        track.target
+    } else {
+        track.weight + step.copysign(track.target - track.weight)
     }
 }
 

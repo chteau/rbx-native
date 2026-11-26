@@ -260,8 +260,9 @@ fn shadow_softness_becomes_a_kernel_radius_in_texels() {
     };
 
     assert_eq!(radius(0.0), 0.0);
-    assert_eq!(radius(1.0), SOFTNESS_TEXELS);
-    assert!(radius(0.2) > 1.0 && radius(0.2) < radius(1.0));
+    assert_eq!(radius(1.0), SOFTNESS_TEXELS.max(SOFT_MIN_TEXELS));
+    // The template's 0.2 is still soft: never the stairs of a single tap.
+    assert_eq!(radius(0.2), SOFT_MIN_TEXELS);
 }
 
 // The bias is quoted in studs and has to reach the shader in the [0, 1] the
@@ -291,10 +292,11 @@ fn the_receiver_bias_is_scaled_by_the_maps_own_depth_range() {
     assert_eq!(raw.shadow_params[1], 1.0 / 2048.0);
 }
 
-// Below quality level 7 the kernel collapses to the single tap that means a hard
-// edge, however soft the place asked for its shadows to be.
+// Below quality level 7 the place's softness counts for nothing, but a soft
+// shadow keeps the narrowest kernel: the real client blurs its low levels'
+// shadows rather than showing the map's texels.
 #[test]
-fn a_low_quality_level_hardens_the_shadow_edge() {
+fn a_low_quality_level_keeps_the_narrowest_soft_edge() {
     let lighting = Lighting {
         shadow_softness: 1.0,
         ..Lighting::default()
@@ -311,7 +313,7 @@ fn a_low_quality_level_hardens_the_shadow_edge() {
         &Calibration::default(),
     );
 
-    assert_eq!(raw.shadow_params[0], 0.0);
+    assert_eq!(raw.shadow_params[0], SOFT_MIN_TEXELS);
 }
 
 // The shader loops `locals.x` times over a buffer that always holds at least one
@@ -328,7 +330,9 @@ fn the_local_light_count_reaches_the_shader_as_a_float() {
         &Calibration::default(),
     );
 
-    assert_eq!(raw.locals, [7.0, 0.0, 0.0, 0.0]);
+    // Studio's template is ShadowMap, whose local lights live in the voxel
+    // grid: the flag rides in the second slot.
+    assert_eq!(raw.locals, [7.0, 1.0, 0.0, 0.0]);
     assert_eq!(unshadowed(&Lighting::default(), Vec3::ZERO).locals[0], 0.0);
 }
 

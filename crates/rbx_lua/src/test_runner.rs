@@ -15,6 +15,11 @@
 //! A file whose threads still wait after ten simulated minutes, or whose
 //! test waits on something nothing will ever fire (a signal no code
 //! fires, a client's remote), fails that test with a message saying so.
+//!
+//! A spec named `*.integration.spec` (or `.integration.test`) is an
+//! integration spec: [`discover`] leaves it out, [`discover_integration`]
+//! finds it, and Local Run runs it on a whole session (`rbx_sim::integration`)
+//! through [`Harness`].
 
 mod report;
 #[cfg(test)]
@@ -154,11 +159,31 @@ pub struct Options {
     pub only: Option<Vec<String>>,
 }
 
-/// Every spec module in the place, in tree order, skipping Wally's
-/// vendored packages. `roots` (dotted full names, `ReplicatedStorage.Tests`)
-/// limits the search to those subtrees; a root that names nothing is an
-/// error.
+/// Every spec module in the place but the integration specs, in tree
+/// order, skipping Wally's vendored packages. `roots` (dotted full names,
+/// `ReplicatedStorage.Tests`) limits the search to those subtrees; a root
+/// that names nothing is an error.
 pub fn discover(dom: &WeakDom, roots: &[String]) -> Result<Vec<SpecFile>, String> {
+    discover_where(dom, roots, false)
+}
+
+/// The integration specs, as [`discover`] finds the others.
+pub fn discover_integration(dom: &WeakDom, roots: &[String]) -> Result<Vec<SpecFile>, String> {
+    discover_where(dom, roots, true)
+}
+
+/// A module named as an integration spec: `Coins.integration.spec`.
+pub fn is_integration(name: &str) -> bool {
+    [".integration.spec", ".integration.test"]
+        .iter()
+        .any(|end| name.ends_with(end))
+}
+
+fn discover_where(
+    dom: &WeakDom,
+    roots: &[String],
+    integration: bool,
+) -> Result<Vec<SpecFile>, String> {
     let starts = if roots.is_empty() {
         dom.root_refs().to_vec()
     } else {
@@ -179,6 +204,7 @@ pub fn discover(dom: &WeakDom, roots: &[String]) -> Result<Vec<SpecFile>, String
         let name = instance.name();
         if instance.class() == "ModuleScript"
             && (name.ends_with(".spec") || name.ends_with(".test"))
+            && is_integration(name) == integration
         {
             found.push(SpecFile {
                 module: at,
@@ -257,13 +283,38 @@ pub fn run_file(
     focus: bool,
 ) -> FileReport {
     let started = Instant::now();
-    let ran = drive(dom, file, database, |lua| {
-        let table = lua.create_table()?;
-        table.set("focus", focus)?;
-        table.set("filter", options.filter.clone())?;
-        table.set("only", options.only.clone())?;
-        Ok(table)
-    });
+    let ran = drive(dom, file, database, |lua| run_options(lua, options, focus));
+    let unfinished = match (&ran.harness_error, ran.timed_out) {
+        (Some(error), _) => error.clone(),
+        (None, true) => format!(
+            "still waiting after {} s of simulated time",
+            TIME_LIMIT.as_secs()
+        ),
+        (None, false) => "never finished: it waits on something the sandbox never fires \
+             (a signal no code fires, a client's remote); later tests in the file did not run"
+            .to_string(),
+    };
+    assemble(dom, file, ran.events, ran.output, unfinished, started)
+}
+
+fn run_options(lua: &Lua, options: &Options, focus: bool) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    table.set("focus", focus)?;
+    table.set("filter", options.filter.clone())?;
+    table.set("only", options.only.clone())?;
+    Ok(table)
+}
+
+/// A file's report from what its harness reported; `unfinished` fails the
+/// test it stopped in when it never got to the end.
+fn assemble(
+    dom: &WeakDom,
+    file: &SpecFile,
+    events: Vec<(Event, usize)>,
+    output: Output,
+    unfinished: String,
+    started: Instant,
+) -> FileReport {
     let scripts = scripts(dom);
     let locate = |stack: Option<&str>, line: Option<u32>| {
         stack
@@ -279,18 +330,18 @@ pub fn run_file(
     let mut results = Vec::new();
     let mut running: Option<(Vec<String>, usize)> = None;
     let mut done = false;
-    for (event, at) in ran.events {
+    for (event, at) in events {
         match event {
             Event::Start(path) => running = Some((path, at)),
             Event::Result(raw) => {
-                let mut output = Output::default();
+                let mut slice = Output::default();
                 if running.as_ref().is_some_and(|(path, _)| *path == raw.path) {
                     if let Some((_, from)) = running.take() {
-                        output = ran.output.slice(from..at);
+                        slice = output.slice(from..at);
                     }
                 }
                 results.push(TestResult {
-                    output,
+                    output: slice,
                     location: locate(raw.stack.as_deref(), raw.line),
                     stack: raw.stack.as_deref().map(|s| user_frames(s, &scripts)),
                     path: raw.path,
@@ -304,32 +355,75 @@ pub fn run_file(
         }
     }
     if !done {
-        let message = match (&ran.harness_error, ran.timed_out) {
-            (Some(error), _) => error.clone(),
-            (None, true) => format!(
-                "still waiting after {} s of simulated time",
-                TIME_LIMIT.as_secs()
-            ),
-            (None, false) => "never finished: it waits on something the sandbox never fires \
-                 (a signal no code fires, a client's remote); later tests in the file did not run"
-                .to_string(),
-        };
         let (path, from) = running.unwrap_or_default();
         results.push(TestResult {
             path,
             status: Status::Failed,
-            message: Some(message),
+            message: Some(unfinished),
             stack: None,
             location: None,
             duration: Duration::ZERO,
-            output: ran.output.slice(from..usize::MAX),
+            output: output.slice(from..usize::MAX),
         });
     }
     FileReport {
         file: file.clone(),
         results,
-        output: ran.output,
+        output,
         duration: started.elapsed(),
+    }
+}
+
+/// The harness on a VM its caller drives: Local Run runs integration specs
+/// on a session's server this way.
+pub struct Harness {
+    events: Rc<RefCell<Vec<(Event, usize)>>>,
+    started: Instant,
+}
+
+impl Harness {
+    /// The harness for `file` and its arguments, to call on a thread of
+    /// `lua`'s: `printed` says how many lines the run has printed so far,
+    /// and `globals` join the spec's environment. A test has no budget of
+    /// its own here; the VM's script timeout applies.
+    pub fn new(
+        lua: &Lua,
+        file: &SpecFile,
+        options: &Options,
+        focus: bool,
+        printed: impl Fn() -> usize + 'static,
+        globals: Table,
+    ) -> mlua::Result<(Harness, mlua::Function, MultiValue)> {
+        let events = Rc::new(RefCell::new(Vec::new()));
+        let mut args = harness_args(lua, file, events.clone(), Rc::new(printed), |lua| {
+            run_options(lua, options, focus)
+        })?;
+        args.push_back(Value::Function(lua.create_function(|_, ()| Ok(()))?));
+        args.push_back(Value::Table(globals));
+        let chunk = lua
+            .load(HARNESS)
+            .set_name(format!("={HARNESS_NAME}"))
+            .into_function()?;
+        let harness = Harness {
+            events,
+            started: Instant::now(),
+        };
+        Ok((harness, chunk, args))
+    }
+
+    /// The file's report, from what the harness reported and what the run
+    /// printed; `unfinished` fails the test it stopped in, if it stopped.
+    pub fn report(
+        self,
+        dom: &WeakDom,
+        file: &SpecFile,
+        output: Output,
+        unfinished: String,
+    ) -> FileReport {
+        let events = Rc::try_unwrap(self.events)
+            .map(RefCell::into_inner)
+            .unwrap_or_else(|shared| shared.take());
+        assemble(dom, file, events, output, unfinished, self.started)
     }
 }
 
@@ -386,11 +480,18 @@ fn drive(
 
     let events = Rc::new(RefCell::new(Vec::new()));
     let printed = Rc::new(Cell::new(0));
-    let counter = Counter {
-        pending: runtime.pending_output(),
-        printed: printed.clone(),
-    };
-    match harness_args(runtime.lua(), file, events.clone(), counter, options) {
+    let (pending, seen) = (runtime.pending_output(), printed.clone());
+    let counter = Rc::new(move || seen.get() + pending.borrow().lines().len());
+    let args =
+        harness_args(runtime.lua(), file, events.clone(), counter, options).and_then(|mut args| {
+            let rearm = runtime.lua().create_function(|lua, ()| {
+                arm(lua);
+                Ok(())
+            })?;
+            args.push_back(Value::Function(rearm));
+            Ok(args)
+        });
+    match args {
         Ok(args) => {
             let chunk = runtime
                 .lua()
@@ -431,24 +532,11 @@ fn drive(
     ran
 }
 
-/// How many lines the file has printed so far: those already collected
-/// plus those waiting for the resume to return.
-struct Counter {
-    pending: Rc<RefCell<Output>>,
-    printed: Rc<Cell<usize>>,
-}
-
-impl Counter {
-    fn now(&self) -> usize {
-        self.printed.get() + self.pending.borrow().lines().len()
-    }
-}
-
 fn harness_args(
     lua: &Lua,
     file: &SpecFile,
     events: Rc<RefCell<Vec<(Event, usize)>>>,
-    counter: Counter,
+    printed: Rc<dyn Fn() -> usize>,
     options: impl FnOnce(&Lua) -> mlua::Result<Table>,
 ) -> mlua::Result<MultiValue> {
     let spec = LuaInstance::new(file.module, engine(lua).ctx.clone()).into_lua(lua)?;
@@ -458,14 +546,8 @@ fn harness_args(
         env.set_metatable(Some(meta))?;
         compile_in(lua, &module, env)
     })?;
-    let rearm = lua.create_function(|lua, ()| {
-        arm(lua);
-        Ok(())
-    })?;
     let report = lua.create_function(move |_, (kind, data): (String, Table)| {
-        events
-            .borrow_mut()
-            .push((event(&kind, &data)?, counter.now()));
+        events.borrow_mut().push((event(&kind, &data)?, printed()));
         Ok(())
     })?;
     Ok(MultiValue::from_vec(vec![
@@ -474,7 +556,6 @@ fn harness_args(
         Value::Function(load),
         Value::Function(report),
         Value::Table(options(lua)?),
-        Value::Function(rearm),
     ]))
 }
 

@@ -162,6 +162,20 @@ pub(crate) enum Panel {
     /// Find and replace over every script in the place
     /// (`shell::find_in_place`). Shut until asked for.
     FindInPlace,
+    /// Per-frame script/physics/render time, profilebegin scopes and the
+    /// ScriptProfiler of a Local Run (`shell::profiler_dock`). Shut until
+    /// asked for (Ctrl+F6).
+    MicroProfiler,
+    /// Every remote call of a Local Run, its rates and limits
+    /// (`shell::remote_inspector`). Shut until asked for.
+    RemoteInspector,
+    /// What keeps growing in a Local Run, per peer: connections,
+    /// nil-parented instances, tables, heap (`shell::leak_finder`). Shut
+    /// until asked for.
+    LeakFinder,
+    /// Bot players on a headless Local Run server and what the server goes
+    /// through (`shell::loadtest_dock`). Shut until asked for.
+    LoadTest,
     /// One plugin's `DockWidgetPluginGui`, a dock like any other. Not in
     /// [`Panel::ALL`]: it joins a layout when its plugin first opens it.
     Plugin(PluginDock),
@@ -171,7 +185,7 @@ impl Panel {
     /// In the order a fresh layout seats them, which is what makes the
     /// Viewport, Argon and Wally docks tabs beside Output rather than
     /// docks of their own.
-    pub(crate) const ALL: [Panel; 23] = [
+    pub(crate) const ALL: [Panel; 27] = [
         Panel::Explorer,
         Panel::Properties,
         Panel::Output,
@@ -195,6 +209,10 @@ impl Panel {
         Panel::Localization,
         Panel::Toolbox,
         Panel::FindInPlace,
+        Panel::MicroProfiler,
+        Panel::RemoteInspector,
+        Panel::LeakFinder,
+        Panel::LoadTest,
     ];
 
     /// Where this panel lives in a layout nobody has rearranged, also
@@ -219,7 +237,11 @@ impl Panel {
             | Panel::Loren
             | Panel::AvatarSettings
             | Panel::Localization
-            | Panel::FindInPlace => Edge::Bottom,
+            | Panel::FindInPlace
+            | Panel::MicroProfiler
+            | Panel::RemoteInspector
+            | Panel::LeakFinder
+            | Panel::LoadTest => Edge::Bottom,
             Panel::Plugin(dock) => dock.home(),
         }
     }
@@ -250,6 +272,10 @@ impl Panel {
             Panel::Localization => "Localization",
             Panel::Toolbox => "Toolbox",
             Panel::FindInPlace => "Find in Place",
+            Panel::MicroProfiler => "MicroProfiler",
+            Panel::RemoteInspector => "Remote Inspector",
+            Panel::LeakFinder => "Leak Finder",
+            Panel::LoadTest => "Load Test",
             Panel::Plugin(dock) => dock.key(),
         }
     }
@@ -283,6 +309,10 @@ impl Panel {
                 | Panel::Localization
                 | Panel::Toolbox
                 | Panel::FindInPlace
+                | Panel::MicroProfiler
+                | Panel::RemoteInspector
+                | Panel::LeakFinder
+                | Panel::LoadTest
         )
     }
 

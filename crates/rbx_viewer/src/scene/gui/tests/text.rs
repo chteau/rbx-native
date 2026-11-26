@@ -105,7 +105,11 @@ fn a_text_label_reads_every_text_property() {
     assert_eq!(text.size, 24.0);
     assert!(text.scaled && text.wrapped);
     assert_eq!((text.x_align, text.y_align), (Align::Start, Align::End));
-    assert_eq!(text.face, Face::named("GothamSSm", 700, true));
+    assert_eq!(
+        text.face,
+        Face::named("Montserrat", 700, true),
+        "the client draws Gotham in Montserrat"
+    );
     assert_eq!(text.stroke, Some(([1.0, 0.0, 0.0], 0.5)));
     assert_eq!(text.line_height, 1.5);
     assert!(text.truncate);
@@ -198,6 +202,33 @@ fn a_legacy_font_enum_maps_to_its_family_weight_and_style() {
 }
 
 #[test]
+fn a_font_face_in_a_retired_family_draws_in_its_replacement() {
+    let (mut dom, gui) = screen_gui();
+    let referent = label(&mut dom, gui, "TextLabel", "x");
+    let face_of = |dom: &mut WeakDom, family: &str| {
+        let font = Font {
+            family: format!("rbxasset://fonts/families/{family}.json"),
+            weight: 400,
+            style: FontStyle::Normal,
+            cached_face_id: None,
+        };
+        dom.set_property(referent, "FontFace", Variant::Font(font))
+            .unwrap();
+        text_of(dom).face
+    };
+
+    assert_eq!(
+        face_of(&mut dom, "GothamSSm"),
+        Face::named("Montserrat", 400, false)
+    );
+    assert_eq!(face_of(&mut dom, "Arial"), Face::named("Arimo", 400, false));
+    assert_eq!(
+        face_of(&mut dom, "Roboto"),
+        Face::named("Roboto", 400, false)
+    );
+}
+
+#[test]
 fn a_text_box_shows_its_placeholder_only_while_empty() {
     let (mut dom, gui) = screen_gui();
     let referent = label(&mut dom, gui, "TextBox", "");
@@ -246,6 +277,28 @@ fn a_text_box_shows_its_placeholder_only_while_empty() {
     let text = elements[1].text.as_ref().unwrap();
     assert_eq!(text.text.spans[0].text, "");
     assert!(!text.text.visible());
+}
+
+#[test]
+fn a_resting_text_box_spills_like_a_label_and_only_clipping_text_is_cut() {
+    let (mut dom, gui) = screen_gui();
+    let field = label(&mut dom, gui, "TextBox", "");
+    dom.set_property(
+        field,
+        "PlaceholderText",
+        Variant::String("a placeholder far wider than its field".to_string()),
+    )
+    .unwrap();
+    label(&mut dom, gui, "TextLabel", "spills");
+    let clipping = label(&mut dom, gui, "TextLabel", "cut");
+    dom.set_property(clipping, "ClipsDescendants", Variant::Bool(true))
+        .unwrap();
+    let elements = resolve(&screens(&dom), VIEWPORT);
+    let clipped: Vec<bool> = elements
+        .iter()
+        .map(|e| e.text.as_ref().unwrap().text.clipped)
+        .collect();
+    assert_eq!(clipped, [false, false, true]);
 }
 
 #[test]
@@ -309,6 +362,8 @@ fn text_scaled_picks_the_largest_whole_size_that_fits() {
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
         .unwrap();
+    dom.set_property(referent, "TextWrapped", Variant::Bool(true))
+        .unwrap();
 
     // 100 by 20: four characters are 2s wide (fits up to 50) and s tall.
     let elements = resolve_with(&screens(&dom), VIEWPORT, &mut Fixed);
@@ -333,6 +388,8 @@ fn size_bounds_clamp_both_a_scaled_and_a_plain_size() {
     let (mut dom, gui) = screen_gui();
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
+        .unwrap();
+    dom.set_property(referent, "TextWrapped", Variant::Bool(true))
         .unwrap();
     dom.set_property(referent, "TextSize", Variant::Float32(14.0))
         .unwrap();
@@ -403,6 +460,8 @@ fn a_ui_text_size_constraint_bounds_the_text_beside_it() {
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
         .unwrap();
+    dom.set_property(referent, "TextWrapped", Variant::Bool(true))
+        .unwrap();
     let constraint = dom.new_instance(
         "UITextSizeConstraint",
         "UITextSizeConstraint",
@@ -425,6 +484,8 @@ fn a_labels_padding_insets_its_text() {
     let (mut dom, gui) = screen_gui();
     let referent = label(&mut dom, gui, "TextLabel", "abcd");
     dom.set_property(referent, "TextScaled", Variant::Bool(true))
+        .unwrap();
+    dom.set_property(referent, "TextWrapped", Variant::Bool(true))
         .unwrap();
     let padding = dom.new_instance("UIPadding", "UIPadding", Some(referent));
     for side in ["PaddingLeft", "PaddingRight"] {

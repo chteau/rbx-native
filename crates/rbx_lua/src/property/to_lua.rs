@@ -76,12 +76,27 @@ pub(crate) fn variant_to_lua(
         Variant::PhysicalProperties(PhysicalProperties::Default) => Ok(Value::Nil),
         Variant::PhysicalProperties(custom) => LuaPhysicalProperties(*custom).into_lua(lua),
         Variant::Font(value) => LuaFont(value.clone()).into_lua(lua),
+        // A `Content` property reads as a `Content`; its `ContentId` twin
+        // and anything older as the URI string.
+        Variant::Content(Content::None) if value_type == "Content" => {
+            crate::datatypes::content::LuaContent(crate::datatypes::content::Source::None)
+                .into_lua(lua)
+        }
+        Variant::Content(Content::Uri(uri)) if value_type == "Content" => {
+            crate::datatypes::content::LuaContent(crate::datatypes::content::Source::Uri(
+                uri.clone(),
+            ))
+            .into_lua(lua)
+        }
         Variant::Content(value) => match value {
             Content::None => String::new().into_lua(lua),
             Content::Uri(uri) => uri.clone().into_lua(lua),
             // Internal instance references have no URL form; scripts rarely read
             // this shape, so it is exposed as empty rather than left unsupported.
-            Content::Object(_) => String::new().into_lua(lua),
+            Content::Object(referent) => match crate::editable::editable_content(lua, *referent)? {
+                Some(content) => Ok(content),
+                None => String::new().into_lua(lua),
+            },
         },
         other => Err(mlua::Error::runtime(format!(
             "reading {name} is not supported yet: {} has no Luau representation",

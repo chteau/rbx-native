@@ -29,6 +29,16 @@ impl Entry {
         self.referent
     }
 
+    /// The colour the instance is drawn in: its tint over its own image when
+    /// that downloaded, the part's colour otherwise.
+    pub(crate) fn color_for(&self, textured: bool) -> [f32; 3] {
+        if textured {
+            self.tint
+        } else {
+            self.color
+        }
+    }
+
     /// The mesh this entry draws through, what has to have downloaded.
     pub(crate) fn asset(&self) -> &AssetRef {
         &self.mesh
@@ -55,7 +65,15 @@ impl Entry {
             .texture
             .clone()
             .filter(|reference| resolved.images.contains_key(reference));
-        let (mut mesh_key, mut color) = (self.mesh.clone(), self.color);
+        let (mut mesh_key, mut color) = (self.mesh.clone(), self.color_for(texture.is_some()));
+        // Laid over a colour this resolution has not baked: a full one does.
+        if let Some(reference) = texture.clone().filter(|_| self.reveals_color) {
+            let key = super::over_key(&reference, self.color);
+            if !resolved.images.contains_key(&key) {
+                return None;
+            }
+            texture = Some(key);
+        }
         let mut worn = false;
         let wrapped = super::wrap::key(self.referent);
         let wraps = self.wrap.is_some() && resolved.meshes.contains_key(&wrapped);

@@ -264,3 +264,25 @@ fn an_empty_union_draws_nothing() {
         .expect("still a part, for selection and bounds of its own");
     assert!(part.is_suppressed());
 }
+
+#[test]
+fn a_tree_with_a_mesh_part_draws_the_unions_own_bake() {
+    let database = database();
+    let document = inline_bytes(&[Leaf::additive(Vec3::ZERO, 2.0), Leaf::mesh(Vec3::X, 2.0)]);
+    let parsed = tree::parse(&document, &database, &tree::Assets::new()).unwrap();
+    assert!(parsed.meshes);
+    let wedge = rbx_csg::Solid::from_mesh(&rbx_csg::shapes::wedge(), glam::Mat4::IDENTITY);
+    let bake = rbx_csg::solidmesh::encode(&wedge);
+    let drawn = evaluate(
+        &document,
+        &database,
+        &tree::Assets::new(),
+        None,
+        Some(&bake),
+    )
+    .flatten()
+    .and_then(|evaluated| evaluated.mesh)
+    .expect("the bake draws");
+    let baked = baked::of_bytes(&bake).unwrap().mesh.triangle_count();
+    assert_eq!(drawn.indices.len() / 3, baked);
+}

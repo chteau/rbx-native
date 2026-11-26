@@ -1,5 +1,5 @@
 //! Studio Settings (`File › Studio Settings…`, `Alt+S`): every preference
-//! the editor keeps, on twelve pages behind a nav, the way real Studio's own
+//! the editor keeps, on thirteen pages behind a nav, the way real Studio's own
 //! `File > Studio Settings` gathers its preferences into one dialog.
 //! Keyboard shortcuts stay a window of their own, as real Studio's
 //! `File > Customize Shortcuts` is.
@@ -33,6 +33,7 @@ mod nav;
 pub(super) mod open;
 mod page;
 mod panels;
+mod permissions;
 mod search;
 mod setters;
 mod viewport;
@@ -74,6 +75,7 @@ pub(crate) struct SettingsWindow {
     appearance: appearance::AppearanceControls,
     recovery: files_account::RecoveryControls,
     ai: ai::AiControls,
+    permissions: permissions::PermissionsView,
     /// The colour popover, while open.
     picker: Option<appearance::Picker>,
     /// Where the Custom accent swatch was laid out, to open the popover
@@ -245,6 +247,7 @@ impl SettingsWindow {
             appearance,
             recovery,
             ai: ai::AiControls::new(),
+            permissions: permissions::PermissionsView::default(),
             picker: None,
             custom_swatch: Default::default(),
             pending_picker: std::env::var("RBX_STUDIO_SETTINGS_PICKER")
@@ -294,7 +297,7 @@ impl SettingsWindow {
             Page::Account => self.account_page(cx),
             Page::Ai => self.ai_page(cx),
             Page::About => self.about_page(),
-            Page::Beta => Vec::new(),
+            Page::Beta | Page::Permissions => Vec::new(),
         }
     }
 }

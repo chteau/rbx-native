@@ -234,9 +234,18 @@ fn slice_falls_back_to_a_single_quad_for_a_zero_sized_texture() {
 }
 
 #[test]
-fn opposing_borders_shrink_together_rather_than_overlapping() {
-    assert_eq!(shrink_to_fit(60.0, 60.0, 100.0), (50.0, 50.0));
-    assert_eq!(shrink_to_fit(10.0, 20.0, 100.0), (10.0, 20.0));
+fn borders_too_thick_shrink_by_the_tighter_axis_on_both() {
+    // 60 + 60 across 100 wide needs 5/6; 10 + 30 down 20 tall needs 1/2,
+    // which wins and applies across as well.
+    let wide = rect(0.0, 0.0, 100.0, 20.0);
+    assert_eq!(
+        fit_borders([60.0, 60.0, 10.0, 30.0], &wide),
+        [30.0, 30.0, 5.0, 15.0]
+    );
+    assert_eq!(
+        fit_borders([10.0, 20.0, 5.0, 5.0], &rect(0.0, 0.0, 100.0, 100.0)),
+        [10.0, 20.0, 5.0, 5.0]
+    );
 }
 
 #[test]

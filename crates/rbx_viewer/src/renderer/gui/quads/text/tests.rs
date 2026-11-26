@@ -28,6 +28,7 @@ fn text(content: &str) -> GuiText {
         max_graphemes: None,
         automatic: [false, false],
         size_bounds: None,
+        clipped: false,
     }
 }
 

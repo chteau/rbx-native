@@ -22,16 +22,34 @@ const ENV_DIFFUSE_WEIGHT: f32 = 1.0;
 
 /// PCF kernel radius, in shadow-map texels, at `ShadowSoftness = 1`.
 ///
-/// Studio's default 0.2 has to land on a penumbra of a couple of texels, the
-/// reference capture's cubes have an edge roughly a stud wide, which is where
-/// a fifth of this comes out right; 0 is then a single tap, i.e. the hard edge
-/// Roblox gives it, and 1 a penumbra several studs across.
-const SOFTNESS_TEXELS: f32 = 8.0;
+/// Fitted on the `shadows_hard`, `shadows_half` and `shadows_soft` fidelity
+/// scenes: the real client's penumbra at 1 is under a stud wide on the slab's
+/// shadow, and a wider kernel showed its taps as ghost copies of the shadow
+/// and striped the floor where the taps reached past the receiver's slope.
+const SOFTNESS_TEXELS: f32 = 2.0;
+
+/// The narrowest kernel a soft shadow (`ShadowSoftness` above 0) gets, in
+/// texels, at every quality level. Below it the map's texels show as stairs
+/// along the edge; the real client at its lower levels blurs them instead
+/// (the Local Run side-by-sides: a rig's shadow on the baseplate has a
+/// penumbra about a stud wide where ours stepped in half-stud blocks).
+const SOFT_MIN_TEXELS: f32 = 2.0;
 
 /// Constant slice off the receiver's own depth, in studs, on top of the
 /// caster-side slope bias. Small enough that no shadow visibly leaves the foot
 /// of what casts it, large enough to swallow the last of the depth rounding.
 const DEPTH_BIAS_STUDS: f32 = 0.12;
+
+/// The PCF radius in texels for `softness` at a level worth `scale` of it:
+/// 0 stays the single tap of a hard edge, anything softer at least
+/// [`SOFT_MIN_TEXELS`].
+fn kernel_radius(softness: f32, scale: f32) -> f32 {
+    let softness = softness.clamp(0.0, 1.0);
+    if softness <= 0.0 {
+        return 0.0;
+    }
+    (softness * SOFTNESS_TEXELS * scale).max(SOFT_MIN_TEXELS)
+}
 
 /// The `vec4`s of `LightingUniform`, in the order it declares them. All-`vec4` on
 /// purpose: a uniform buffer pads every `vec3` up to 16 bytes anyway, so
@@ -125,15 +143,18 @@ impl LightingRaw {
             sky_irradiance: probe.irradiance,
             light_view_projection: fit.view_projection.to_cols_array_2d(),
             shadow_params: [
-                lighting.shadow_softness.clamp(0.0, 1.0)
-                    * SOFTNESS_TEXELS
-                    * quality.shadow_pcf_radius_scale,
+                kernel_radius(lighting.shadow_softness, quality.shadow_pcf_radius_scale),
                 fit.texel_uv,
                 fit.texel_studs,
                 DEPTH_BIAS_STUDS / fit.depth_studs.max(1.0),
             ],
             shadow_lamp: [lamp.marker(), 0.0, 0.0, 0.0],
-            locals: [lights as f32, 0.0, 0.0, 0.0],
+            locals: [
+                lights as f32,
+                f32::from(u8::from(lighting.voxel_locals)),
+                0.0,
+                0.0,
+            ],
             quality: [
                 if quality.render_distance.is_finite() {
                     quality.render_distance

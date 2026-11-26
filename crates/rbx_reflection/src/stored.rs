@@ -26,7 +26,12 @@ impl ReflectionDatabase {
             .iter()
             .find_map(|&key| Some((key, instance.properties().get(key)?)))
             .or_else(|| {
-                let default = self.default_value(class, self.canonical_name(class, name))?;
+                // A few defaults are kept only under the hidden property that
+                // saves them (`Humanoid.Health` as `Health_XML`).
+                let canonical = self.canonical_name(class, name);
+                let default = self
+                    .default_value(class, canonical)
+                    .or_else(|| self.default_value(class, &format!("{canonical}_XML")))?;
                 Some((*names.first()?, default))
             })
     }

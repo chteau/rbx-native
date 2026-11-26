@@ -142,6 +142,11 @@ pub(crate) struct Launch {
     /// opened from Home (see `main::open_settings_from_home`): it starts no
     /// plugins, presence, Discord or MCP and never takes the menus.
     pub(crate) settings_only: bool,
+    /// A Server or Player window of a Server & Clients test (see
+    /// `shell::local_run::windows`): a view on the running session, so
+    /// nothing that acts on a place, announces one, or is scripted from
+    /// the environment starts.
+    pub(crate) test_peer: bool,
     /// A shared `.rbxrepro` this window replays, read-only.
     pub(crate) repro: Option<crate::playtests::repro::Opened>,
 }

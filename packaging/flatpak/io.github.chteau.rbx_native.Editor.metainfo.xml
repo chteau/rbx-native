@@ -92,6 +92,11 @@
   </screenshots>
 
   <releases>
+    <release version="0.2.3" date="2026-11-25">
+      <description>
+        <p>Union, Negate, Intersect and Separate, Reimport and Auto-Reimport, video uploads, Check Avatar Item drawing its findings on the item with more of Studio's mesh and cage checks, Studio's new camera and draggers as betas, adornments and selection cues that match Studio, and credits for every asset we ship.</p>
+      </description>
+    </release>
     <release version="0.2.2" date="2026-11-23">
       <description>
         <p>An AI assistants page for connecting Claude and other MCP clients, a pre-publish check, shareable bug repros, free CC0 kits in the Toolbox, a much lighter idle editor, and Team Presence reachable from other computers again.</p>

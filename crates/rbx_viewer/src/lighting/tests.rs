@@ -100,10 +100,11 @@ fn a_dom_without_a_lighting_service_still_lights_like_studio() {
     let lighting = Lighting::from_dom(&dom, &database(), None);
 
     assert_eq!(lighting, Lighting::default());
-    // Studio's fresh baseplate: 70/255 ambient, 14:30, no fog worth seeing.
+    // Studio's fresh baseplate: 70/255 ambient under ShadowMap's scale, 14:30,
+    // no fog worth seeing.
     assert!(close(
         lighting.ambient,
-        Vec3::splat(srgb_to_linear(DEFAULT_AMBIENT))
+        Vec3::splat(srgb_to_linear(DEFAULT_AMBIENT) * FILMIC_AMBIENT)
     ));
     assert!(close(
         lighting.sun_direction,
@@ -113,17 +114,32 @@ fn a_dom_without_a_lighting_service_still_lights_like_studio() {
     assert!(matches!(lighting.fog, Fog::Linear { end, .. } if end == DEFAULT_FOG_END));
 }
 
+/// What the sun lamp is at `brightness` and `direction` with no colour
+/// shift: the technology's base, the air it crosses.
+fn sun(base: f32, brightness: f32, direction: Vec3) -> Vec3 {
+    Vec3::splat(base * brightness) * sun::transmittance(direction.y)
+}
+
+// What a place leaves out is the `Lighting` class default (the real client's
+// `default_lighting` fidelity scene): Voxel, 127 grey ambient, 14:00 at
+// latitude 41.7, no shadows.
 #[test]
 fn a_missing_property_falls_back_one_at_a_time() {
     let dom = dom_with(&[("Brightness", Variant::Float32(1.0))], &[]);
 
     let lighting = Lighting::from_dom(&dom, &database(), None);
 
-    assert!(close(lighting.sun_color, Vec3::splat(SUN_BASE)));
     assert!(close(
-        lighting.ambient,
-        Vec3::splat(srgb_to_linear(DEFAULT_AMBIENT))
+        lighting.sun_color,
+        sun(VOXEL_SUN, 1.0, lighting.sun_direction)
     ));
+    assert!(close(
+        lighting.sun_direction,
+        sun_direction(14.0, Defaults::class(&database()).latitude)
+    ));
+    assert!(lighting.voxel_locals);
+    assert!((lighting.ambient.x - srgb_to_linear(0.5)).abs() < 0.01);
+    assert!(!lighting.global_shadows);
 }
 
 // Lighting.OutdoorAmbient's docs clamp the effective value to at least Ambient
@@ -166,33 +182,52 @@ fn brightness_scales_the_sun_and_its_fill_together() {
             ("Brightness", Variant::Float32(2.0)),
             ("TimeOfDay", Variant::String("12:00:00".to_string())),
             ("GeographicLatitude", Variant::Float32(23.5)),
+            ("Technology", Variant::Enum(3)),
         ],
         &[],
     );
 
     let lighting = Lighting::from_dom(&dom, &database(), None);
 
-    assert!(close(lighting.sun_color, Vec3::splat(2.0 * SUN_BASE)));
+    // Straight overhead: no air to lose any of it to.
+    assert!(close(lighting.sun_color, Vec3::splat(2.0 * FILMIC_SUN)));
     assert!(close(
         lighting.fill_color,
-        Vec3::splat(2.0 * SUN_BASE) * FILL_FRACTION * FILL_TINT
+        Vec3::splat(2.0 * FILMIC_SUN) * FILMIC_FILL_FRACTION * FILL_TINT
     ));
 }
 
-// The calibration the whole look hangs on. Studio's own capture puts a sunlit
-// 163-grey top face on (175, 183, 196), i.e. 1.17 times its own linear colour in
-// red; the two lamps and the grey ambient carry a shade under 1.0 of that and
-// the sky's irradiance (in the shader, not here) makes up the rest. Any sun that
-// reaches 1.17 on its own leaves no room for the sky and turns every top face
-// white.
+// The real client's tone ramp: a 136-grey top face under an overhead sun at
+// Brightness 2 in a ShadowMap place lands on 146 once the filmic curve has
+// run, which is the sun lamp at 0.774 of the face's own linear colour.
 #[test]
-fn the_sun_alone_falls_short_of_a_lit_top_face_by_the_sky_bounce() {
-    let lighting = Lighting::default();
+fn an_overhead_sun_at_brightness_two_is_the_measured_lamp() {
+    let lighting = Lighting::from_dom(
+        &dom_with(
+            &[
+                ("Brightness", Variant::Float32(2.0)),
+                ("ClockTime", Variant::Float32(12.0)),
+                ("GeographicLatitude", Variant::Float32(23.5)),
+                ("Technology", Variant::Enum(3)),
+            ],
+            &[],
+        ),
+        &database(),
+        None,
+    );
 
-    let direct = lighting.sun_color * lighting.sun_direction.y.max(0.0);
-    let lit = direct + lighting.ambient;
+    let lit = lighting.sun_color * lighting.sun_direction.y.max(0.0);
 
-    assert!(lit.x > 0.9 && lit.x < 1.1, "{lit:?}");
+    assert!((lit.x - 0.774).abs() < 0.01, "{lit:?}");
+    assert_eq!(lighting.effects.tonemap, Tonemap::Filmic);
+}
+
+// Voxel, the class default, shows no curve at all.
+#[test]
+fn voxel_keeps_the_plain_clamp() {
+    let lighting = Lighting::from_dom(&dom_with(&[], &[]), &database(), None);
+
+    assert_eq!(lighting.effects.tonemap, Tonemap::Default);
 }
 
 #[test]
@@ -207,11 +242,15 @@ fn a_clock_time_override_beats_both_serialized_forms() {
     let database = database();
 
     // ClockTime wins over TimeOfDay, and --clock-time wins over both.
+    let latitude = Defaults::class(&database).latitude;
     let place = Lighting::from_dom(&dom, &database, None);
-    assert!(close(place.sun_direction, sun_direction(9.0, 0.0)));
+    assert!(close(place.sun_direction, sun_direction(9.0, latitude)));
 
     let overridden = Lighting::from_dom(&dom, &database, Some(3.0));
-    assert!(close(overridden.sun_direction, sun_direction(3.0, 0.0)));
+    assert!(close(
+        overridden.sun_direction,
+        sun_direction(3.0, latitude)
+    ));
 }
 
 #[test]
@@ -240,8 +279,8 @@ fn the_sun_hands_over_to_the_moon_across_the_horizon() {
 
     assert!(noon.sun_color.length() > night.sun_color.length());
     assert_eq!(night.sun_color, Vec3::ZERO);
-    // Colder than the daytime fill, and still bright enough to see by.
-    assert!(night.fill_color.z > night.fill_color.x * 1.5);
+    // White, as the real client's midnight shows, and bright enough to see by.
+    assert_eq!(night.fill_color.x, night.fill_color.z);
     assert!(night.fill_color.z > 0.0);
 }
 
@@ -294,21 +333,32 @@ fn the_test_place_fixture_reads_its_own_lighting() {
     let lighting = Lighting::from_dom(&dom, &database(), None);
 
     // Brightness 3, TimeOfDay 14:30, latitude 0, and an Atmosphere at 0.3.
-    assert!(close(lighting.sun_color, Vec3::splat(3.0 * SUN_BASE)));
+    let base = if lighting.effects.tonemap == Tonemap::Filmic {
+        FILMIC_SUN
+    } else {
+        VOXEL_SUN
+    };
+    assert!(close(
+        lighting.sun_color,
+        sun(base, 3.0, lighting.sun_direction)
+    ));
     assert!(close(lighting.sun_direction, sun_direction(14.5, 0.0)));
     assert!(lighting.sun_direction.y > 0.7);
     assert!(matches!(lighting.fog, Fog::Atmosphere { density, .. } if density == 0.3));
 }
 
-// `GlobalShadows` is only serialized when a place turns it off, so the default
-// has to be on, and `ShadowSoftness` has to land on Studio's own 0.2 rather
-// than on the hard edge a zero would give.
+// A `Lighting` that leaves them out has the class defaults, shadows off and a
+// softness of 0.5; with no `Lighting` at all it is Studio's template, shadows
+// on at 0.2.
 #[test]
-fn shadows_default_to_on_and_to_studios_own_softness() {
+fn shadows_default_to_the_class_and_the_template_to_studios_own() {
     let lighting = Lighting::from_dom(&dom_with(&[], &[]), &database(), None);
+    assert!(!lighting.global_shadows);
+    assert_eq!(lighting.shadow_softness, 0.5);
 
-    assert!(lighting.global_shadows);
-    assert_eq!(lighting.shadow_softness, DEFAULT_SHADOW_SOFTNESS);
+    let template = Lighting::default();
+    assert!(template.global_shadows);
+    assert_eq!(template.shadow_softness, DEFAULT_SHADOW_SOFTNESS);
 }
 
 #[test]

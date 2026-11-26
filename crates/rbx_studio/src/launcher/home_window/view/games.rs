@@ -212,6 +212,10 @@ impl HomeWindow {
         let whole = game.clone();
         let universe = game.universe_id;
         let (visibility, glyph) = visibility_label(&game.visibility);
+        // Offline, a game opens only from the copy on this computer; the
+        // picker hands the game over and downloads nothing.
+        let offline = crate::offline::blocked() && self.pick.is_none();
+        let cut_off = offline && crate::home::local_copy(game).is_none();
         v_flex()
             .id(SharedString::from(format!("game-{}", game.universe_id)))
             .w(px(grid.card))
@@ -221,8 +225,14 @@ impl HomeWindow {
             .border_1()
             .border_color(tokens::border())
             .bg(ui::panel2())
-            .cursor_pointer()
-            .hover(|this| tokens::hover_fx(this).border_color(tokens::border2()).bg(tokens::secondary_hover()))
+            .map(|this| match cut_off {
+                true => this.opacity(0.5).cursor_not_allowed().tooltip(|window, cx| {
+                    crate::shell::tooltip::text(crate::offline::TIP, window, cx)
+                }),
+                false => this.cursor_pointer().hover(|this| {
+                    tokens::hover_fx(this).border_color(tokens::border2()).bg(tokens::secondary_hover())
+                }),
+            })
             .child(self.icon_box(game, thumb, 6.))
             .child(
                 h_flex()
@@ -246,15 +256,22 @@ impl HomeWindow {
                             .items_center()
                             .justify_center()
                             .text_color(tokens::text3())
-                            .hover(|this| tokens::hover_fx(this).bg(ui::wash()).text_color(tokens::text()))
-                            .tooltip(|window, cx| {
-                                crate::shell::tooltip::text("Open every place as one game", window, cx)
-                            })
                             .child(ui::icon("layers", 12.))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.open_whole_game(whole.clone(), cx);
-                            })),
+                            // Always a download: every place, fresh.
+                            .map(|this| match offline {
+                                true => this.opacity(0.5).cursor_not_allowed().tooltip(|window, cx| {
+                                    crate::shell::tooltip::text(crate::offline::TIP, window, cx)
+                                }),
+                                false => this
+                                    .hover(|this| tokens::hover_fx(this).bg(ui::wash()).text_color(tokens::text()))
+                                    .tooltip(|window, cx| {
+                                        crate::shell::tooltip::text("Open every place as one game", window, cx)
+                                    })
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.open_whole_game(whole.clone(), cx);
+                                    })),
+                            }),
                     )
                     .child(
                         h_flex()
@@ -295,7 +312,9 @@ impl HomeWindow {
                             .child(format!("Place {}", game.root_place_id)),
                     ),
             )
-            .on_click(cx.listener(move |this, _, _, cx| this.open_experience(open.clone(), cx)))
+            .when(!cut_off, |this| {
+                this.on_click(cx.listener(move |this, _, _, cx| this.open_experience(open.clone(), cx)))
+            })
     }
 
     /// The experience's icon, or the "No icon yet" placeholder.

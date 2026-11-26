@@ -6,7 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
-use mlua::{Function, IntoLua, Lua, Result, Table, Thread, Value};
+use mlua::{FromLua, Function, IntoLua, Lua, Result, Table, Thread, Value};
 use rbx_dom::{Ref, Variant};
 
 use crate::ctx::Ctx;
@@ -94,10 +94,22 @@ impl Hooks for CommandBarHooks {
         if let Some(value) = edit::member(lua, class, key)? {
             return Ok(Some(value));
         }
+        if let Some(value) = crate::studio::member(lua, ctx, referent, class, key)? {
+            return Ok(Some(value));
+        }
         match class {
             "HttpService" => http_member(lua, key),
             "CollectionService" => collection::member(lua, key),
             "Selection" => super::selection::member(lua, ctx, key),
+            "AssetService" => crate::editable::member(
+                lua,
+                &std::rc::Rc::new(crate::editable::Env::edit(lua, ctx)?),
+                key,
+            ),
+            "MeshPart" => {
+                let env = std::rc::Rc::new(crate::editable::Env::edit(lua, ctx)?);
+                crate::editable::mesh_part_member(lua, &env, referent, key)
+            }
             _ => Ok(None),
         }
     }
@@ -119,6 +131,9 @@ impl Hooks for CommandBarHooks {
     }
 
     fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
+        if let Some(value) = crate::studio::game_member(lua, key)? {
+            return Ok(Some(value));
+        }
         events::game_member(lua, key)
     }
 }
@@ -146,12 +161,19 @@ fn http_member(lua: &Lua, key: &str) -> Result<Option<Value>> {
 /// path resolves against the requiring module (`require::by_string`). The
 /// global one is the command bar's; code run over MCP gets its own (see
 /// `report`).
-pub(super) fn install_require(lua: &Lua) -> Result<()> {
+pub(crate) fn install_require(lua: &Lua) -> Result<()> {
     let resolve = lua.create_function(|lua, (script, target): (Value, Value)| {
         let module = match &target {
             Value::String(path) => {
                 let path = path.to_str()?.to_string();
                 require::by_string(&engine(lua).ctx.dom(), Requirer::of(&script), &path)?
+            }
+            Value::Integer(_) | Value::Number(_) => {
+                let id = f64::from_lua(target.clone(), lua)?;
+                crate::hooks::hooks(lua)
+                    .ok_or_else(|| mlua::Error::runtime("Unable to require an asset id here"))?
+                    .require_asset(id)
+                    .map_err(mlua::Error::runtime)?
             }
             other => require::module_ref(lua, other)?,
         };
@@ -193,8 +215,5 @@ pub(crate) fn compile_in(lua: &Lua, module: &Value, fallback: Table) -> Result<F
     let meta = lua.create_table()?;
     meta.set("__index", fallback)?;
     scope.set_metatable(Some(meta))?;
-    lua.load(source)
-        .set_name(format!("={name}"))
-        .set_environment(scope)
-        .into_function()
+    crate::luau::load_scoped(lua, source, format!("={name}"), scope)
 }

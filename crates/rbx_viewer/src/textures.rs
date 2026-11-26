@@ -13,7 +13,10 @@ mod sky;
 
 pub(crate) use decor::{Celestial, Decor, Group, Panel};
 pub(crate) use face::{NormalId, Projection};
-pub(crate) use part::{asset_uri, is_makeup};
+pub(crate) use part::{
+    asset_uri, content_property, editable_key, editable_of, editable_stale, editable_version_key,
+    is_makeup,
+};
 pub(crate) use sky::stars::Star;
 pub(crate) use sky::Body;
 
@@ -53,9 +56,36 @@ pub(crate) struct FaceInstance {
     pub(crate) referent: Ref,
     pub(crate) kind: ShapeKind,
     pub(crate) model: Mat4,
+    /// The real mesh the face lands on instead of the `kind` unit shape,
+    /// when its part draws one (a `MeshPart`, a `SpecialMesh` head).
+    pub(crate) mesh: Option<MeshFace>,
     pub(crate) projection: Projection,
     pub(crate) tint: [f32; 3],
     pub(crate) alpha: f32,
+    /// The part's own `Color`, sRGB bytes: what the image is mixed over. The
+    /// real client mixes the two gamma-encoded, see `textured.wgsl`.
+    pub(crate) base: [u8; 3],
+}
+
+/// The real mesh a face is projected onto when one draws in place of its
+/// part's box: which mesh (see [`MeshFace::key_of`]) and the transform from
+/// the mesh's own coordinates into the part's unit box, the space the
+/// projection is measured in. Roblox lays a decal on a mesh the same way,
+/// a planar projection along the face's axis onto the mesh's own surface.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct MeshFace {
+    pub(crate) key: u64,
+    pub(crate) to_unit: Mat4,
+}
+
+impl MeshFace {
+    /// The key a mesh asset's decal geometry is filed under.
+    pub(crate) fn key_of(mesh: &AssetRef) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        mesh.hash(&mut hasher);
+        hasher.finish()
+    }
 }
 
 /// One planned face: the part it is pinned to, the image it wants, and where
@@ -150,18 +180,15 @@ pub(crate) fn plan(
         })
         .collect();
 
-    // The sun and moon hang off the same `Sky` the panels come from, so a place
-    // with no `Sky` gets neither; its panels, though, fall back to Roblox's own
-    // default skybox, which is what Studio shows for such a place.
+    // A place with no `Sky` gets Roblox's own default skybox, sun, moon and
+    // stars, which is what the real client shows for it.
     let sky = scene::descendants(dom).find(|&referent| is_sky(dom, database, referent));
 
     Plan {
         faces,
         sky: Some(sky::default::panels_or_default(dom, sky)),
-        bodies: sky
-            .map(|referent| sky::celestial_bodies(dom, referent))
-            .unwrap_or_default(),
-        stars: sky.map_or(0, |referent| sky::star_count(dom, referent)),
+        bodies: sky::celestial_bodies(dom, sky),
+        stars: sky::star_count(dom, sky),
     }
 }
 
@@ -287,13 +314,14 @@ mod tests {
 
         let references = planned(&dom).references();
 
-        // The default sky's six native panels follow the face images.
+        // The default sky's six native panels, sun and moon follow the face
+        // images.
         let ids: Vec<&AssetRef> = references
             .iter()
             .filter(|reference| matches!(reference, AssetRef::Id(_)))
             .collect();
         assert_eq!(ids, vec![&AssetRef::Id(7), &AssetRef::Id(9)]);
-        assert_eq!(references.len(), 2 + 6);
+        assert_eq!(references.len(), 2 + 6 + 2);
     }
 
     #[test]

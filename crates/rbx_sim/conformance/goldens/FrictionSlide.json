@@ -1,0 +1,49 @@
+{
+  "passes": 5,
+  "raw": [
+    {
+      "distance": 3.295,
+      "drift_z": 0,
+      "speed_15": 5.285,
+      "stopped_beat": 20
+    },
+    {
+      "distance": 3.33,
+      "drift_z": 0,
+      "speed_15": 5.285,
+      "stopped_beat": 20
+    },
+    {
+      "distance": 3.33,
+      "drift_z": 0,
+      "speed_15": 5.285,
+      "stopped_beat": 20
+    },
+    {
+      "distance": 3.234,
+      "drift_z": 0,
+      "speed_15": 5.286,
+      "stopped_beat": 21
+    },
+    {
+      "distance": 3.234,
+      "drift_z": 0,
+      "speed_15": 5.286,
+      "stopped_beat": 21
+    }
+  ],
+  "result": {
+    "distance": 3.295,
+    "drift_z": 0.0,
+    "speed_15": 5.285,
+    "stopped_beat": 20.0
+  },
+  "source": "real Roblox server, place 3086963177 version 537, joined with Sober",
+  "spread": {
+    "distance": 0.09600000000000009,
+    "drift_z": 0.0,
+    "speed_15": 0.0009999999999994458,
+    "stopped_beat": 1.0
+  },
+  "status": "recorded"
+}

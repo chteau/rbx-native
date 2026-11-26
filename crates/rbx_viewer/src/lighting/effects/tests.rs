@@ -310,6 +310,13 @@ fn a_disabled_blur_effect_leaves_no_blur_at_all() {
 }
 
 #[test]
+fn an_enabled_blur_effect_of_size_zero_leaves_no_blur() {
+    let effects = read_effects(&[("BlurEffect", &[("Size", Variant::Float32(0.0))])]);
+
+    assert_eq!(effects.blur, None);
+}
+
+#[test]
 fn a_blur_effect_is_read_property_by_property() {
     let effects = read_effects(&[("BlurEffect", &[("Size", Variant::Float32(56.0))])]);
 

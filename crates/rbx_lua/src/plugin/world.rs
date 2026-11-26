@@ -8,6 +8,7 @@ mod standin;
 #[cfg(test)]
 mod tests;
 mod text;
+pub(crate) use text::text_size;
 mod tween;
 
 use mlua::{Lua, MetaMethod, Result, UserData, UserDataFields, UserDataMethods, Value};
@@ -68,6 +69,35 @@ pub(crate) fn class_member(
     class: &str,
     key: &str,
 ) -> Result<Option<Value>> {
+    use crate::plugin::api::StudioAction;
+    let action = match (class, key) {
+        ("Workspace", "ZoomToExtents") => Some(StudioAction::ZoomToExtents),
+        ("SoundService", "OpenAttenuationCurveEditor" | "OpenDirectionalCurveEditor") => {
+            Some(StudioAction::CurveEditor {
+                directional: key == "OpenDirectionalCurveEditor",
+                curves: Vec::new(),
+            })
+        }
+        _ => None,
+    };
+    if let Some(action) = action {
+        let f = lua.create_function(move |lua, args: mlua::MultiValue| {
+            let mut action = action.clone();
+            if let StudioAction::CurveEditor { curves, .. } = &mut action {
+                if let Some(Value::Table(list)) = args.get(1) {
+                    for item in list.sequence_values::<mlua::AnyUserData>() {
+                        curves.push(item?.borrow::<crate::instance::LuaInstance>()?.referent());
+                    }
+                }
+            }
+            super::plugin_object::studio_action(lua, action);
+            Ok(())
+        })?;
+        return Ok(Some(Value::Function(f)));
+    }
+    if let Some(value) = crate::studio::member(lua, ctx, referent, class, key)? {
+        return Ok(Some(value));
+    }
     if let Some(value) = legacy::member(lua, ctx, referent, class, key)? {
         return Ok(Some(value));
     }

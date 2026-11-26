@@ -10,8 +10,8 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
 use mlua::{
-    AnyUserData, Function, IntoLua, Lua, MetaMethod, MultiValue, Result, Table, UserData,
-    UserDataFields, UserDataMethods, Value,
+    AnyUserData, Function, IntoLua, Lua, MetaMethod, MultiValue, ObjectLike, Result, Table,
+    UserData, UserDataFields, UserDataMethods, Value,
 };
 
 use super::api::{Answer, Arg, Button, OutputKind, PromptKind, Request, Toolbar, UiId};
@@ -65,6 +65,12 @@ enum Pending {
     Color3,
     BrickColor,
     Menu,
+    /// Files to import: one `File`, or a list of them.
+    Files {
+        multiple: bool,
+    },
+    /// `PromptSaveSelectionAsync`: the saved file's name.
+    Save,
 }
 
 /// Per-VM state that has no place in `Shared`.
@@ -152,6 +158,16 @@ impl crate::ctx::HandleBridge for (Placeholders, Rc<RefCell<Vec<Ref>>>) {
 impl UserData for LuaPluginManager {
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("CreatePlugin", |_, _, ()| Ok(LuaPlugin));
+        for (name, selection) in [("ExportPlace", false), ("ExportSelection", true)] {
+            methods.add_method(name, move |lua, _, path: Option<String>| {
+                let path = path.filter(|p| !p.is_empty()).map(std::path::PathBuf::from);
+                studio_action(
+                    lua,
+                    crate::plugin::api::StudioAction::Export { selection, path },
+                );
+                Ok(())
+            });
+        }
         methods.add_meta_method(MetaMethod::ToString, |_, _, ()| Ok("PluginManager"));
     }
 }
@@ -307,6 +323,11 @@ impl UserData for LuaButton {
             if let Some(value) = value {
                 return arg::to_lua(lua, &env(lua).ctx, &value);
             }
+            if key == "IconContent" {
+                let icon = with_button(lua, this.0, |b| b.icon.clone())?;
+                let content: Table = lua.globals().get("Content")?;
+                return content.get::<Function>("fromUri")?.call(icon);
+            }
             let handle = format!("button:{}", this.0);
             match like::index(lua, &handle, "PluginToolbarButton", &key)? {
                 Some(value) => Ok(value),
@@ -325,6 +346,10 @@ impl UserData for LuaButton {
                 ("Icon", Value::String(s)) => {
                     let icon = s.to_string_lossy().to_string();
                     with_button(lua, this.0, |b| b.icon = icon)
+                }
+                ("IconContent", Value::UserData(content)) => {
+                    let icon: Option<String> = content.get("Uri")?;
+                    with_button(lua, this.0, |b| b.icon = icon.unwrap_or_default())
                 }
                 (_, value) => {
                     if like::new_index(lua, &format!("button:{}", this.0), &key, &value)? {
@@ -523,17 +548,43 @@ fn set_setting(lua: &Lua, key: String, value: Value) -> Result<()> {
     Ok(())
 }
 
+/// `StudioService:PromptImportFile[s]Async`.
+pub(crate) fn import_prompt(lua: &Lua, multiple: bool) -> Result<Function> {
+    prompt_function(lua, Pending::Files { multiple })
+}
+
 fn prompt_function(lua: &Lua, pending: Pending) -> Result<Function> {
     let registry = match pending {
         Pending::Color3 => "__plugin_prompt_color3",
         Pending::BrickColor => "__plugin_prompt_brickcolor",
         Pending::Menu => "__plugin_prompt_menu",
+        Pending::Files { multiple: false } => "__plugin_prompt_file",
+        Pending::Files { multiple: true } => "__plugin_prompt_files",
+        Pending::Save => "__plugin_prompt_save",
     };
     if let Some(f) = lua.named_registry_value::<Option<Function>>(registry)? {
         return Ok(f);
     }
     let start = lua.create_function(move |lua, (_this, initial): (Value, Value)| {
         let kind = match (pending, arg::from_lua(&initial)) {
+            (Pending::Files { multiple }, _) => PromptKind::OpenFiles {
+                extensions: match &initial {
+                    Value::Table(t) => t
+                        .sequence_values::<String>()
+                        .collect::<Result<Vec<_>>>()?
+                        .into_iter()
+                        .map(|e| e.trim_start_matches('.').to_owned())
+                        .collect(),
+                    _ => Vec::new(),
+                },
+                multiple,
+            },
+            (Pending::Save, _) => PromptKind::SaveFile {
+                suggested: match &initial {
+                    Value::String(s) => s.to_string_lossy().to_string(),
+                    _ => String::new(),
+                },
+            },
             (Pending::Color3, Arg::Color3(c)) => PromptKind::Color3 { initial: Some(c) },
             (Pending::Color3, _) => PromptKind::Color3 { initial: None },
             (_, Arg::BrickColor(n)) => PromptKind::BrickColor { initial: Some(n) },
@@ -552,6 +603,15 @@ fn prompt_function(lua: &Lua, pending: Pending) -> Result<Function> {
     let f = scheduler::yielding(lua, start)?;
     lua.set_named_registry_value(registry, f.clone())?;
     Ok(f)
+}
+
+/// Queues something Studio does in its own windows.
+pub(crate) fn studio_action(lua: &Lua, action: crate::plugin::api::StudioAction) {
+    env(lua)
+        .shared
+        .borrow_mut()
+        .requests
+        .push(Request::Studio(action));
 }
 
 /// `plugin:Union` / `Intersect` (the new operation) and `Negate` /
@@ -742,6 +802,10 @@ impl UserData for LuaPlugin {
             let ctx = env(lua).ctx.clone();
             crate::plugin::input::enum_item(&ctx, "RibbonTool", &name)?.interned(lua)
         });
+        methods.add_method("SaveSelectedToRoblox", |lua, _, ()| {
+            studio_action(lua, crate::plugin::api::StudioAction::SaveSelectedToRoblox);
+            Ok(())
+        });
         for name in ["OpenWikiPage", "StartDrag"] {
             methods.add_method(name, |_, _, _: MultiValue| Ok(()));
         }
@@ -781,6 +845,9 @@ impl UserData for LuaPlugin {
                 }
                 "CreateDockWidgetPluginGui" | "CreateDockWidgetPluginGuiAsync" => {
                     yielding_dock_creator(lua).map(Value::Function)
+                }
+                "PromptSaveSelectionAsync" | "PromptSaveSelection" => {
+                    prompt_function(lua, Pending::Save).map(Value::Function)
                 }
                 _ => match like::index(lua, "plugin", "Plugin", &key)? {
                     Some(value) => Ok(value),
@@ -910,6 +977,25 @@ pub(crate) fn answer(lua: &Lua, prompt: UiId, answer: &Answer) -> Result<bool> {
         (Pending::Menu, Answer::Menu(Some(id))) => {
             Value::UserData(lua.create_userdata(menu::LuaAction(*id))?)
         }
+        (Pending::Files { multiple: false }, Answer::Paths(Some(paths))) => match paths.first() {
+            Some(path) => super::file::LuaFile::make(lua, path.clone())?,
+            None => Value::Nil,
+        },
+        (Pending::Files { multiple: true }, Answer::Paths(Some(paths))) => {
+            let files = lua.create_table()?;
+            for path in paths {
+                files.push(super::file::LuaFile::make(lua, path.clone())?)?;
+            }
+            Value::Table(files)
+        }
+        (Pending::Save, Answer::Paths(Some(paths))) => {
+            let name = paths.first().and_then(|p| p.file_name());
+            let name = name
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            Value::String(lua.create_string(name)?)
+        }
+        (Pending::Save, _) => Value::String(lua.create_string("")?),
         _ => Value::Nil,
     };
     scheduler::resolve(lua, prompt, Ok(MultiValue::from_vec(vec![value])))?;

@@ -1,0 +1,79 @@
+{
+  "passes": 3,
+  "raw": [
+    {
+      "after_remove": 2,
+      "by_key": "Bonjour",
+      "by_key_args": "5.00 pièces",
+      "by_key_named": "Salut Ana",
+      "entries": 3,
+      "entry_values": "de,es,fr",
+      "key_miss": "Key Missing not found for locale fr-fr",
+      "locale": "fr-fr",
+      "no_value_falls_back": "Key Greeting not found for locale ja",
+      "no_value_translate": "Hello",
+      "player_translator": "Translator",
+      "table_translator": "Hallo",
+      "translate": "Bonjour",
+      "translate_bad_context": "Context must be an Instance.",
+      "translate_miss": "Nothing here"
+    },
+    {
+      "after_remove": 2,
+      "by_key": "Bonjour",
+      "by_key_args": "5.00 pièces",
+      "by_key_named": "Salut Ana",
+      "entries": 3,
+      "entry_values": "de,es,fr",
+      "key_miss": "Key Missing not found for locale fr-fr",
+      "locale": "fr-fr",
+      "no_value_falls_back": "Key Greeting not found for locale ja",
+      "no_value_translate": "Hello",
+      "player_translator": "Translator",
+      "table_translator": "Hallo",
+      "translate": "Bonjour",
+      "translate_bad_context": "Context must be an Instance.",
+      "translate_miss": "Nothing here"
+    },
+    {
+      "after_remove": 2,
+      "by_key": "Bonjour",
+      "by_key_args": "5.00 pièces",
+      "by_key_named": "Salut Ana",
+      "entries": 3,
+      "entry_values": "de,es,fr",
+      "key_miss": "Key Missing not found for locale fr-fr",
+      "locale": "fr-fr",
+      "no_value_falls_back": "Key Greeting not found for locale ja",
+      "no_value_translate": "Hello",
+      "player_translator": "Translator",
+      "table_translator": "Hallo",
+      "translate": "Bonjour",
+      "translate_bad_context": "Context must be an Instance.",
+      "translate_miss": "Nothing here"
+    }
+  ],
+  "result": {
+    "after_remove": 2.0,
+    "by_key": "Bonjour",
+    "by_key_args": "5.00 pièces",
+    "by_key_named": "Salut Ana",
+    "entries": 3.0,
+    "entry_values": "de,es,fr",
+    "key_miss": "Key Missing not found for locale fr-fr",
+    "locale": "fr-fr",
+    "no_value_falls_back": "Key Greeting not found for locale ja",
+    "no_value_translate": "Hello",
+    "player_translator": "Translator",
+    "table_translator": "Hallo",
+    "translate": "Bonjour",
+    "translate_bad_context": "Context must be an Instance.",
+    "translate_miss": "Nothing here"
+  },
+  "source": "real Roblox server, place 3086963177 version 586, joined with Sober",
+  "spread": {
+    "after_remove": 0.0,
+    "entries": 0.0
+  },
+  "status": "recorded"
+}

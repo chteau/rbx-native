@@ -10,6 +10,7 @@
 mod api_key;
 mod archive;
 mod asset_metadata;
+mod asset_owners;
 mod assets;
 mod avatar;
 mod client;
@@ -48,6 +49,7 @@ mod web;
 pub use api_key::ApiKey;
 pub use archive::{archived_experiences, set_experience_archived};
 pub use asset_metadata::AssetMetadata;
+pub use asset_owners::AssetOwners;
 pub use assets::{AssetContent, AssetPresence};
 pub use avatar::{AssetType, Avatar, AvatarAsset, AvatarBodyColors, AvatarScales};
 pub use client::Client;
@@ -77,7 +79,7 @@ pub use new_experience::{
     create_experience, creator_groups, name_experience, own_experiences, CreatedExperience,
     CreatorGroup, OwnExperience,
 };
-pub use places::{place_id_from_link, PlaceSummary};
+pub use places::{place_id_from_link, PlaceSummary, UserInfo};
 pub use publish::PublishMode;
 pub use retry::rate_limit_waits;
 pub use scopes::{

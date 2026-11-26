@@ -223,23 +223,36 @@ pub fn clean(polygons: Vec<Polygon>) -> Vec<Polygon> {
 /// [`is_watertight`] ever runs.
 pub fn weld_t_junctions(polygons: Vec<Polygon>) -> Vec<Polygon> {
     const T_MARGIN: f64 = 1e-7;
-    let quantize = |v: DVec3| {
-        (
-            (v.x / WELD_EPSILON).round() as i64,
-            (v.y / WELD_EPSILON).round() as i64,
-            (v.z / WELD_EPSILON).round() as i64,
-        )
-    };
-    let mut canonical: HashMap<GridPoint, DVec3> = HashMap::new();
+    // Only an edge whose reverse is missing can have a T-junction on it, and
+    // the corner that splits it ends edges just as unmatched: the search
+    // stays among those, a handful even on a mesh of thousands of faces.
+    let mut directed: HashMap<DirectedEdge, u32> = HashMap::new();
     for polygon in &polygons {
-        for &v in &polygon.vertices {
-            canonical.entry(quantize(v)).or_insert(v);
+        let n = polygon.vertices.len();
+        for i in 0..n {
+            let edge = (
+                grid(polygon.vertices[i]),
+                grid(polygon.vertices[(i + 1) % n]),
+            );
+            *directed.entry(edge).or_insert(0) += 1;
         }
     }
-    // An O(edges * vertices) pass only stays cheap for a modest vertex
-    // count; past this, skip welding and let `is_watertight` (or the
-    // triangle cap, further up the call chain) catch a genuine problem.
-    if canonical.len() > 20_000 {
+    let open = |edge: &DirectedEdge| directed.get(&(edge.1, edge.0)) != directed.get(edge);
+    let mut canonical: HashMap<GridPoint, DVec3> = HashMap::new();
+    for polygon in &polygons {
+        let n = polygon.vertices.len();
+        for i in 0..n {
+            let (a, b) = (polygon.vertices[i], polygon.vertices[(i + 1) % n]);
+            if open(&(grid(a), grid(b))) {
+                canonical.entry(grid(a)).or_insert(a);
+                canonical.entry(grid(b)).or_insert(b);
+            }
+        }
+    }
+    // An O(open edges * their corners) pass only stays cheap while there
+    // are few; past this the result is broken anyway, and `is_watertight`
+    // (or the triangle cap, further up the call chain) says so.
+    if canonical.is_empty() || canonical.len() > 20_000 {
         return polygons;
     }
     let points: Vec<DVec3> = canonical.into_values().collect();
@@ -254,7 +267,7 @@ pub fn weld_t_junctions(polygons: Vec<Polygon>) -> Vec<Polygon> {
                 ring.push(a);
                 let edge = b - a;
                 let length_sq = edge.length_squared();
-                if length_sq < WELD_EPSILON * WELD_EPSILON {
+                if length_sq < WELD_EPSILON * WELD_EPSILON || !open(&(grid(a), grid(b))) {
                     continue;
                 }
                 let mut inserts: Vec<(f64, DVec3)> = points

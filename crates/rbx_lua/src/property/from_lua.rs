@@ -6,6 +6,7 @@ use rbx_dom::{Content, PhysicalProperties, Variant};
 use crate::ctx::Ctx;
 use crate::datatypes::cframe::LuaCFrame;
 use crate::datatypes::color3::LuaColor3;
+use crate::datatypes::content::{LuaContent, Source};
 use crate::datatypes::font::LuaFont;
 use crate::datatypes::misc::{LuaBrickColor, LuaNumberRange, LuaUDim, LuaUDim2, LuaVector2};
 use crate::datatypes::physical_properties::LuaPhysicalProperties;
@@ -129,6 +130,20 @@ pub(crate) fn lua_to_variant(
         "Content" => match value {
             Value::String(text) => Ok(Variant::Content(Content::Uri(text.to_str()?.to_string()))),
             Value::Nil => Ok(Variant::Content(Content::None)),
+            Value::UserData(data) if data.is::<LuaContent>() => {
+                Ok(Variant::Content(match &data.borrow::<LuaContent>()?.0 {
+                    Source::None => Content::None,
+                    Source::Uri(uri) => Content::Uri(uri.clone()),
+                    Source::Opaque(referent) => Content::Object(*referent),
+                    Source::Object(Value::UserData(object)) => {
+                        match crate::editable::editable_ref(object) {
+                            Some(referent) => Content::Object(referent),
+                            None => return Err(type_error(name, "Content", value)),
+                        }
+                    }
+                    Source::Object(_) => return Err(type_error(name, "Content", value)),
+                }))
+            }
             other => Err(type_error(name, "Content", other)),
         },
         other => {

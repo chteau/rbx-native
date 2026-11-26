@@ -49,7 +49,7 @@ pub(crate) fn install_globals(lua: &Lua, ctx: &Ctx) -> Result<(), LuaError> {
     }
 
     install_graphemes(lua)?;
-    install_profiler_labels(lua)?;
+    crate::profiler::install(lua)?;
     install_error_strings(lua)
 }
 
@@ -63,21 +63,6 @@ pub(crate) fn install_shared(lua: &Lua) -> Result<(), LuaError> {
     globals.raw_set("shared", lua.create_table()?)?;
     globals.raw_set("_G", lua.create_table()?)?;
     globals.set_readonly(true);
-    Ok(())
-}
-
-/// `debug.profilebegin(label)` / `debug.profileend()`: Roblox's MicroProfiler
-/// scopes, which have nothing to time here.
-fn install_profiler_labels(lua: &Lua) -> Result<(), LuaError> {
-    let debug: mlua::Table = lua.globals().get("debug")?;
-    debug.set(
-        "profilebegin",
-        lua.create_function(|_, _: Variadic<Value>| Ok(()))?,
-    )?;
-    debug.set(
-        "profileend",
-        lua.create_function(|_, _: Variadic<Value>| Ok(()))?,
-    )?;
     Ok(())
 }
 
@@ -127,7 +112,7 @@ fn install_graphemes(lua: &Lua) -> Result<(), LuaError> {
 /// What a script sees of an error a binding raised: Roblox hands scripts
 /// the bare message ("Part is not a valid member of Workspace"), never an
 /// error object, and code such as Roact formats it with `%s`.
-fn error_text(error: &LuaError) -> String {
+pub(crate) fn error_text(error: &LuaError) -> String {
     match error {
         LuaError::CallbackError { cause, .. } => error_text(cause),
         LuaError::RuntimeError(message) => message.clone(),

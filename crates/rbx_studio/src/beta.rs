@@ -109,11 +109,29 @@ pub(crate) const FEATURES: &[Feature] = &[
         description: "Reimport for imported 3D models, like Studio's beta of the same name: the Explorer's menu can reimport a model from its file, pick the file, and turn on Auto-Reimport, which reimports whenever the file is saved, for this session. Each reimport uploads the file again, so the meshes get new asset ids.",
     },
     Feature {
+        id: SOLID_MESHES_BETA_ID,
+        name: "Solid Modeling On Meshes",
+        description: "Union, Intersect and Negate take MeshParts, like Studio's beta of the same name: a mesh carves as its own triangles, and one that isn't closed is refused in Studio's words. Studio makes a MeshPart that saves only as a box and can't be separated; this makes a union, so the shape saves and Separate gives the MeshPart back. Off, a MeshPart carves as its box.",
+    },
+    Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,
         name: "Module require graph",
         description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",
     },
+    Feature {
+        id: crate::shell::LOCAL_RUN_BETA_ID,
+        name: "Local Run",
+        description: "Our own clean-room Roblox runtime, no Roblox client needed. Test › Play (local), Run (local) and Server & Clients play the place right in the editor, with physics, humanoids, your avatar, GUI, sound and remotes, plus the Remote Inspector, Leak Finder, MicroProfiler, Load test and integration specs. Works offline. Close to the real thing, not exact, so real Play stays the reference.",
+    },
+    Feature {
+        id: IF_LOCAL_BETA_ID,
+        name: "If Local/Const Bindings",
+        description: "if local, if const and while local/while const, like Studio's beta of the same name: a binding scoped to the block that runs only when its value is truthy. One name and one value for now, as in Studio. Script Analysis knows the syntax too.",
+    },
 ];
+
+/// Studio's "If Local/Const Bindings" beta, see `rbx_lua::set_if_local`.
+pub(crate) const IF_LOCAL_BETA_ID: &str = "if-local";
 
 /// `RBX_STUDIO_BETA_SAMPLE=1` lists this one too, so the page can be
 /// exercised (and captured) while [`FEATURES`] is empty. It gates nothing.
@@ -212,6 +230,9 @@ pub(crate) fn features() -> Vec<Feature> {
 /// Studio's "Luau Exports and Cyclic Requires" beta, see
 /// `rbx_lua::set_luau_exports`.
 pub(crate) const LUAU_EXPORTS_BETA_ID: &str = "luau-exports";
+/// Studio's "Solid Modeling On Meshes" beta, see
+/// `rbx_lua::csg::set_mesh_source`.
+pub(crate) const SOLID_MESHES_BETA_ID: &str = "solid-modeling-on-meshes";
 
 /// Reads `beta.json` once, at launch; later calls do nothing. Before it
 /// runs, every feature is off.
@@ -219,7 +240,15 @@ pub(crate) fn init() {
     let choices = stored_path()
         .map(|path| Choices::load(&path))
         .unwrap_or_default();
+    rbx_lua::set_if_local(choices.is_on(IF_LOCAL_BETA_ID));
     rbx_lua::set_luau_exports(choices.is_on(LUAU_EXPORTS_BETA_ID));
+    // A mesh in view is already in the disk cache, so the read is local.
+    rbx_lua::csg::set_mesh_source(
+        choices.is_on(SOLID_MESHES_BETA_ID).then(|| {
+            Box::new(|uri: &str| rbx_viewer::asset_bytes(uri)) as rbx_lua::csg::MeshSource
+        }),
+    );
+    rbx_lua::set_orthographic_camera(choices.is_on(crate::camera::ORTHOGRAPHIC_BETA_ID));
     rbx_viewer::set_variant_alpha_modes(
         choices.is_on(crate::properties::MATERIAL_VARIANT_ALPHA_MODE_BETA_ID),
     );

@@ -401,3 +401,133 @@ fn a_force_field_mesh_part_is_capped_at_half_opaque_like_a_part() {
     // shell's see-through look is drawn at all.
     assert_eq!(plan.entries[0].alpha, 0.5);
 }
+
+/// What real Studio drew for OpenArena's muzzle flash (a textured
+/// MeshPart, Neon or SmoothPlastic, Transparency 0 or above): a textured
+/// Neon one is lit like SmoothPlastic, and a see-through one keeps its
+/// image's alpha rather than laying the image over its colour.
+#[test]
+fn a_textured_neon_mesh_part_is_plain_and_a_see_through_one_keeps_its_alpha() {
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(9000);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    // 288 is `Enum.Material.Neon` (creator-docs' Material.yaml).
+    for (id, texture, transparency) in [(1, true, 0.0), (2, false, 0.0), (3, true, 0.4)] {
+        let referent = Ref::new(id);
+        let mut instance = Instance::new(referent, "MeshPart", "Flash");
+        let properties = instance.properties_mut();
+        properties.insert(
+            "MeshId".to_string(),
+            Variant::String("rbxassetid://1".to_string()),
+        );
+        if texture {
+            properties.insert(
+                "TextureID".to_string(),
+                Variant::String("rbxassetid://2".to_string()),
+            );
+        }
+        properties.insert("Material".to_string(), Variant::Enum(288));
+        properties.insert("Transparency".to_string(), Variant::Float32(transparency));
+        properties.insert("size".to_string(), vector3_variant(1.0, 1.0, 1.0));
+        properties.insert("CFrame".to_string(), cframe_at(0.0, 0.0, 0.0));
+        dom.insert(instance);
+        dom.set_parent(referent, Some(workspace));
+    }
+
+    let plan = planned(&dom);
+    let entry = |id| {
+        plan.entries
+            .iter()
+            .find(|e| e.referent == Ref::new(id))
+            .unwrap()
+    };
+    assert_eq!(entry(1).material.kind, Kind::Plastic);
+    assert_eq!(entry(2).material.kind, Kind::Neon);
+    assert!(entry(1).reveals_color);
+    assert!(!entry(3).reveals_color);
+}
+
+/// A script's `EditableMesh` as the VM publishes it.
+struct Built(rbx_dom::editable::Triangles);
+
+impl rbx_dom::editable::MeshSource for Built {
+    fn version(&self) -> u64 {
+        0
+    }
+
+    fn triangles(&self) -> rbx_dom::editable::Triangles {
+        self.0.clone()
+    }
+
+    fn into_any(self: Arc<Self>) -> Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+}
+
+#[test]
+fn a_mesh_part_draws_a_scripts_editable_mesh_and_image() {
+    use rbx_dom::editable::{publish, withdraw, Editable, Pixels, Triangles};
+    let triangle = Triangles {
+        positions: vec![[0.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 3.0, 1.0]],
+        normals: vec![[0.0, 0.0, -1.0]; 3],
+        uvs: vec![[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]],
+        colors: vec![[1.0, 0.5, 0.0, 1.0]; 3],
+    };
+    let mesh = publish(Editable::Mesh(Arc::new(Built(triangle.clone()))));
+    let pixels = Arc::new(std::sync::Mutex::new(Pixels {
+        width: 1,
+        height: 1,
+        rgba: vec![255, 0, 0, 255],
+        version: 0,
+    }));
+    let image = publish(Editable::Image(pixels.clone()));
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(9000);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    let referent = Ref::new(1);
+    let mut instance = Instance::new(referent, "MeshPart", "Made");
+    let properties = instance.properties_mut();
+    properties.insert(
+        "MeshContent".to_string(),
+        Variant::Content(rbx_dom::Content::Object(mesh)),
+    );
+    properties.insert(
+        "TextureContent".to_string(),
+        Variant::Content(rbx_dom::Content::Object(image)),
+    );
+    properties.insert("size".to_string(), vector3_variant(2.0, 3.0, 1.0));
+    properties.insert("CFrame".to_string(), cframe_at(0.0, 0.0, 0.0));
+    dom.insert(instance);
+    dom.set_parent(referent, Some(workspace));
+
+    let plan = planned(&dom);
+    let entry = &plan.entries[0];
+    assert!(matches!(
+        crate::textures::editable_of(&entry.mesh),
+        Some(Editable::Mesh(_))
+    ));
+    assert!(matches!(
+        entry
+            .texture
+            .as_ref()
+            .and_then(crate::textures::editable_of),
+        Some(Editable::Image(_))
+    ));
+
+    let drawn = crate::assets::editable_mesh(&triangle);
+    assert_eq!(drawn.indices, vec![0, 1, 2]);
+    assert_eq!(drawn.bounds.min, [0.0, 0.0, 0.0]);
+    assert_eq!(drawn.bounds.max, [2.0, 3.0, 1.0]);
+    assert_eq!(drawn.vertices[2].color, [255, 128, 0, 255]);
+
+    // A script painting the image after the first draw names new pixels.
+    let first = entry.texture.clone();
+    rbx_dom::editable::lock(&pixels).version = 1;
+    let repainted = planned(&dom).entries[0].texture.clone();
+    assert_ne!(repainted, first);
+    assert!(first.as_ref().is_some_and(crate::textures::editable_stale));
+    withdraw(mesh);
+    withdraw(image);
+}

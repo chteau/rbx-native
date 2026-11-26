@@ -14,25 +14,20 @@ use std::sync::{Arc, Mutex};
 
 use futures::channel::oneshot;
 
-/// Decoded audio: interleaved `f32` frames, one or two channels.
-pub(crate) struct Clip {
-    pub(crate) samples: Vec<f32>,
-    pub(crate) channels: u16,
-    pub(crate) rate: u32,
+pub(crate) use rbx_sim::audio::{decode, Clip};
+
+/// What an output pulls samples from: interleaved `f32` frames at its own
+/// channel count and rate.
+pub(crate) trait Source: Send + 'static {
+    fn channels(&self) -> u16;
+    fn rate(&self) -> u32;
+    /// Fills `out` (whole frames) and says how many frames it wrote; 0 is
+    /// the end.
+    fn fill(&mut self, out: &mut [f32]) -> usize;
 }
 
-impl Clip {
-    pub(crate) fn frames(&self) -> usize {
-        self.samples.len() / self.channels as usize
-    }
-
-    #[cfg(test)]
-    fn seconds(&self) -> f32 {
-        self.frames() as f32 / self.rate as f32
-    }
-}
-
-/// What the output thread reads: the clip, where it is in it, and how loud.
+/// What the preview's output thread reads: the clip, where it is in it,
+/// and how loud.
 pub(crate) struct Cursor {
     clip: Arc<Clip>,
     frame: Arc<AtomicUsize>,
@@ -52,86 +47,22 @@ impl Cursor {
     }
 }
 
-/// Decodes a whole sound asset. More than two channels fold down to stereo.
-pub(crate) fn decode(bytes: Vec<u8>) -> Result<Clip, String> {
-    use symphonia::core::audio::SampleBuffer;
-    use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
-    use symphonia::core::errors::Error;
-    use symphonia::core::formats::FormatOptions;
-    use symphonia::core::io::MediaSourceStream;
-    use symphonia::core::meta::MetadataOptions;
-    use symphonia::core::probe::Hint;
-
-    let stream = MediaSourceStream::new(Box::new(std::io::Cursor::new(bytes)), Default::default());
-    let probed = symphonia::default::get_probe()
-        .format(
-            &Hint::new(),
-            stream,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
-        )
-        .map_err(|_| "not an audio file this editor can play".to_string())?;
-    let mut format = probed.format;
-    let track = format
-        .tracks()
-        .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-        .ok_or("the file holds no audio track")?;
-    let track_id = track.id;
-    let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())
-        .map_err(|err| format!("unsupported audio codec: {err}"))?;
-
-    let mut samples = Vec::new();
-    let mut spec = None;
-    loop {
-        let packet = match format.next_packet() {
-            Ok(packet) => packet,
-            Err(Error::IoError(_)) | Err(Error::ResetRequired) => break,
-            Err(err) => return Err(err.to_string()),
-        };
-        if packet.track_id() != track_id {
-            continue;
-        }
-        let decoded = match decoder.decode(&packet) {
-            Ok(decoded) => decoded,
-            // A damaged packet is skipped, as players do.
-            Err(Error::DecodeError(_)) => continue,
-            Err(err) => return Err(err.to_string()),
-        };
-        let this = *decoded.spec();
-        spec.get_or_insert(this);
-        let mut buffer = SampleBuffer::<f32>::new(decoded.capacity() as u64, this);
-        buffer.copy_interleaved_ref(decoded);
-        fold_into(&mut samples, buffer.samples(), this.channels.count());
+impl Source for Cursor {
+    fn channels(&self) -> u16 {
+        self.clip.channels
     }
-    let spec = spec.ok_or("the file holds no audio")?;
-    Ok(Clip {
-        samples,
-        channels: spec.channels.count().min(2) as u16,
-        rate: spec.rate,
-    })
-}
-
-/// Appends `frames` (interleaved, `channels` wide), folding anything past
-/// stereo into the first two channels.
-fn fold_into(out: &mut Vec<f32>, frames: &[f32], channels: usize) {
-    if channels <= 2 {
-        out.extend_from_slice(frames);
-        return;
+    fn rate(&self) -> u32 {
+        self.clip.rate
     }
-    for frame in frames.chunks_exact(channels) {
-        let (mut left, mut right) = (0., 0.);
-        for (i, sample) in frame.iter().enumerate() {
-            if i % 2 == 0 {
-                left += sample;
-            } else {
-                right += sample;
-            }
+    fn fill(&mut self, out: &mut [f32]) -> usize {
+        let channels = self.clip.channels as usize;
+        let frames = out.len() / channels;
+        let mut n = 0;
+        for (slot, sample) in out.iter_mut().zip(self.take(frames)) {
+            *slot = sample;
+            n += 1;
         }
-        let half = channels as f32 / 2.;
-        out.push(left / half.ceil());
-        out.push(right / half.floor());
+        n / channels
     }
 }
 
@@ -185,7 +116,7 @@ pub(crate) fn play(clip: Arc<Clip>, from: usize, volume: f32) -> Playback {
     std::thread::Builder::new()
         .name("sound-preview".into())
         .spawn(move || {
-            if let Err(err) = output::run(cursor, stopped) {
+            if let Err(err) = output::run(cursor, stopped, "sound preview") {
                 if let Ok(mut slot) = failed.lock() {
                     *slot = Some(err);
                 }
@@ -201,18 +132,32 @@ pub(crate) fn play(clip: Arc<Clip>, from: usize, volume: f32) -> Playback {
     }
 }
 
+/// Plays `source` on the default output until it ends or `stopped`
+/// fires; an error when there is no output to play through.
+pub(crate) fn output_run(
+    source: impl Source,
+    stopped: oneshot::Receiver<()>,
+    name: &'static str,
+) -> Result<(), String> {
+    output::run(source, stopped, name)
+}
+
 #[cfg(target_os = "linux")]
 mod output {
     use futures::channel::oneshot::Receiver;
     use futures::future::{select, Either};
     use pulseaudio::{protocol, AsPlaybackSource, Client};
 
-    use super::Cursor;
+    use super::Source;
 
-    pub(super) fn run(cursor: Cursor, stopped: Receiver<()>) -> Result<(), String> {
+    pub(super) fn run(
+        mut source: impl Source,
+        stopped: Receiver<()>,
+        _name: &'static str,
+    ) -> Result<(), String> {
         let client = Client::from_env(c"rbxstudio")
             .map_err(|err| format!("no sound server to play through: {err}"))?;
-        let (channels, rate) = (cursor.clip.channels, cursor.clip.rate);
+        let (channels, rate) = (source.channels(), source.rate());
         let params = protocol::PlaybackStreamParams {
             sample_spec: protocol::SampleSpec {
                 format: protocol::SampleFormat::Float32Le,
@@ -225,7 +170,15 @@ mod output {
                 protocol::ChannelMap::stereo()
             },
             cvolume: Some(protocol::ChannelVolume::norm(channels as u8)),
-            sink_name: Some(protocol::DEFAULT_SINK.to_owned()),
+            // `PULSE_SINK` picks the sink as it does for libpulse clients
+            // (a null sink to record from, say).
+            sink_name: Some(
+                std::env::var("PULSE_SINK")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+                    .and_then(|s| std::ffi::CString::new(s).ok())
+                    .unwrap_or_else(|| protocol::DEFAULT_SINK.to_owned()),
+            ),
             // A tenth of a second queued, not the server's default two: a
             // pause stops close to what was heard.
             buffer_attr: protocol::stream::BufferAttr {
@@ -239,18 +192,15 @@ mod output {
             ..Default::default()
         };
         let frame_bytes = channels as usize * 4;
+        let mut samples = Vec::new();
         let source = move |buf: &mut [u8]| {
-            let (mut n, frames) = (0, buf.len() / frame_bytes);
-            for (slot, sample) in buf
-                .as_chunks_mut::<4>()
-                .0
-                .iter_mut()
-                .zip(cursor.take(frames))
-            {
+            let frames = buf.len() / frame_bytes;
+            samples.resize(frames * channels as usize, 0f32);
+            let n = source.fill(&mut samples) * channels as usize;
+            for (slot, sample) in buf.as_chunks_mut::<4>().0.iter_mut().zip(&samples[..n]) {
                 *slot = sample.to_le_bytes();
-                n += 4;
             }
-            n
+            n * 4
         };
         futures::executor::block_on(async move {
             let stream = client
@@ -276,9 +226,13 @@ mod output {
     use cpal::{FromSample, SizedSample};
     use futures::channel::oneshot::Receiver;
 
-    use super::Cursor;
+    use super::Source;
 
-    pub(super) fn run(cursor: Cursor, stopped: Receiver<()>) -> Result<(), String> {
+    pub(super) fn run(
+        source: impl Source,
+        stopped: Receiver<()>,
+        name: &'static str,
+    ) -> Result<(), String> {
         let device = cpal::default_host()
             .default_output_device()
             .ok_or("no audio output device")?;
@@ -287,9 +241,9 @@ mod output {
             .map_err(|err| format!("the audio output has no usable format: {err}"))?;
         let (done_tx, done_rx) = futures::channel::oneshot::channel();
         let stream = match config.sample_format() {
-            cpal::SampleFormat::F32 => build::<f32>(&device, &config.into(), cursor, done_tx),
-            cpal::SampleFormat::I16 => build::<i16>(&device, &config.into(), cursor, done_tx),
-            cpal::SampleFormat::U16 => build::<u16>(&device, &config.into(), cursor, done_tx),
+            cpal::SampleFormat::F32 => build::<f32>(&device, &config.into(), source, done_tx, name),
+            cpal::SampleFormat::I16 => build::<i16>(&device, &config.into(), source, done_tx, name),
+            cpal::SampleFormat::U16 => build::<u16>(&device, &config.into(), source, done_tx, name),
             other => return Err(format!("the audio output wants {other:?} samples")),
         }?;
         stream.play().map_err(|err| err.to_string())?;
@@ -298,28 +252,30 @@ mod output {
         Ok(())
     }
 
-    /// An output stream that walks the clip at the device's rate (linear
-    /// resampling, since the device rate rarely matches the file's) and its
-    /// channel count, and says when it reaches the end.
+    /// An output stream that walks the source at the device's rate
+    /// (linear resampling, since the device rate rarely matches) and its
+    /// channel count, and says when the source ends.
     fn build<T: SizedSample + FromSample<f32>>(
         device: &cpal::Device,
         config: &cpal::StreamConfig,
-        cursor: Cursor,
+        mut source: impl Source,
         done: futures::channel::oneshot::Sender<()>,
+        name: &'static str,
     ) -> Result<cpal::Stream, String> {
         let out_channels = config.channels as usize;
-        let step = cursor.clip.rate as f64 / config.sample_rate.0 as f64;
-        let channels = cursor.clip.channels as usize;
+        let step = source.rate() as f64 / config.sample_rate.0 as f64;
+        let channels = source.channels() as usize;
         let mut done = Some(done);
         // Two source frames, interpolated between; `phase` is how far along.
-        let mut pair: Vec<f32> = cursor.take(2).collect();
+        let mut pair = vec![0f32; 2 * channels];
+        let mut have = source.fill(&mut pair);
         let mut phase = 0f64;
         device
             .build_output_stream(
                 config,
                 move |out: &mut [T], _| {
                     for frame in out.chunks_mut(out_channels) {
-                        if pair.len() < 2 * channels {
+                        if have < 2 {
                             frame.fill(T::from_sample(0.));
                             if let Some(done) = done.take() {
                                 let _ = done.send(());
@@ -333,14 +289,14 @@ mod output {
                             *slot = T::from_sample(a + (b - a) * t);
                         }
                         phase += step;
-                        while phase >= 1. && pair.len() == 2 * channels {
+                        while phase >= 1. && have == 2 {
                             phase -= 1.;
-                            pair.drain(..channels);
-                            pair.extend(cursor.take(1));
+                            pair.copy_within(channels.., 0);
+                            have = 1 + source.fill(&mut pair[channels..]);
                         }
                     }
                 },
-                |err| eprintln!("sound preview: {err}"),
+                move |err| eprintln!("{name}: {err}"),
                 None,
             )
             .map_err(|err| format!("the audio output refused the stream: {err}"))
@@ -409,12 +365,5 @@ mod tests {
         assert_eq!(got, vec![0.6, 0.8, 1., 1.]);
         assert_eq!(cursor.frame.load(Ordering::Acquire), 3);
         assert_eq!(cursor.take(1).count(), 0);
-    }
-
-    #[test]
-    fn surround_folds_to_stereo() {
-        let mut out = Vec::new();
-        fold_into(&mut out, &[1., 0., 1., 0., 1., 0.], 6);
-        assert_eq!(out, vec![1., 0.]);
     }
 }

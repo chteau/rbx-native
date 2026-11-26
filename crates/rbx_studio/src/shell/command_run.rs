@@ -133,6 +133,10 @@ impl Shell {
         }
         if let Some(runtime) = self.command_run.runtime.as_mut() {
             runtime.set_selection(self.selection.all().to_vec());
+            runtime.set_theme(match crate::theme::active().mode {
+                gpui_kit::component::ThemeMode::Light => "Light",
+                _ => "Dark",
+            });
             start(runtime, source);
         }
         if let Some(wait) = self.command_step(cx) {
@@ -228,6 +232,7 @@ impl Shell {
             }
         };
         self.reflect_command_changes(changes, cx);
+        self.reflect_editables(cx);
         if let Some(selection) = selection {
             self.reselect(selection, cx);
         }

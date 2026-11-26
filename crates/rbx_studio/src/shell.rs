@@ -58,6 +58,7 @@ mod palette;
 mod panel_window;
 mod panels;
 mod perf_view;
+mod permissions;
 mod pivot;
 mod place_merge;
 mod play;
@@ -88,11 +89,13 @@ pub(crate) use coedit::BETA_ID as COEDIT_BETA_ID;
 pub(crate) use export::Export;
 pub(crate) use find_in_place::OpenFindInPlace;
 pub(crate) use layout::{edge_from_key, edge_key, Edge, Panel, SavedEdge, SavedGroup, SavedLayout};
+pub(crate) use local_run::BETA_ID as LOCAL_RUN_BETA_ID;
 pub(crate) use localization::BETA_ID as PSEUDO_LOC_BETA_ID;
 pub(crate) use perf_view::BETA_ID as PERF_BETA_ID;
 pub(crate) use play::copy_name::DEFAULT as PLAY_COPY_NAME_DEFAULT;
 pub(crate) use playtests::DEFAULT_RATE_HZ as PLAYTEST_RATE_DEFAULT;
 pub(crate) use plugins::install_text_box_keys;
+pub(crate) use profiler_dock::OpenMicroProfiler;
 pub(crate) use reimport::BETA_ID as AUTO_REIMPORT_BETA_ID;
 pub(crate) use require_graph::BETA_ID as REQUIRE_GRAPH_BETA_ID;
 pub(crate) use roving::install as install_key_bindings;
@@ -112,7 +115,12 @@ mod argon_dock;
 mod datastores;
 mod find_in_place;
 mod game_settings;
+mod leak_finder;
+mod loadtest_dock;
+pub(crate) mod local_run;
 mod prepublish;
+mod profiler_dock;
+mod remote_inspector;
 mod require_graph;
 mod rows;
 mod save;
@@ -324,6 +332,9 @@ pub(crate) struct Shell {
     require_graph_window: Option<WindowHandle<gpui_kit::component::Root>>,
     /// The Controller Emulator, while open, see `controller_emulator`.
     controller_window: Option<WindowHandle<gpui_kit::component::Root>>,
+    /// What the Controller Emulator's pad reports while its window is
+    /// open, for Play (local)'s client.
+    controller_pad: std::rc::Rc<std::cell::Cell<Option<rbx_play::gamepad::PadState>>>,
     /// Version History, while open, see `roblox_publish::history`.
     version_history: Option<WindowHandle<gpui_kit::component::Root>>,
     /// Game Settings, while open, see `game_settings`.
@@ -425,6 +436,17 @@ pub(crate) struct Shell {
     toolbox: toolbox::ToolboxDock,
     /// The Find in Place dock's fields and results; see `shell::find_in_place`.
     find_place: find_in_place::FindInPlace,
+    /// The MicroProfiler dock's held frames and ScriptProfiler view; see
+    /// `shell::profiler_dock`.
+    profiler: profiler_dock::ProfilerDock,
+    /// The Remote inspector's filters and picked call; see
+    /// `shell::remote_inspector`.
+    remote_inspector: remote_inspector::RemoteInspectorDock,
+    /// The Leak finder dock's snapshots; see `shell::leak_finder`.
+    leaks: leak_finder::LeakDock,
+    /// The Load test dock's settings and the run it shows; see
+    /// `shell::loadtest_dock`.
+    load_test: loadtest_dock::LoadTestDock,
     properties_scroll: ScrollHandle,
     /// The Style Editor panel's open fields and last error; see
     /// `shell::style_panel`.
@@ -481,6 +503,8 @@ pub(crate) struct Shell {
     optimize_graph_on_open: bool,
     /// Whether the MCP server should listen; see `Settings::mcp_server`.
     mcp_enabled: bool,
+    /// What MCP clients and plugins may do; see `permissions`.
+    permissions: rbx_permissions::Shared,
     /// The Script Editor's text size at 1x; see `Settings::script_font_size`.
     script_font_size: f32,
     output_scroll: ScrollHandle,
@@ -705,6 +729,7 @@ impl Shell {
             output_rich_text,
             output_display,
             optimize_graph_on_open,
+            offline,
             mcp_server,
             increment_names,
             expand_on_select,
@@ -737,6 +762,8 @@ impl Shell {
         tokens::set_font_scale(font_scale);
         tokens::set_viewport_font_size(viewport_font_size);
         tokens::set_large_targets(large_targets);
+        rbx_net::set_forced(offline);
+        rbx_net::watch();
         if let Some(reduced) = reduce_motion {
             tokens::set_reduced_motion(reduced);
         }
@@ -774,6 +801,19 @@ impl Shell {
         // nearest ancestor that survived, or the window itself.
         let root_focus = cx.focus_handle();
         let focus_lost = cx.on_focus_lost(window, |shell, window, cx| {
+            // A Server & Clients tab not on show leaves the focus to the one
+            // that is: it shares the window. One popped out into its own
+            // window has that window's watch (`local_run::tabs`).
+            if shell
+                .play
+                .live
+                .local
+                .peer
+                .as_ref()
+                .is_some_and(|p| !p.tab_shown || p.detached)
+            {
+                return;
+            }
             let target = window
                 .focus_lost_restore_target(cx)
                 .unwrap_or_else(|| shell.root_focus.clone());
@@ -889,8 +929,19 @@ impl Shell {
             },
         );
         let asset_warnings = cx.subscribe(&viewport, |shell, _, event: &AssetWarnings, cx| {
-            for warning in &event.0 {
+            // Offline, every uncached asset fails the same way: one line
+            // says so instead of one per asset.
+            let (offline, other): (Vec<_>, Vec<_>) =
+                event.0.iter().partition(|w| rbx_net::is_offline_message(w));
+            for warning in other {
                 shell.output.push_warning(warning);
+            }
+            if !offline.is_empty() {
+                shell.output.push_warning(&format!(
+                    "{} asset(s) aren\u{2019}t cached and can\u{2019}t be fetched offline. {}.",
+                    offline.len(),
+                    rbx_net::status().reason()
+                ));
             }
             cx.notify();
         });
@@ -975,6 +1026,7 @@ impl Shell {
             shortcuts_window: None,
             require_graph_window: None,
             controller_window: None,
+            controller_pad: Default::default(),
             version_history: None,
             game_settings: None,
             data_stores: None,
@@ -1020,6 +1072,10 @@ impl Shell {
             bytecode: bytecode_dock::BytecodeDock::default(),
             toolbox: toolbox::ToolboxDock::default(),
             find_place: find_in_place::FindInPlace::default(),
+            profiler: profiler_dock::ProfilerDock::default(),
+            remote_inspector: Default::default(),
+            leaks: leak_finder::LeakDock::default(),
+            load_test: loadtest_dock::LoadTestDock::default(),
             properties_scroll: ScrollHandle::new(),
             style_edits: style_panel::StyleEdits::default(),
             input_edits: input_panel::InputEdits::default(),
@@ -1047,6 +1103,7 @@ impl Shell {
             output_context: output::ContextFilter::default(),
             optimize_graph_on_open,
             mcp_enabled: mcp_server,
+            permissions: permissions::open(),
             script_font_size,
             output_scroll: ScrollHandle::new(),
             viewport_scroll: ScrollHandle::new(),
@@ -1170,8 +1227,11 @@ impl Shell {
         // Settings opened from Home: Account still reads the sign-in, but
         // nothing that acts on a place, or announces one, starts.
         let live = !launch.settings_only;
-        if discord_presence_enabled && live {
+        if discord_presence_enabled && live && !launch.test_peer {
             shell.start_discord();
+        }
+        if launch.test_peer {
+            return shell;
         }
         // Reads the stored Roblox sign-in, then starts the pulse if enabled.
         shell.restore_roblox_session(cx);
@@ -1194,6 +1254,9 @@ impl Shell {
         // `RBX_STUDIO_TERRAIN` (see `shell::terrain`), the same aid for the
         // Terrain Editor.
         shell.apply_debug_terrain(cx);
+        // `RBX_STUDIO_LOCAL_RUN` (see `shell::local_run`): Play (local) or Run
+        // at startup.
+        shell.apply_debug_local_run(cx);
 
         // `--select` / `RBX_STUDIO_SELECT`: `main::load` already resolved a
         // single target into the initial `Place.selected` before the window
@@ -2157,6 +2220,7 @@ impl Shell {
             output_rich_text: self.output_rich_text,
             output_display: self.output_display,
             optimize_graph_on_open: self.optimize_graph_on_open,
+            offline: rbx_net::forced(),
             mcp_server: self.mcp_enabled,
             increment_names: self.increment_names,
             strip_on_publish: self.strip_on_publish,
@@ -2212,6 +2276,11 @@ impl Shell {
         div()
             .relative()
             .size_full()
+            // A Server & Clients window's view is framed as Studio frames
+            // it: green for the server's, blue for a client's.
+            .when_some(self.local_run_frame(), |this, color| {
+                this.border_2().border_color(color)
+            })
             .child(self.viewport.clone())
             .child(measure)
             .children(self.plugin_viewport_overlays(cx))
@@ -2252,6 +2321,7 @@ impl Render for Shell {
         }
         self.realize_animation_dialogs(window, cx);
         self.realize_save_template(window, cx);
+        self.realize_remote_reveal(window, cx);
         // Deliberately no seeded focus. Seeding it *programmatically* is
         // what left a cold start with focus somewhere and no ring anywhere:
         // `focus_visible` only paints for keyboard-driven focus, so a
@@ -2347,6 +2417,9 @@ impl Render for Shell {
             .on_key_down(cx.listener(|shell, event: &KeyDownEvent, window, cx| {
                 shell.handle_shell_key(&event.keystroke, window, cx);
             }))
+            .on_action(cx.listener(|shell, _: &OpenMicroProfiler, _, cx| {
+                shell.open_micro_profiler(cx);
+            }))
             .on_action(cx.listener(|shell, find: &OpenFindInPlace, window, cx| {
                 shell.open_find_in_place(find.replace, window, cx);
             }))
@@ -2380,6 +2453,7 @@ impl Render for Shell {
                     shell.scrub = None;
                     shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window, cx);
+                    shell.end_peer_drag(event.position, window, cx);
                     shell.anim_seam_release(cx);
                 }),
             )
@@ -2394,6 +2468,7 @@ impl Render for Shell {
                     shell.scrub = None;
                     shell.end_inspector_drag();
                     shell.end_panel_drag(event.position, window, cx);
+                    shell.end_peer_drag(event.position, window, cx);
                     shell.anim_seam_release(cx);
                 }),
             )
@@ -2405,6 +2480,7 @@ impl Render for Shell {
             .child(self.document_tabs(cx))
             .child(self.ribbon_tabs(cx))
             .child(self.ribbon(cx))
+            .children(self.replay_bar(window, cx))
             .child(self.workspace(window, cx))
             .children((!self.layout.command_bar_hidden()).then(|| {
                 div()
@@ -2442,8 +2518,11 @@ impl Render for Shell {
             .children(self.command_palette(cx))
             .children(self.floating_widget_overlays(window, cx))
             .children(plugin_dialogs)
-            .children(crate::updater::toast(cx))
-            .children(crate::crash_log::notice(cx))
+            // App-wide notices stay in the editor, not in a test window.
+            .when(self.play.live.local.peer.is_none(), |this| {
+                this.children(crate::updater::toast(cx))
+                    .children(crate::crash_log::notice(cx))
+            })
             .children(self.theme_background(true))
     }
 }

@@ -1,13 +1,13 @@
 //! What a plugin asks the user: a Color3 (`plugin:PromptColor3`), a
 //! BrickColor (`plugin:PromptBrickColor`), whether it may reach an HTTP
-//! host, or which item of a `PluginMenu`.
+//! host or inject scripts, or which item of a `PluginMenu`.
 
 use std::rc::Rc;
 
 use gpui_kit::component::color_picker::{ColorPicker, ColorPickerState};
 use gpui_kit::component::v_flex;
 use gpui_kit::*;
-use rbx_lua::plugin::{Answer, Input, MenuItem, PluginId, PromptKind, UiId};
+use rbx_lua::plugin::{Answer, Input, MenuItem, Permission, PluginId, PromptKind, UiId};
 
 use crate::launcher::ui::{self, Weight};
 use crate::shell::brick_color::BrickTarget;
@@ -38,8 +38,88 @@ impl Shell {
         kind: PromptKind,
         cx: &mut Context<Self>,
     ) {
-        self.plugins.prompts.queue.push((id, plugin, kind));
-        cx.notify();
+        match kind {
+            PromptKind::OpenFiles {
+                extensions,
+                multiple,
+            } => self.plugin_open_files(id, extensions, multiple, cx),
+            PromptKind::SaveFile { suggested } => self.plugin_save_selection(id, suggested, cx),
+            kind => {
+                self.plugins.prompts.queue.push((id, plugin, kind));
+                cx.notify();
+            }
+        }
+    }
+
+    /// `StudioService:PromptImportFile[s]Async`: the system's file chooser.
+    /// A pick with the wrong extension counts as cancelled, as Studio's
+    /// filtered dialog can't return one.
+    fn plugin_open_files(
+        &mut self,
+        id: UiId,
+        extensions: Vec<String>,
+        multiple: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let picked = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple,
+            prompt: None,
+        });
+        cx.spawn(async move |this, cx| {
+            let paths = match picked.await {
+                Ok(Ok(Some(paths))) => Some(paths),
+                _ => None,
+            };
+            let paths = paths.filter(|paths| {
+                extensions.is_empty()
+                    || paths.iter().all(|path| {
+                        path.extension().is_some_and(|e| {
+                            extensions
+                                .iter()
+                                .any(|want| want.eq_ignore_ascii_case(&e.to_string_lossy()))
+                        })
+                    })
+            });
+            let _ = this.update(cx, |shell, cx| {
+                shell.plugin_input(Input::PromptAnswered(id, Answer::Paths(paths)), cx)
+            });
+        })
+        .detach();
+    }
+
+    /// `plugin:PromptSaveSelectionAsync`: Save to File for the selection.
+    fn plugin_save_selection(&mut self, id: UiId, suggested: String, cx: &mut Context<Self>) {
+        let roots = self.selected_all().to_vec();
+        let mut name = if suggested.is_empty() {
+            "Model".to_owned()
+        } else {
+            suggested
+        };
+        if !name.ends_with(".rbxm") && !name.ends_with(".rbxmx") {
+            name.push_str(".rbxm");
+        }
+        let directory = self
+            .path
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| ".".into());
+        let picked = cx.prompt_for_new_path(&directory, Some(&name));
+        cx.spawn(async move |this, cx| {
+            let path = match picked.await {
+                Ok(Ok(Some(path))) => Some(path),
+                _ => None,
+            };
+            let _ = this.update(cx, |shell, cx| {
+                if let Some(path) = &path {
+                    shell.export_to(crate::shell::export::Export::Model, &roots, path, cx);
+                }
+                let answer = Answer::Paths(path.map(|p| vec![p]));
+                shell.plugin_input(Input::PromptAnswered(id, answer), cx)
+            });
+        })
+        .detach();
     }
 
     /// Answers the front prompt and moves on to the next.
@@ -59,7 +139,7 @@ impl Shell {
 
     /// The front prompt as an overlay: a dialog with a colour picker (Color3)
     /// or the BrickColor palette (BrickColor) and OK/Cancel; an Allow/Deny
-    /// dialog naming the plugin and host (HTTP); a menu at the cursor
+    /// dialog naming the plugin and what it asks for (a permission); a menu at the cursor
     /// (Menu). Answering sends `Input::PromptAnswered` and shows the next.
     pub(super) fn plugin_prompt_overlay(
         &mut self,
@@ -70,8 +150,10 @@ impl Shell {
         Some(match kind {
             PromptKind::Color3 { initial } => self.color_prompt(initial, window, cx),
             PromptKind::BrickColor { initial } => self.brick_prompt(initial, cx),
-            PromptKind::HttpPermission { host } => self.http_prompt(plugin, &host, cx),
+            PromptKind::Permission(permission) => self.permission_prompt(plugin, &permission, cx),
             PromptKind::Menu { title, items } => self.menu_prompt(&title, &items, window, cx),
+            // The system's own file chooser, never queued (`plugin_prompt`).
+            PromptKind::OpenFiles { .. } | PromptKind::SaveFile { .. } => return None,
         })
     }
 
@@ -157,21 +239,48 @@ impl Shell {
         )
     }
 
-    fn http_prompt(&mut self, plugin: PluginId, host: &str, cx: &mut Context<Self>) -> AnyElement {
+    /// Studio's two plugin prompts: HTTP to a new host, and Script
+    /// Injection, worded as Studio's plugin manager explains them.
+    fn permission_prompt(
+        &mut self,
+        plugin: PluginId,
+        permission: &Permission,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let name = self
             .plugins
             .host
             .as_ref()
             .and_then(|h| h.plugins().into_iter().find(|p| p.id == plugin))
             .map_or_else(|| "A plugin".to_owned(), |p| p.name);
+        let (glyph, title, body) = match permission {
+            Permission::Host(host) => (
+                "globe",
+                format!("Allow {name} to reach {host}?"),
+                format!(
+                    "{name} wants to send HTTP requests to {host}. A plugin can use them to \
+                     send information about your machine or your game\u{2019}s scripts. Your \
+                     answer is remembered in Settings \u{203a} Permissions."
+                ),
+            ),
+            Permission::Capability(_) => (
+                "code",
+                format!("Allow {name} to inject scripts?"),
+                format!(
+                    "{name} wants to insert or change scripts in your game. Scripts can do \
+                     pretty much anything once the game runs. Your answer is remembered in \
+                     Settings \u{203a} Permissions."
+                ),
+            ),
+        };
         div()
             .absolute()
             .inset_0()
             .child(ui::dialog(
                 440.,
-                ui::dialog_glyph("globe", ui::accent(), ui::wash()),
-                format!("Allow {name} to reach {host}?"),
-                format!("{name} wants to send HTTP requests to {host}. Your answer is remembered."),
+                ui::dialog_glyph(glyph, ui::accent(), ui::wash()),
+                title,
+                body,
                 None,
                 vec![
                     ui::button("plugin-prompt-deny", "Deny", Weight::Secondary, false)

@@ -4,7 +4,6 @@
 //! folders), plus the `settings()` global.
 
 mod http_service;
-mod palette;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -16,10 +15,9 @@ use mlua::{
 };
 use rbx_dom::Ref;
 
-use super::api::{Answer, Request, UiId};
+use super::api::{Answer, Capability, Request, UiId};
 use super::env::env;
 use super::http::HttpRequest;
-use crate::datatypes::color3::LuaColor3;
 use crate::engine::scheduler::AwaitId;
 use crate::engine::signal::{LuaSignal, Owner, SignalKey};
 use crate::instance::LuaInstance;
@@ -107,7 +105,7 @@ pub(crate) fn marketplace_member(lua: &Lua, key: &str) -> Result<Option<Value>> 
 /// - `ChangeHistoryService`: waypoints and undo/redo as [`Request`]s;
 ///   recordings are tracked per VM.
 /// - `HttpService`: see `http_service`. A Roblox plugin's first request to a
-///   host waits on a prompt; a native plugin needs `Permission::Http`.
+///   host waits on a prompt (an rbx-native plugin's manifest lists its hosts).
 /// - `RunService`: edit-mode flags and the frame signals the host fires.
 /// - `StudioService`, `CollectionService` (over the `Tags` property) and the
 ///   plugin's own `CoreGui` / `PluginGuiService` folders.
@@ -270,6 +268,13 @@ fn instances_table(lua: &Lua, refs: &[Ref]) -> Result<Table> {
 }
 
 fn selection(lua: &Lua, key: &str) -> Result<Value> {
+    if matches!(key, "Get" | "Set" | "Add" | "Remove")
+        && !super::native::allowed(lua, Capability::Selection)
+    {
+        return Err(mlua::Error::runtime(
+            "this plugin lacks the 'Selection' permission (Settings \u{203a} Permissions)",
+        ));
+    }
     match key {
         "Get" => func(lua, |lua, _: Value| {
             instances_table(lua, &current_selection(lua))
@@ -385,6 +390,18 @@ fn run_service(lua: &Lua, key: &str) -> Result<Value> {
         "BindToRenderStep" => render_step(lua, false),
         "UnbindFromRenderStep" => render_step(lua, true),
         "Heartbeat" | "RenderStepped" | "Stepped" => signal(lua, "RunService", key),
+        "Run" | "Pause" | "Stop" => {
+            use crate::plugin::api::StudioAction;
+            let action = match key {
+                "Run" => StudioAction::Run,
+                "Pause" => StudioAction::Pause,
+                _ => StudioAction::Stop,
+            };
+            func(lua, move |lua, _: mlua::MultiValue| {
+                super::plugin_object::studio_action(lua, action.clone());
+                Ok(())
+            })
+        }
         _ => crate::engine::edit::member(lua, "RunService", key)?
             .ok_or_else(|| no_member("RunService", key)),
     }
@@ -403,6 +420,20 @@ fn studio_service(lua: &Lua, key: &str) -> Result<Value> {
             Ok(Value::Boolean(false))
         }
         "InstalledPluginData" => Ok(Value::String(lua.create_string("")?)),
+        // Studio's own gizmos are not instances; what a plugin can hit
+        // here is the place, as `Workspace:Raycast` sees it.
+        "GizmoRaycast" => func(lua, |lua, args: mlua::MultiValue| {
+            let raycast: mlua::Function = lua
+                .load("local _, o, d, p = ... return workspace:Raycast(o, d, p)")
+                .into_function()?;
+            raycast.call::<Value>(args)
+        }),
+        "PromptImportFileAsync" | "PromptImportFile" => {
+            super::plugin_object::import_prompt(lua, false).map(Value::Function)
+        }
+        "PromptImportFilesAsync" | "PromptImportFiles" => {
+            super::plugin_object::import_prompt(lua, true).map(Value::Function)
+        }
         // Studio's class icons come from its own sheet, which rbx-native
         // does not ship; an empty image keeps an icon row laid out.
         "GetClassIcon" => func(lua, |lua, _: mlua::MultiValue| {
@@ -416,79 +447,6 @@ fn studio_service(lua: &Lua, key: &str) -> Result<Value> {
         }),
         _ => Err(no_member("StudioService", key)),
     }
-}
-
-/// Studio's Dark theme colour for an `Enum.StudioStyleGuideColor` (or its
-/// name) under an optional `Enum.StudioStyleGuideModifier`; mid grey for a
-/// name Studio does not know.
-fn palette(color: &Value, modifier: Option<&Value>) -> Result<[f32; 3]> {
-    let name = |value: &Value| -> Result<String> {
-        let text = match value {
-            Value::String(s) => s.to_string_lossy().to_string(),
-            other => other.to_string()?,
-        };
-        Ok(text.rsplit('.').next().unwrap_or("").to_string())
-    };
-    let modifier = match modifier {
-        Some(Value::Nil) | None => String::new(),
-        Some(value) => name(value)?,
-    };
-    let [r, g, b] = palette::dark(&name(color)?, &modifier).unwrap_or([128, 128, 128]);
-    Ok([r, g, b].map(|channel| f32::from(channel) / 255.0))
-}
-
-/// Installs `settings()` (and `UserSettings()`): `settings().Studio.Theme`
-/// with `Name` "Dark", `GetColor(styleGuideColor, modifier?)` from Studio's
-/// own Dark palette (see `palette`, falling back to mid grey) and
-/// `ThemeChanged` (never fires).
-pub(crate) fn install_settings(lua: &Lua) -> Result<()> {
-    let theme = lua.create_table()?;
-    theme.set("Name", "Dark")?;
-    theme.set(
-        "GetColor",
-        lua.create_function(|lua, (_, color, modifier): (Value, Value, Option<Value>)| {
-            let [r, g, b] = palette(&color, modifier.as_ref())?;
-            lua.create_userdata(LuaColor3::new(r, g, b))
-        })?,
-    )?;
-    theme.set(
-        "ThemeChanged",
-        LuaSignal(SignalKey::new(
-            Owner::Service("StudioTheme"),
-            "ThemeChanged",
-        )),
-    )?;
-    let studio = lua.create_table()?;
-    // `ThemeChanged` belongs to `Studio` (settings().Studio.ThemeChanged);
-    // the theme keeps a copy for older plugins that read it there.
-    studio.set("ThemeChanged", theme.get::<Value>("ThemeChanged")?)?;
-    // Only the Dark palette is known (see `palette`), so that is the one
-    // theme on offer; a fresh list per call, as in Studio.
-    let themes = theme.clone();
-    studio.set(
-        "GetAvailableThemes",
-        lua.create_function(move |lua, _: MultiValueRest| {
-            lua.create_sequence_from([themes.clone()])
-        })?,
-    )?;
-    studio.set("Theme", theme)?;
-    let root = lua.create_table()?;
-    root.set("Studio", studio)?;
-    // `settings():GetService("Studio")`, the long way to the same table.
-    root.set(
-        "GetService",
-        lua.create_function(|_, (this, name): (Table, String)| {
-            match this.get::<Value>(name.as_str())? {
-                Value::Nil => Err(mlua::Error::runtime(format!(
-                    "{name} is not a valid service of settings()"
-                ))),
-                found => Ok(found),
-            }
-        })?,
-    )?;
-    let getter = lua.create_function(move |_, ()| Ok(root.clone()))?;
-    lua.globals().set("settings", getter.clone())?;
-    lua.globals().set("UserSettings", getter)
 }
 
 /// Continues HTTP requests that were waiting on a permission prompt:
@@ -520,7 +478,7 @@ mod tests {
             let value = service(&lua, name).unwrap().unwrap();
             lua.globals().set(name, value).unwrap();
         }
-        install_settings(&lua).unwrap();
+        crate::studio::install(&lua, &env.ctx).unwrap();
         (lua, env)
     }
 
@@ -635,7 +593,7 @@ mod tests {
              obj = HttpService:JSONDecode(HttpService:JSONEncode(t))
              again = obj.a[3][1] .. ''
              empty = HttpService:JSONEncode({})
-             bad = select(2, pcall(HttpService.JSONEncode, HttpService, 0/0))",
+             nan = HttpService:JSONEncode(0/0)",
         );
         no_errors(&env);
         let g = lua.globals();
@@ -645,12 +603,11 @@ mod tests {
         assert_eq!(g.get::<String>("encoded").unwrap(), "[1,2,[3,4]]");
         assert_eq!(g.get::<String>("again").unwrap(), "3");
         assert_eq!(g.get::<String>("empty").unwrap(), "[]");
-        assert!(g
-            .get::<Value>("bad")
-            .unwrap()
-            .to_string()
-            .unwrap()
-            .contains("non-finite"));
+        // As a live server writes it.
+        assert_eq!(
+            g.get::<String>("nan").unwrap(),
+            r#"{"m":null,"t":"numeric","v":"nan"}"#
+        );
     }
 
     #[test]
@@ -672,13 +629,11 @@ mod tests {
     #[test]
     fn http_to_refused_host_errors() {
         let (lua, env) = vm(WeakDom::new());
-        env.shared.borrow_mut().settings.insert(
-            "Test".into(),
-            serde_json::json!({ "__rbxnative_http": { "127.0.0.1": true } })
-                .as_object()
-                .cloned()
-                .unwrap(),
-        );
+        let store = env.shared.borrow().permissions.clone();
+        store
+            .borrow_mut()
+            .change(|p| p.set_host("Test", "127.0.0.1", Some(true)))
+            .unwrap();
         run(
             &lua,
             "ok, err = pcall(HttpService.GetAsync, HttpService, 'http://127.0.0.1:1/')",
@@ -719,10 +674,10 @@ mod tests {
             .get::<String>("err")
             .unwrap()
             .contains("example.com"));
-        let shared = env.shared.borrow();
+        let store = env.shared.borrow().permissions.clone();
         assert_eq!(
-            shared.settings["Test"]["__rbxnative_http"]["example.com"],
-            false
+            store.borrow().policy().stored_host("Test", "example.com"),
+            Some(false)
         );
     }
 
@@ -748,7 +703,11 @@ mod tests {
 
     #[test]
     fn collection_tags_round_trip() {
-        let (dom, a, b) = two_parts();
+        // GetTagged lists what's in the game: under a service.
+        let mut dom = WeakDom::new();
+        let workspace = dom.new_instance("Workspace", "Workspace", None);
+        let a = dom.new_instance("Part", "A", Some(workspace));
+        let b = dom.new_instance("Part", "B", Some(workspace));
         let (lua, env) = vm(dom);
         lua.globals()
             .set("pa", LuaInstance::new(a, env.ctx.clone()))
@@ -782,7 +741,7 @@ mod tests {
         );
         no_errors(&env);
         assert_eq!(lua.globals().get::<String>("name").unwrap(), "Dark");
-        assert_eq!(lua.globals().get::<String>("listed").unwrap(), "Dark");
+        assert_eq!(lua.globals().get::<String>("listed").unwrap(), "Light");
         let a = service(&lua, "Selection").unwrap().unwrap();
         let b = service(&lua, "Selection").unwrap().unwrap();
         assert!(a.equals(&b).unwrap());

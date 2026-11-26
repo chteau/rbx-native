@@ -113,3 +113,28 @@ fn shared_g_and_globals_outlive_a_run() {
     );
     assert_eq!(output.unwrap().lines(), ["table 2 2 3 nil false"]);
 }
+
+#[test]
+fn editables_work_in_the_command_bar_and_a_fixed_mesh_still_grows() {
+    // What Studio 0.748's command bar printed for the same calls.
+    let printed = lines(
+        "local A = game:GetService('AssetService') \
+         local m = A:CreateEditableMesh() \
+         local a = m:AddVertex(Vector3.zero) \
+         m:AddTriangle(a, m:AddVertex(Vector3.xAxis), m:AddVertex(Vector3.zAxis)) \
+         local f = A:CreateEditableMeshAsync(Content.fromObject(m)) \
+         print(f.FixedSize, m:IdDebugString(f:AddVertex(Vector3.one))) \
+         f:RemoveFace(f:GetFaces()[1]) print(#f:GetFaces()) \
+         local n = 0 \
+         for i = 1, 30 do if A:CreateEditableImage({ Size = Vector2.new(1024, 1024) }) then n += 1 end end \
+         print(n)",
+    );
+    assert_eq!(printed, ["true v4", "0", "30"]);
+}
+
+#[test]
+fn offsets_take_any_number_and_cut_it() {
+    // OpenArena sizes its ViewportFrames with fractional pixels.
+    let printed = lines("print(UDim2.fromOffset(1.5, -2.7)) print(UDim.new(0, 9.9))");
+    assert_eq!(printed, ["{0, 1}, {0, -2}", "0, 9"]);
+}

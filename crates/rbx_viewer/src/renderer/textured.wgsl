@@ -5,6 +5,9 @@
 // exactly like the surface underneath, so a painted face and a bare one read as
 // the same material.
 
+/// The encoding the real client mixes a decal over its part in.
+const DECAL_GAMMA: f32 = 1.0 / 2.2;
+
 @group(1) @binding(0) var image: texture_2d<f32>;
 @group(1) @binding(1) var image_sampler: sampler;
 
@@ -24,7 +27,14 @@ struct InstanceInput {
     // Scale in xy, offset in zw.
     @location(9) uv_transform: vec4<f32>,
     @location(10) tint: vec4<f32>,
-    @location(11) wedge: u32,
+    // The part's colour, sRGB bytes in xyz; 1 in w on a wedge.
+    @location(11) base_wedge: u32,
+    // From the drawn mesh into the part's unit box: the identity for a unit
+    // shape, the mesh's own fit for a real mesh a decal lands on.
+    @location(12) to_unit_0: vec4<f32>,
+    @location(13) to_unit_1: vec4<f32>,
+    @location(14) to_unit_2: vec4<f32>,
+    @location(15) to_unit_3: vec4<f32>,
 }
 
 struct VertexOutput {
@@ -39,6 +49,19 @@ struct VertexOutput {
     @location(7) tint: vec4<f32>,
     @location(8) world_position: vec3<f32>,
     @location(9) @interpolate(flat) wedge: u32,
+    @location(10) @interpolate(flat) base: vec3<f32>,
+}
+
+// What carries a normal through `m`: its cofactor matrix, the inverse
+// transpose up to a scale, which stays right under a non-uniform scale (a
+// mesh fitted to its part) where `m` itself would bend the normal.
+fn normal_matrix(m: mat3x3<f32>) -> mat3x3<f32> {
+    let cofactor = mat3x3<f32>(
+        cross(m[1], m[2]),
+        cross(m[2], m[0]),
+        cross(m[0], m[1]),
+    );
+    return cofactor * sign(determinant(m));
 }
 
 @vertex
@@ -50,25 +73,37 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
         instance.model_3,
     );
 
-    let world = model * vec4<f32>(vertex.position, 1.0);
+    let to_unit = mat4x4<f32>(
+        instance.to_unit_0,
+        instance.to_unit_1,
+        instance.to_unit_2,
+        instance.to_unit_3,
+    );
+    let unit = to_unit * vec4<f32>(vertex.position, 1.0);
+    let unit_normal = normalize(
+        normal_matrix(mat3x3<f32>(to_unit[0].xyz, to_unit[1].xyz, to_unit[2].xyz)) * vertex.normal,
+    );
+    let world = model * unit;
 
     var out: VertexOutput;
     out.clip_position = uniforms.view_projection * world;
     out.world_position = world.xyz;
     // The projection lives in object space, where the face axes are constant
     // whichever way the part is turned.
-    out.object_position = vertex.position;
-    out.object_normal = vertex.normal;
+    out.object_position = unit.xyz;
+    out.object_normal = unit_normal;
     // Parts only ever carry an axis-aligned scale, so rotating the normal by the
     // model matrix and renormalizing gives the same direction as the inverse
     // transpose would.
-    out.world_normal = (model * vec4<f32>(vertex.normal, 0.0)).xyz;
+    out.world_normal = (model * vec4<f32>(unit_normal, 0.0)).xyz;
     out.face_normal = instance.face_normal;
     out.u_axis = instance.u_axis;
     out.v_axis = instance.v_axis;
     out.uv_transform = instance.uv_transform;
     out.tint = instance.tint;
-    out.wedge = instance.wedge;
+    let base_wedge = unpack4x8unorm(instance.base_wedge);
+    out.wedge = u32(base_wedge.w > 0.5);
+    out.base = base_wedge.xyz;
     return out;
 }
 
@@ -103,16 +138,24 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let uv = (projected + 0.5) * in.uv_transform.xy + in.uv_transform.zw;
 
     let sample = textureSample(image, image_sampler, uv);
+    let paint = sample.rgb * in.tint.rgb;
+    let coverage = sample.a * in.tint.a;
+    // The real client mixes the image over its part gamma-encoded, before
+    // tone mapping: the two lit colours, each raised to 1 / 2.2, mixed by the
+    // coverage and decoded again (`texture_blend`: a white Texture lifts a red
+    // part far less, a blue one darkens it more, than a mix of linear light).
+    // The target already holds the part lit, so this hands back that mix less
+    // the share of the part the blend keeps (`one_minus_src_alpha`).
     // Reflectance 0: a Decal is paint on top of whatever the part is made of,
     // and Roblox gives the image no reflection of its own either.
-    let surface = plastic(
-        sample.rgb * in.tint.rgb,
-        in.world_normal,
-        in.world_position,
-        0.0,
+    let base = select(
+        pow((in.base + 0.055) / 1.055, vec3<f32>(2.4)),
+        in.base / 12.92,
+        in.base <= vec3<f32>(0.04045),
     );
-
-    // Straight (non-premultiplied) alpha: the blended pipeline pairs this with
-    // src_alpha / one_minus_src_alpha.
-    return vec4<f32>(shade(surface), sample.a * in.tint.a);
+    let painted = shade(plastic(paint, in.world_normal, in.world_position, 0.0));
+    let kept = shade(plastic(base, in.world_normal, in.world_position, 0.0));
+    let encoded = mix(pow(kept, vec3<f32>(DECAL_GAMMA)), pow(painted, vec3<f32>(DECAL_GAMMA)), coverage);
+    let lit = pow(encoded, vec3<f32>(1.0 / DECAL_GAMMA));
+    return vec4<f32>(lit - (1.0 - coverage) * kept, coverage);
 }

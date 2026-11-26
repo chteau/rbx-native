@@ -308,6 +308,12 @@ pub(crate) const CLIP_SLOTS: [Slot; 10] = [
 /// `None` when offline or unknown.
 pub(crate) fn asset_type(id: i64) -> Option<u32> {
     let url = format!("https://economy.roblox.com/v2/assets/{id}/details");
-    let details: serde_json::Value = ureq::get(&url).call().ok()?.body_mut().read_json().ok()?;
+    let details: serde_json::Value = rbx_net::agent()
+        .get(&url)
+        .call()
+        .ok()?
+        .body_mut()
+        .read_json()
+        .ok()?;
     details.get("AssetTypeId")?.as_u64()?.try_into().ok()
 }

@@ -186,6 +186,7 @@ pub(super) fn parse_at_least(
         missing: Vec::new(),
         depth: 0,
         min_size,
+        meshes: false,
     };
     let children = context.document(bytes)?;
     Some(Parsed {
@@ -194,6 +195,7 @@ pub(super) fn parse_at_least(
             children,
         },
         missing: context.missing,
+        meshes: context.meshes,
     })
 }
 
@@ -205,6 +207,10 @@ pub(super) struct Parsed {
     /// Assets a nested operation points at that `assets` did not hold: drawn
     /// as boxes in `root`, which is therefore not final until they arrive.
     pub(super) missing: Vec<AssetRef>,
+    /// A `MeshPart` is among the leaves: drawn here as its box, since its
+    /// mesh is not at hand, so the tree carves wrong and the union's own
+    /// bake (Studio's "Solid Modeling On Meshes") is what to draw.
+    pub(super) meshes: bool,
 }
 
 /// A guard against an asset that (directly or not) names itself.
@@ -216,6 +222,7 @@ struct Context<'a> {
     missing: Vec<AssetRef>,
     depth: usize,
     min_size: f32,
+    meshes: bool,
 }
 
 impl Context<'_> {
@@ -289,6 +296,7 @@ impl Context<'_> {
             return None;
         };
         let size = Vec3::new(size.x, size.y, size.z).max(Vec3::splat(self.min_size));
+        self.meshes |= self.database.is_subclass_of(instance.class(), "MeshPart");
         Some(Node::Leaf(Leaf {
             negate,
             geometry: shape::resolve(dom, self.database, instance, size),

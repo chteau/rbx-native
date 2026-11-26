@@ -4,6 +4,9 @@
 use std::path::PathBuf;
 
 use rbx_dom::{Change, Ref, WeakDom};
+/// One `plugin.toml` permission (a capability, or HTTP to one host).
+pub use rbx_permissions::Request as Permission;
+pub use rbx_permissions::{Capability, PluginKind, PluginProfile};
 
 /// One loaded plugin, stable for the host's lifetime.
 pub type PluginId = u32;
@@ -49,18 +52,33 @@ pub struct Manifest {
     pub permissions: Vec<Permission>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Permission {
-    /// Read the place (`dom.read`).
-    DomRead,
-    /// Edit the place (`dom.write`).
-    DomWrite,
-    /// Read and change the selection (`selection`).
-    Selection,
-    /// HTTP to one host (`http:<host>`), `*` for any.
-    Http(String),
-    /// Breakpoints, watches, stepping (`debugger`).
-    Debugger,
+impl Manifest {
+    /// The plugin's profile: what its permissions ask for. `kind` is Luau
+    /// here; the editor's WASM loader reads the same manifest.
+    pub fn profile(&self, name: &str, kind: PluginKind) -> PluginProfile {
+        let mut profile = PluginProfile {
+            name: name.to_owned(),
+            kind,
+            ..Default::default()
+        };
+        for request in &self.permissions {
+            match request {
+                Permission::Capability(capability) => profile.requested.push(*capability),
+                Permission::Host(host) => profile.hosts.push(host.clone()),
+            }
+        }
+        profile
+    }
+}
+
+impl Origin {
+    /// What the permission model needs to know about the plugin.
+    pub fn profile(&self, name: &str) -> PluginProfile {
+        match self {
+            Origin::Roblox { .. } => PluginProfile::roblox(name),
+            Origin::Native { manifest, .. } => manifest.profile(name, PluginKind::Luau),
+        }
+    }
 }
 
 /// A value handed to (or from) Luau without a VM at hand.
@@ -109,6 +127,11 @@ pub struct Context {
     /// The signed-in Roblox user, for `StudioService:GetUserId()` and
     /// `plugin:GetStudioUserId()` (0 when nobody is).
     pub user_id: Option<u64>,
+    /// The editor's theme, "Light" or "Dark" (anything else reads as
+    /// Dark), for `settings().Studio.Theme`.
+    pub theme: String,
+    /// The scripts open in the editor's tabs, in tab order.
+    pub scripts: Vec<Ref>,
 }
 
 impl Context {
@@ -188,10 +211,12 @@ pub enum Answer {
     /// `None` = cancelled.
     Color3(Option<[f32; 3]>),
     BrickColor(Option<u32>),
-    /// An HTTP permission prompt: allowed or not (remembered either way).
+    /// A permission prompt: allowed or not (remembered either way).
     Allow(bool),
     /// A `PluginMenu:ShowAsync`: the chosen action, `None` = dismissed.
     Menu(Option<UiId>),
+    /// A file prompt: the paths picked, `None` = cancelled.
+    Paths(Option<Vec<std::path::PathBuf>>),
 }
 
 /// A 3D-view mouse event for the activated plugin's `PluginMouse`.
@@ -391,6 +416,33 @@ pub enum Request {
     },
     /// `plugin:SetClipboard(text)`: put `text` on the system clipboard.
     SetClipboard(String),
+    /// Something Studio does in its own windows.
+    Studio(StudioAction),
+    /// `ScriptDocument:CloseAsync()`: close the script's tab.
+    CloseScript(Ref),
+}
+
+/// What a plugin asked Studio itself to do.
+#[derive(Clone, Debug, PartialEq)]
+pub enum StudioAction {
+    /// `Workspace:ZoomToExtents`: frame the whole place.
+    ZoomToExtents,
+    /// `RunService:Run()`: start a Run (server only) session.
+    Run,
+    /// `RunService:Pause()`.
+    Pause,
+    /// `RunService:Stop()`: end the session.
+    Stop,
+    /// `plugin:SaveSelectedToRoblox()`: the upload dialog for the selection.
+    SaveSelectedToRoblox,
+    /// `PluginManager():ExportPlace(path)`/`ExportSelection(path)`: write
+    /// the place or the selection there, or ask where when `path` is `None`.
+    Export {
+        selection: bool,
+        path: Option<PathBuf>,
+    },
+    /// `SoundService:OpenAttenuationCurveEditor`/`OpenDirectionalCurveEditor`.
+    CurveEditor { directional: bool, curves: Vec<Ref> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -401,14 +453,24 @@ pub enum PromptKind {
     BrickColor {
         initial: Option<u32>,
     },
-    /// First request from this plugin to this host.
-    HttpPermission {
-        host: String,
-    },
+    /// The first time a plugin needs something the user is asked for:
+    /// HTTP to a new host, or script injection.
+    Permission(Permission),
     /// A `PluginMenu:ShowAsync` at the cursor.
     Menu {
         title: String,
         items: Vec<MenuItem>,
+    },
+    /// `StudioService:PromptImportFile[s]Async`: files to open, by extension
+    /// (empty: any); answer with [`Answer::Paths`].
+    OpenFiles {
+        extensions: Vec<String>,
+        multiple: bool,
+    },
+    /// `plugin:PromptSaveSelectionAsync`, `PluginManager():ExportPlace("")`:
+    /// where to save; answer with [`Answer::Paths`].
+    SaveFile {
+        suggested: String,
     },
 }
 

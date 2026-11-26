@@ -252,8 +252,10 @@ fn root() -> Result<PathBuf, String> {
         .ok_or_else(|| "no cache folder to keep kits in (HOME is not set)".to_owned())
 }
 
+/// Through the offline gate: offline, a download fails at once with the
+/// reason instead of waiting out the timeout.
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
+    rbx_net::config()
         .user_agent(USER_AGENT)
         .timeout_global(Some(Duration::from_secs(120)))
         .build()

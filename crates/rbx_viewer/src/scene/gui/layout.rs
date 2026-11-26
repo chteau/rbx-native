@@ -87,7 +87,7 @@ pub(crate) struct Element {
     pub(crate) viewport: Option<Viewport>,
     /// A `CanvasGroup` whose subtree the renderer is to flatten before
     /// tinting; `None` for every other element, and for a group under
-    /// `ZIndexBehavior.Global`.
+    /// `ZIndexBehavior.Global`, whose tint is folded into its background.
     pub(crate) group: Option<Grouped>,
     /// A `ScrollingFrame`'s window, for a host to hit-test the wheel against
     /// (see `super::wheel`); `None` for every other element.
@@ -142,6 +142,15 @@ pub(crate) struct Grouped {
     /// the layout leaves it `None`.
     pub(crate) texture: Option<usize>,
 }
+
+/// A running game's top bar, in GUI pixels.
+pub(crate) const TOPBAR_INSET: f32 = 58.0;
+
+/// Where the top bar's free strip (`GuiService.TopbarInset`) starts and how
+/// far it stops short of the right edge: right of the logo and the menu and
+/// chat buttons the core GUI draws, as `gui.luau` reports it.
+const TOPBAR_LEFT: f32 = 12.0 + 44.0 + 12.0 + 44.0 + 44.0 + 12.0;
+const TOPBAR_RIGHT: f32 = 12.0;
 
 /// The edges of a device's screen its cutouts and home indicator cover, in
 /// the same pixels as the viewport: what `ScreenInsets.DeviceSafeInsets`
@@ -202,6 +211,9 @@ pub(crate) fn resolve_inset<'a>(
     let mut elements = Vec::new();
     for screen in order {
         let frame = screen_frame(screen, viewport, insets);
+        let content = screen.padding.as_ref().map_or(frame, |padding| {
+            sizing::inset(&frame, &padding.against(frame.size()))
+        });
         let start = elements.len();
         children(
             Scope {
@@ -209,7 +221,7 @@ pub(crate) fn resolve_inset<'a>(
                 groups: &screen.groups,
                 layout: screen.list.as_ref(),
             },
-            &frame,
+            &content,
             None,
             Context {
                 global_z_index: screen.global_z_index,
@@ -236,15 +248,26 @@ pub(crate) fn resolve_inset<'a>(
 /// keeps it clear of the device's cutouts, shrinking it by as much, so a
 /// `{1, 0}` child still ends at the safe area's far edges.
 ///
-/// No top bar is kept clear of: that is the running game's, and Studio's edit
-/// view has none, `GuiService:GetGuiInset()` reads zero there and a
-/// `ScreenGui` with `IgnoreGuiInset` off sits at (0, 0).
+/// Studio's edit view has no top bar: `GuiService:GetGuiInset()` reads zero
+/// there and a `ScreenGui` with `IgnoreGuiInset` off sits at (0, 0). A
+/// running game's (`set_player_gui`) keeps such a screen 58 px down.
 pub(crate) fn screen_frame(screen: &Screen, viewport: [f32; 2], insets: SafeInsets) -> Rect {
+    if screen.in_topbar {
+        return Rect {
+            x: TOPBAR_LEFT,
+            y: 0.0,
+            width: (viewport[0] - TOPBAR_LEFT - TOPBAR_RIGHT).max(0.0),
+            height: TOPBAR_INSET,
+        };
+    }
     let device = match screen.device_safe {
         true => insets,
         false => SafeInsets::default(),
     };
-    let top = device.top;
+    let top = match screen.under_topbar {
+        true => device.top.max(TOPBAR_INSET),
+        false => device.top,
+    };
     Rect {
         x: device.left,
         y: top,
@@ -308,6 +331,7 @@ pub(in crate::scene::gui) fn emit(
     // Settled before the children are placed: an `AutomaticSize` text box
     // grows here, and its children resolve against the grown box.
     let mut rect = rect;
+    let rotated = context.rotated || node.rotation != 0.0;
     let text = node.text.as_ref().map(|text| {
         let inset = node
             .constraints
@@ -318,7 +342,9 @@ pub(in crate::scene::gui) fn emit(
         let typeset = text::typeset(text, &mut area, measure);
         rect.width = rect.width.max(area.width + inset[0] + inset[1]);
         rect.height = rect.height.max(area.height + inset[2] + inset[3]);
-        Typeset { inset, ..typeset }
+        let mut typeset = Typeset { inset, ..typeset };
+        typeset.text.clipped = (typeset.text.clipped || node.clips) && !rotated;
+        typeset
     });
     let corner_radii = modifiers::radii(node.corner.as_ref(), rect.size());
     let rounded = corner_radii.iter().any(|&radius| radius > 0.0);
@@ -371,7 +397,6 @@ pub(in crate::scene::gui) fn emit(
     // all, a non-zero `Rotation` on this element or any ancestor makes
     // `ClipsDescendants` a no-op rather than clipping to a box that no longer
     // matches what is actually drawn on screen.
-    let rotated = context.rotated || node.rotation != 0.0;
     let angle = context.angle + node.rotation;
     let scale = context.scale * node.constraints.scale.unwrap_or(1.0);
     let inner = Context {
@@ -403,6 +428,16 @@ pub(in crate::scene::gui) fn emit(
             clip: inner.clip,
         })
         .collect();
+    // A `UIScale` scales the whole subtree, not only this box. Only the
+    // collapsed case is modelled for descendants: a scale tweened up from
+    // (nearly) zero, the usual pop-in, draws nothing until it grows.
+    if node
+        .constraints
+        .scale
+        .is_some_and(|scale| scale.abs() < 1e-3)
+    {
+        return;
+    }
     match &node.scrolling {
         Some(scrolling) => {
             let window = scrolling::scroll(node, scrolling, &rect, cells, inner, measure, into);
@@ -447,12 +482,24 @@ pub(in crate::scene::gui) fn emit(
     // only when the ancestor `LayerCollector` has its `ZIndexBehavior` set to
     // `Sibling`", which is also the only mode that leaves them contiguous
     // behind the group here, since [`resolve`] re-sorts a `Global` screen.
-    if let Some(tint) = node.group.filter(|_| !context.global_z_index) {
-        into[start].group = Some(Grouped {
-            tint,
-            descendants: into.len() - start - 1,
-            texture: None,
-        });
+    // Under `Global` the real client still tints and fades the group's own
+    // background, and only that (`gui_canvas_groups`).
+    match node.group {
+        Some(tint) if context.global_z_index => {
+            let own = &mut into[start];
+            for (channel, tint) in own.background.iter_mut().zip(tint.color) {
+                *channel *= tint;
+            }
+            own.background_alpha *= tint.alpha;
+        }
+        Some(tint) => {
+            into[start].group = Some(Grouped {
+                tint,
+                descendants: into.len() - start - 1,
+                texture: None,
+            });
+        }
+        None => {}
     }
 }
 

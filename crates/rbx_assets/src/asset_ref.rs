@@ -4,7 +4,7 @@
 use crate::error::AssetRefError;
 
 /// A parsed asset reference, as it would appear in a `Content` property.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AssetRef {
     /// `rbxassetid://<id>` or a legacy `roblox.com`/`assetdelivery.roblox.com`
     /// URL carrying an `id=` query parameter.
@@ -21,6 +21,17 @@ pub enum AssetRef {
 }
 
 impl AssetRef {
+    /// The reference as a content string, the form Roblox prints in its
+    /// warnings (`rbxassetid://123`).
+    pub fn uri(&self) -> String {
+        match self {
+            AssetRef::Id(id) => format!("rbxassetid://{id}"),
+            AssetRef::Native(path) => format!("rbxasset://{path}"),
+            AssetRef::Thumb(spec) => format!("rbxthumb://{spec}"),
+            AssetRef::Empty => String::new(),
+        }
+    }
+
     /// Parses any of the reference forms Roblox embeds in place files.
     pub fn parse(input: &str) -> Result<AssetRef, AssetRefError> {
         let trimmed = input.trim();

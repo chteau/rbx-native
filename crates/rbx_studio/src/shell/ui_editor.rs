@@ -63,6 +63,22 @@ pub(crate) const UI_EDITOR_VARIABLE: &str = "RBX_STUDIO_UI_EDITOR";
 /// Viewport dock's settings are the 3D view's, which is not on screen.
 const CANVAS_HIDES: [Panel; 3] = [Panel::Properties, Panel::Output, Panel::Viewport];
 
+/// Docks of betas that are off: out of a saved layout, the View tab and
+/// the palette while their switch is off.
+pub(super) fn beta_hidden_panels() -> Vec<Panel> {
+    let mut hidden = Vec::new();
+    if !crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
+        hidden.push(Panel::Localization);
+    }
+    if !crate::beta::enabled(super::LOCAL_RUN_BETA_ID) {
+        hidden.push(Panel::MicroProfiler);
+        hidden.push(Panel::RemoteInspector);
+        hidden.push(Panel::LeakFinder);
+        hidden.push(Panel::LoadTest);
+    }
+    hidden
+}
+
 /// Argon and Wally (`shell::scripting_tools`) have nothing to sync or
 /// resolve outside the Script Editor, so they're seated on the same dock
 /// as Output/Viewport but only ever shown alongside scripts.
@@ -360,10 +376,7 @@ impl Shell {
             Document::Animation => [Panel::Viewport].into_iter().chain(SCRIPT_TOOLS).collect(),
             _ => SCRIPT_TOOLS.to_vec(),
         };
-        // A beta's dock stays out of a saved layout while its switch is off.
-        if !crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
-            hides.push(Panel::Localization);
-        }
+        hides.extend(beta_hidden_panels());
         hides
     }
 

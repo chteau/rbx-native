@@ -52,6 +52,10 @@ pub(super) fn entry(panel: Panel) -> Option<Entry> {
         | Panel::Loren
         | Panel::AvatarSettings
         | Panel::Localization
+        | Panel::MicroProfiler
+        | Panel::RemoteInspector
+        | Panel::LeakFinder
+        | Panel::LoadTest
         | Panel::Plugin(_) => None,
     }
 }

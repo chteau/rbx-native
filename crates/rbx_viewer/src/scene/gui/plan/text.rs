@@ -88,8 +88,8 @@ pub(crate) struct Text {
     pub(crate) alpha: f32,
     /// `TextSize`: the height of one line, in pixels. Ignored with `scaled`.
     pub(crate) size: f32,
-    /// `TextScaled`: the size is the largest that fits the box instead, and
-    /// the text wraps whether or not `TextWrapped` says so.
+    /// `TextScaled`, with `TextWrapped` (see [`text`]): the size is the
+    /// largest that fits the box instead, breaking only between words.
     pub(crate) scaled: bool,
     pub(crate) wrapped: bool,
     /// `TextXAlignment`/`TextYAlignment`, `Start` being Left/Top.
@@ -110,6 +110,11 @@ pub(crate) struct Text {
     /// `UITextSizeConstraint`'s (`MinTextSize`, `MaxTextSize`), which bounds
     /// the size `TextScaled` searches and clamps a plain `TextSize` too.
     pub(crate) size_bounds: Option<(f32, f32)>,
+    /// Glyphs past the object's own box are cut off: any text object with
+    /// `ClipsDescendants` (set in layout, where rotation turns clipping
+    /// off). A `TextBox` at rest spills like a label; only the one being
+    /// typed in is cut to its field (see `renderer::gui::quads`).
+    pub(crate) clipped: bool,
 }
 
 impl Text {
@@ -209,7 +214,11 @@ pub(super) fn text(
         color: tint,
         alpha: alpha(properties, "TextTransparency"),
         size: float(properties, "TextSize", 14.0).max(1.0),
-        scaled: flag(properties, "TextScaled", false),
+        // The real client holds `TextScaled` only with `TextWrapped`: turning
+        // it on turns wrapping on, and turning wrapping off turns it off, so a
+        // file saving it without `TextWrapped` loads plain (`gui_text_scaled`
+        // reads `TextScaled` false there and draws the 14 px text).
+        scaled: flag(properties, "TextScaled", false) && flag(properties, "TextWrapped", false),
         wrapped: flag(properties, "TextWrapped", false),
         x_align: match enum_of(properties, "TextXAlignment", X_CENTER) {
             X_RIGHT => Align::End,
@@ -233,14 +242,33 @@ pub(super) fn text(
         max_graphemes: usize::try_from(integer(properties, "MaxVisibleGraphemes", -1)).ok(),
         automatic: [automatic & AUTOMATIC_X != 0, automatic & AUTOMATIC_Y != 0],
         size_bounds,
+        clipped: false,
     }
 }
+
+/// Families the client no longer ships, and what it draws in their place:
+/// a place saved with Gotham's or Arial's `FontFace` shows Montserrat and
+/// Arimo in the real client, as `Enum.Font`'s own notes map those members.
+const REPLACED_FAMILIES: [(&str, &str); 2] = [
+    (
+        "rbxasset://fonts/families/GothamSSm.json",
+        "rbxasset://fonts/families/Montserrat.json",
+    ),
+    (
+        "rbxasset://fonts/families/Arial.json",
+        "rbxasset://fonts/families/Arimo.json",
+    ),
+];
 
 /// `FontFace` where the place carries one; the legacy `Font` enum otherwise,
 /// which older places serialize alone.
 fn face(properties: &BTreeMap<String, Variant>) -> Face {
     let face_of = |font: &Font| {
-        let family = AssetRef::parse(&font.family).ok()?;
+        let family = REPLACED_FAMILIES
+            .iter()
+            .find(|(retired, _)| *retired == font.family)
+            .map_or(font.family.as_str(), |(_, replacement)| replacement);
+        let family = AssetRef::parse(family).ok()?;
         (family != AssetRef::Empty).then_some(Face {
             family,
             weight: font.weight,

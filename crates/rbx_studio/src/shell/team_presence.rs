@@ -482,6 +482,7 @@ impl Shell {
         presence.before = None;
         presence.away_changes = 0;
         presence.last_saved = None;
+        self.remote_play_tick(cx);
         self.viewport
             .update(cx, |view, _| view.set_presence(Vec::new()));
     }
@@ -686,6 +687,15 @@ impl Shell {
         self.studio_presence.user_id.or(self.team_presence.key_user)
     }
 
+    /// The name this editor goes by in the room.
+    pub(super) fn presence_name(&self) -> String {
+        let id = self.presence_user_id().unwrap_or(0);
+        self.team_presence
+            .own_name
+            .clone()
+            .unwrap_or_else(|| format!("User {id}"))
+    }
+
     /// Asks Open Cloud who owns the key, then connects (or, without a key or
     /// network, lands on "sign in").
     fn look_up_key_user(&mut self, cx: &mut Context<Self>) {
@@ -790,6 +800,7 @@ impl Shell {
         }
 
         self.coedit_tick(cx);
+        self.remote_play_tick(cx);
         changed |= self.refresh_collaborators(cx);
         if changed {
             cx.notify();

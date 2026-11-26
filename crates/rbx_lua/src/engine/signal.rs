@@ -9,6 +9,7 @@ use mlua::{
 use rbx_dom::{Ref, Variant};
 
 use super::{engine, scheduler};
+use crate::output::LineKind;
 use crate::plugin::api::{Arg, UiId};
 use crate::plugin::arg;
 
@@ -117,7 +118,8 @@ impl Signals {
 }
 
 /// The userdata scripts see. Methods: `Connect(fn)`, `Once(fn)`,
-/// `ConnectParallel(fn)` (= `Connect`); `Wait()` is served through
+/// `ConnectParallel(fn)` (`Connect` from under an Actor, the handler in
+/// the parallel phase); `Wait()` is served through
 /// `__index` as a yielding function (see `scheduler::yielding`) that
 /// resumes with the next fire's arguments. `tostring` gives
 /// `"Signal <event>"`.
@@ -162,11 +164,15 @@ impl UserData for LuaSignal {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
+        methods.add_meta_method(MetaMethod::Eq, |_, this, other: AnyUserData| {
+            Ok(other.borrow::<LuaSignal>().is_ok_and(|o| o.0 == this.0))
+        });
         methods.add_method("Connect", |lua, this, func: Function| {
             Ok(connect(lua, &this.0, func, false))
         });
         methods.add_method("ConnectParallel", |lua, this, func: Function| {
-            Ok(connect(lua, &this.0, func, false))
+            let handler = super::parallel::connect_handler(lua, func)?;
+            Ok(connect(lua, &this.0, handler, false))
         });
         methods.add_method("Once", |lua, this, func: Function| {
             Ok(connect(lua, &this.0, func, true))
@@ -267,15 +273,92 @@ pub(crate) fn fire_from_script(lua: &Lua, key: &SignalKey, args: MultiValue) -> 
     if !deferred_signals(lua) {
         return deliver(lua, key, args, None);
     }
-    for func in take_listeners(lua, key, None) {
-        scheduler::defer(lua, func, args.clone())?;
+    for (_, func) in take_listeners(lua, key, None) {
+        if let Some(depth) = handler_depth(lua, key, None, &func) {
+            scheduler::defer_handler(lua, func, args.clone(), (key.clone(), depth))?;
+        }
     }
     Ok(())
 }
 
-fn deferred_signals(lua: &Lua) -> bool {
+/// Roblox stops a chain of handlers that each fire their own event again
+/// at this many (ScriptLimits: a `BindableEvent` firing itself from its
+/// handler, an `IntValue` setting itself from `Changed`).
+const EVENT_DEPTH: u32 = 6;
+
+/// How deep in a chain of handlers re-firing `key` a handler of it run now
+/// would be: `None`, with the error Roblox reports, past [`EVENT_DEPTH`].
+/// A firing replayed from the change log (`change`) is as deep as the
+/// handler that made the change, one deeper when that handler was one of
+/// the same event's; any other is as deep as the handler running now. An
+/// instance a deferred thread or another event's handler made is no
+/// re-entrancy, however many rounds in a row such writes keep coming.
+fn handler_depth(lua: &Lua, key: &SignalKey, change: Option<u64>, func: &Function) -> Option<u32> {
+    let engine = engine(lua);
+    let scheduler = engine.scheduler.borrow_mut();
+    let cause = match change {
+        Some(number) => scheduler.cause_of(number).map(|cause| &cause.event),
+        None => scheduler.event.as_ref(),
+    };
+    let depth = match cause {
+        Some((running, depth)) if running == key => depth + 1,
+        _ => 1,
+    };
+    if depth <= EVENT_DEPTH {
+        return Some(depth);
+    }
+    drop(scheduler);
+    let class = match &key.owner {
+        Owner::Instance(referent) => engine
+            .ctx
+            .dom()
+            .get(*referent)
+            .map_or_else(String::new, |i| i.class().to_owned()),
+        Owner::Service(class) => (*class).to_owned(),
+        _ => String::new(),
+    };
+    let event = key.event.split(':').next().unwrap_or_default();
+    let info = func.info();
+    let what = match info.name {
+        Some(name) => format!("function {name}"),
+        None => "anonymous function".to_owned(),
+    };
+    let script = info
+        .source
+        .as_deref()
+        .unwrap_or_default()
+        .trim_start_matches('=');
+    engine.host.output(
+        LineKind::Error,
+        format!(
+            "Maximum event re-entrancy depth exceeded for {class}.{event} when calling {what} on \
+             line {} in {script}",
+            info.line_defined.unwrap_or(0)
+        ),
+    );
+    None
+}
+
+/// Runs the handlers at the next resumption point whatever
+/// `SignalBehavior` says (`CollectionService.TagAdded`).
+pub(crate) fn fire_deferred(lua: &Lua, key: &SignalKey, args: &[Arg]) -> Result<()> {
+    let engine = engine(lua);
+    if !engine.signals.borrow().has(key) {
+        return Ok(());
+    }
+    let values = arg::to_lua_multi(lua, &engine.ctx, args)?;
+    for (_, func) in take_listeners(lua, key, None) {
+        scheduler::defer(lua, func, values.clone())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn deferred_signals(lua: &Lua) -> bool {
+    const DEFAULT: u32 = 0;
     const DEFERRED: u32 = 2;
-    let ctx = engine(lua).ctx.clone();
+    let engine = engine(lua);
+    let default_deferred = engine.host.default_deferred();
+    let ctx = engine.ctx.clone();
     let dom = ctx.dom();
     let workspace = dom
         .root_refs()
@@ -284,10 +367,11 @@ fn deferred_signals(lua: &Lua) -> bool {
         .find(|i| i.class() == "Workspace");
     workspace.is_some_and(|w| {
         let props = w.properties();
-        matches!(
-            props.get("SignalBehavior2").or(props.get("SignalBehavior")),
-            Some(Variant::Enum(DEFERRED))
-        )
+        match props.get("SignalBehavior2").or(props.get("SignalBehavior")) {
+            Some(Variant::Enum(DEFERRED)) => true,
+            Some(Variant::Enum(DEFAULT)) | None => default_deferred,
+            _ => false,
+        }
     })
 }
 
@@ -301,16 +385,33 @@ pub(crate) fn fire_values_at(
     deliver(lua, key, args, change)
 }
 
+/// Runs each handler in turn; one an earlier handler disconnected (a
+/// script woken by `Wait` dropping its other connections) no longer runs
+/// (TweenRuntime `client_phase`).
 fn deliver(lua: &Lua, key: &SignalKey, args: MultiValue, change: Option<u64>) -> Result<()> {
-    for func in take_listeners(lua, key, change) {
-        scheduler::spawn(lua, func, args.clone())?;
+    for (id, func) in take_listeners(lua, key, change) {
+        let connected = id.is_none_or(|id| {
+            engine(lua)
+                .signals
+                .borrow()
+                .connections
+                .get(key)
+                .is_some_and(|list| list.iter().any(|c| c.id == id))
+        });
+        if !connected {
+            continue;
+        }
+        if let Some(depth) = handler_depth(lua, key, change, &func) {
+            scheduler::spawn_handler(lua, func, args.clone(), (key.clone(), depth))?;
+        }
     }
     Ok(())
 }
 
 /// The handlers that hear a firing of `key` (see [`fire_at`] for
-/// `change`), with the `Once` ones among them disconnected.
-fn take_listeners(lua: &Lua, key: &SignalKey, change: Option<u64>) -> Vec<Function> {
+/// `change`), with the `Once` ones among them disconnected: each with its
+/// connection's id, `None` for a `Once`, which runs whatever happens.
+fn take_listeners(lua: &Lua, key: &SignalKey, change: Option<u64>) -> Vec<(Option<u32>, Function)> {
     let hears = |c: &Connection| match (change, c.since) {
         (Some(change), Some(since)) => since < change,
         _ => true,
@@ -320,11 +421,14 @@ fn take_listeners(lua: &Lua, key: &SignalKey, change: Option<u64>) -> Vec<Functi
     let Some(list) = signals.connections.get_mut(key) else {
         return Vec::new();
     };
-    let funcs = list
+    let mut funcs: Vec<(Option<u32>, Function)> = list
         .iter()
         .filter(|c| hears(c))
-        .map(|c| c.func.clone())
+        .map(|c| ((!c.once).then_some(c.id), c.func.clone()))
         .collect();
+    if engine.host.newest_first() {
+        funcs.reverse();
+    }
     list.retain(|c| !(c.once && hears(c)));
     if list.is_empty() {
         signals.connections.remove(key);

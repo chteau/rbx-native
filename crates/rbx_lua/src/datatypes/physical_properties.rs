@@ -4,6 +4,7 @@ use mlua::{Lua, MetaMethod, Result, Table, UserData, UserDataFields, UserDataMet
 use rbx_dom::PhysicalProperties;
 
 use super::from_userdata;
+use crate::lua_enum::LuaEnumItem;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct LuaPhysicalProperties(pub(crate) PhysicalProperties);
@@ -58,24 +59,52 @@ pub(crate) fn constructors(lua: &Lua) -> Result<Table> {
     let table = lua.create_table()?;
     table.set(
         "new",
-        lua.create_function(
-            |_,
-             (density, friction, elasticity, friction_weight, elasticity_weight): (
-                f32,
-                f32,
-                f32,
-                Option<f32>,
-                Option<f32>,
-            )| {
-                Ok(LuaPhysicalProperties(PhysicalProperties::Custom {
+        lua.create_function(|_, args: mlua::MultiValue| {
+            // `PhysicalProperties.new(material)`: that material's values.
+            if let Some(Value::UserData(data)) = args.front() {
+                let item = data.borrow::<LuaEnumItem>().map_err(|_| {
+                    mlua::Error::runtime("bad argument #1 to 'new' (Material expected)")
+                })?;
+                let [density, friction, elasticity, friction_weight, elasticity_weight] =
+                    rbx_materials::physics::PHYSICS
+                        .iter()
+                        .find(|(name, _)| *name == item.name())
+                        .map_or([0.7, 0.3, 0.5, 1.0, 1.0], |(_, values)| *values);
+                return Ok(LuaPhysicalProperties(PhysicalProperties::Custom {
                     density,
                     friction,
                     elasticity,
-                    friction_weight: friction_weight.unwrap_or(1.0),
-                    elasticity_weight: elasticity_weight.unwrap_or(1.0),
-                }))
-            },
-        )?,
+                    friction_weight,
+                    elasticity_weight,
+                }));
+            }
+            let number = |i: usize| -> Result<Option<f32>> {
+                match args.get(i) {
+                    None | Some(Value::Nil) => Ok(None),
+                    Some(Value::Integer(n)) => Ok(Some(*n as f32)),
+                    Some(Value::Number(n)) => Ok(Some(*n as f32)),
+                    Some(_) => Err(mlua::Error::runtime(format!(
+                        "bad argument #{} to 'new' (number expected)",
+                        i + 1
+                    ))),
+                }
+            };
+            let required = |i: usize| {
+                number(i)?.ok_or_else(|| {
+                    mlua::Error::runtime(format!(
+                        "bad argument #{} to 'new' (number expected)",
+                        i + 1
+                    ))
+                })
+            };
+            Ok(LuaPhysicalProperties(PhysicalProperties::Custom {
+                density: required(0)?,
+                friction: required(1)?,
+                elasticity: required(2)?,
+                friction_weight: number(3)?.unwrap_or(1.0),
+                elasticity_weight: number(4)?.unwrap_or(1.0),
+            }))
+        })?,
     )?;
     Ok(table)
 }

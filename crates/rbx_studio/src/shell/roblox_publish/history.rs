@@ -97,6 +97,9 @@ pub(crate) struct HistoryWindow {
 impl Shell {
     /// Brings Version History forward, opening it if it isn't.
     pub(crate) fn open_version_history(&mut self, cx: &mut Context<Self>) {
+        if self.offline_refuses("Version History", cx) {
+            return;
+        }
         if let Some(existing) = &self.version_history {
             if existing
                 .update(cx, |_, window, _| window.activate_window())

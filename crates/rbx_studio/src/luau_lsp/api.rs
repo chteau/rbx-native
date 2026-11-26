@@ -78,14 +78,14 @@ fn needs_refresh(current: Option<&str>, cached: Option<&str>, have_copy: bool) -
 }
 
 fn agent() -> ureq::Agent {
-    ureq::Agent::config_builder()
+    rbx_net::config()
         .timeout_global(Some(Duration::from_secs(30)))
         .build()
         .into()
 }
 
 fn studio_version() -> Option<String> {
-    let agent: ureq::Agent = ureq::Agent::config_builder()
+    let agent: ureq::Agent = rbx_net::config()
         .timeout_global(Some(Duration::from_secs(5)))
         .build()
         .into();

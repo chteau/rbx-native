@@ -252,6 +252,21 @@ impl Shell {
     /// Properties row, a viewport drag, the Explorer's insert, delete and
     /// drag-drop, and undo/redo of each, so no two of them can disagree
     /// about what an edit costs to show.
+    /// Shows what the command bar or a plugin drew into an `EditableImage`
+    /// or `EditableMesh` a property holds: nothing in the DOM moved, so no
+    /// undo step, but the viewport has to look again.
+    pub(super) fn reflect_editables(&mut self, cx: &mut Context<Self>) {
+        thread_local! {
+            static SHOWN: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+        }
+        let generation = rbx_dom::editable::generation();
+        if self.live_shown() || self.local_run_shown() || SHOWN.replace(generation) == generation {
+            return;
+        }
+        let changes = super::local_run::editable_bindings(&self.dom);
+        self.reflect_changes(&changes, cx);
+    }
+
     pub(super) fn reflect_changes(&mut self, changes: &[Change], cx: &mut Context<Self>) {
         if changes.is_empty() {
             return;
@@ -260,6 +275,11 @@ impl Shell {
         // game, never to the viewport, Auto-Recovery or Argon.
         if self.live_shown() {
             self.live_reflect(changes, cx);
+            return;
+        }
+        // During a local run the edits go to the simulation, not the place.
+        if self.local_run_shown() {
+            self.local_run_reflect(changes, cx);
             return;
         }
         self.plugins_dom_changed(changes, cx);

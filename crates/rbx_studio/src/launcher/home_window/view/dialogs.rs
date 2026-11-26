@@ -94,13 +94,16 @@ impl HomeWindow {
                 path,
                 replace,
             } => {
-                let replace = *replace;
+                // Downloading again needs Roblox.
+                let offline = crate::offline::blocked();
+                let replace = *replace && !offline;
                 let radio = |id: &'static str,
                              glyph: &'static str,
                              title: &'static str,
                              text: &'static str,
                              on: bool,
                              value: bool,
+                             cut_off: bool,
                              cx: &mut Context<Self>| {
                     h_flex()
                         .id(id)
@@ -110,7 +113,15 @@ impl HomeWindow {
                         .px(px(14.))
                         .rounded(px(8.))
                         .border_1()
-                        .cursor_pointer()
+                        .map(|this| match cut_off {
+                            true => this
+                                .opacity(0.5)
+                                .cursor_not_allowed()
+                                .tooltip(|window, cx| {
+                                    crate::shell::tooltip::text(crate::offline::TIP, window, cx)
+                                }),
+                            false => this.cursor_pointer(),
+                        })
                         .map(|this| {
                             if on {
                                 this.border_color(tokens::accent_line())
@@ -148,12 +159,14 @@ impl HomeWindow {
                                 )
                                 .child(ui::text(11.5, 17.).text_color(tokens::text2()).child(text)),
                         )
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if let Some(Dialog::LocalCopy { replace, .. }) = &mut this.dialog {
-                                *replace = value;
-                            }
-                            cx.notify();
-                        }))
+                        .when(!cut_off, |this| {
+                            this.on_click(cx.listener(move |this, _, _, cx| {
+                                if let Some(Dialog::LocalCopy { replace, .. }) = &mut this.dialog {
+                                    *replace = value;
+                                }
+                                cx.notify();
+                            }))
+                        })
                 };
                 let saved = std::fs::metadata(path)
                     .and_then(|meta| meta.modified())
@@ -187,7 +200,7 @@ impl HomeWindow {
                             .gap(px(8.))
                             .pt(px(16.))
                             .px(px(20.))
-                            .child(radio("localcopy-keep", "folder-open", "Open my local copy", "Keep working where you left off.", !replace, false, cx))
+                            .child(radio("localcopy-keep", "folder-open", "Open my local copy", "Keep working where you left off.", !replace, false, false, cx))
                             .child(radio(
                                 "localcopy-replace",
                                 "download",
@@ -195,6 +208,7 @@ impl HomeWindow {
                                 "Replaces your local copy. Changes you haven\u{2019}t published are lost.",
                                 replace,
                                 true,
+                                offline,
                                 cx,
                             )),
                     )

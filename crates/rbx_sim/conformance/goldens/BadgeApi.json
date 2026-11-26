@@ -1,0 +1,50 @@
+{
+  "passes": 3,
+  "raw": [
+    {
+      "award_string_user": "Unable to cast string to User",
+      "check_none": 0,
+      "check_not_table": "Unable to cast double to Array",
+      "check_too_many": "CheckUserBadgesAsync: Cannot query more than 10 badges.",
+      "has_nil_badge": "Argument 2 missing or nil",
+      "has_string_user": "Unable to cast string to User",
+      "has_unknown": false,
+      "info_string": "Unable to cast string to int64"
+    },
+    {
+      "award_string_user": "Unable to cast string to User",
+      "check_none": 0,
+      "check_not_table": "Unable to cast double to Array",
+      "check_too_many": "CheckUserBadgesAsync: Cannot query more than 10 badges.",
+      "has_nil_badge": "Argument 2 missing or nil",
+      "has_string_user": "Unable to cast string to User",
+      "has_unknown": false,
+      "info_string": "Unable to cast string to int64"
+    },
+    {
+      "award_string_user": "Unable to cast string to User",
+      "check_none": 0,
+      "check_not_table": "Unable to cast double to Array",
+      "check_too_many": "CheckUserBadgesAsync: Cannot query more than 10 badges.",
+      "has_nil_badge": "Argument 2 missing or nil",
+      "has_string_user": "Unable to cast string to User",
+      "has_unknown": false,
+      "info_string": "Unable to cast string to int64"
+    }
+  ],
+  "result": {
+    "award_string_user": "Unable to cast string to User",
+    "check_none": 0.0,
+    "check_not_table": "Unable to cast double to Array",
+    "check_too_many": "CheckUserBadgesAsync: Cannot query more than 10 badges.",
+    "has_nil_badge": "Argument 2 missing or nil",
+    "has_string_user": "Unable to cast string to User",
+    "has_unknown": false,
+    "info_string": "Unable to cast string to int64"
+  },
+  "source": "real Roblox server, place 3086963177 version 585, joined with Sober",
+  "spread": {
+    "check_none": 0.0
+  },
+  "status": "recorded"
+}

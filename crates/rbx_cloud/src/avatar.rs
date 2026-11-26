@@ -2,14 +2,14 @@
 //! their body is scaled. Public and anonymous, so it needs no key and no
 //! cookie, only the user id.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::{self, CloudError};
 
 /// One worn asset; `asset_type_id` is Roblox's `AssetType` number (8 Hat,
 /// 11 Shirt, 12 Pants, 27-31 body parts, 41-47 accessories, 79 DynamicHead).
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct AvatarAsset {
     pub id: u64,
     #[serde(default)]
@@ -18,7 +18,7 @@ pub struct AvatarAsset {
     pub asset_type: AssetType,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct AssetType {
     pub id: u32,
     #[serde(default)]
@@ -26,7 +26,7 @@ pub struct AssetType {
 }
 
 /// The six avatar scale sliders, as Roblox stores them.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 pub struct AvatarScales {
     pub height: f64,
     pub width: f64,
@@ -38,7 +38,7 @@ pub struct AvatarScales {
 }
 
 /// BrickColor numbers per body part.
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize, Serialize)]
 pub struct AvatarBodyColors {
     #[serde(rename = "headColorId")]
     pub head: u32,
@@ -54,8 +54,10 @@ pub struct AvatarBodyColors {
     pub left_leg: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub struct Avatar {
+    /// `scale` in an outfit's details.
+    #[serde(alias = "scale")]
     pub scales: AvatarScales,
     /// "R15" or "R6".
     #[serde(rename = "playerAvatarType")]
@@ -75,7 +77,20 @@ impl Avatar {
 
 impl Client {
     pub fn avatar(&self, user_id: u64) -> Result<Avatar, CloudError> {
-        let url = format!("https://avatar.roblox.com/v1/users/{user_id}/avatar");
+        self.avatar_at(&format!(
+            "https://avatar.roblox.com/v1/users/{user_id}/avatar"
+        ))
+    }
+
+    /// A saved outfit's (or a bundle's) avatar.
+    pub fn outfit(&self, outfit_id: u64) -> Result<Avatar, CloudError> {
+        self.avatar_at(&format!(
+            "https://avatar.roblox.com/v1/outfits/{outfit_id}/details"
+        ))
+    }
+
+    fn avatar_at(&self, url: &str) -> Result<Avatar, CloudError> {
+        let url = url.to_owned();
         let response = self.get_raw(&url, false, true)?;
         if !(200..300).contains(&response.status) {
             return Err(error::error_for_status(

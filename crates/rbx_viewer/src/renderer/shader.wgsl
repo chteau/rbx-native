@@ -34,7 +34,7 @@ struct VertexOutput {
     @location(6) axis_x: vec3<f32>,
     @location(7) axis_y: vec3<f32>,
     @location(8) axis_z: vec3<f32>,
-    @location(9) @interpolate(flat) material: vec2<u32>,
+    @location(9) @interpolate(flat) material: vec3<u32>,
     @location(10) studs_per_tile: f32,
     @location(11) @interpolate(flat) extent: vec3<f32>,
 }
@@ -73,7 +73,11 @@ fn vs_main(vertex: VertexInput, instance: InstanceInput) -> VertexOutput {
     out.axis_x = normalize(model[0].xyz);
     out.axis_y = normalize(model[1].xyz);
     out.axis_z = normalize(model[2].xyz);
-    out.material = vec2<u32>(instance.material_layer, instance.material_kind);
+    out.material = vec3<u32>(
+        instance.material_layer,
+        instance.material_kind & ((1u << SURFACES_SHIFT) - 1u),
+        instance.material_kind >> SURFACES_SHIFT,
+    );
     out.studs_per_tile = instance.studs_per_tile;
     return out;
 }
@@ -95,6 +99,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     input.extent = in.extent;
     input.anchored = (in.material.y & FACE_ANCHORED) != 0u;
     input.curved = (in.material.y & FACE_CURVED) != 0u;
+    surface_relief(&input, in.material.z, in.extent);
 
     // Straight (non-premultiplied) alpha: the translucent pipeline pairs this
     // with src_alpha / one_minus_src_alpha, and the opaque one always gets 1.

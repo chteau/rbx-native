@@ -109,6 +109,7 @@ commands! {
     MenuBar, "menu_bar", "Focus the Menu Bar", View, ["f10"];
     FocusPropertiesFilter, "focus_properties_filter", "Filter Properties", View, ["secondary-shift-p"];
     Fullbright, "fullbright", "Fullbright", View, ["alt-l"];
+    MicroProfiler, "micro_profiler", "MicroProfiler", View, ["secondary-f6"];
     Delete, "delete", "Delete", Explorer, ["delete", "backspace"];
     Rename, "rename", "Rename", Explorer, ["f2"];
     // Unbound by default: Studio gives Ctrl+Shift+P to the Properties filter
@@ -246,6 +247,15 @@ impl Command {
         match self {
             Command::FindAll => Scope::Global,
             _ => self.spec().category.scope(),
+        }
+    }
+
+    /// False for a beta's command while its switch is off: no key, no row
+    /// in Customize Shortcuts.
+    pub(crate) fn available(self) -> bool {
+        match self {
+            Command::MicroProfiler => crate::beta::enabled(crate::shell::LOCAL_RUN_BETA_ID),
+            _ => true,
         }
     }
 
@@ -659,13 +669,14 @@ pub(crate) fn register_keymap_action<A: Action + Clone>(
 /// and after every change.
 pub(crate) fn apply_bindings(cx: &mut App) {
     use crate::menu_bar::{MenuCommandPalette, MenuQuickOpen, MenuQuit, MenuStudioSettings};
-    use crate::shell::OpenFindInPlace;
+    use crate::shell::{OpenFindInPlace, OpenMicroProfiler};
     #[cfg_attr(not(target_os = "macos"), allow(unused_mut, clippy::useless_vec))]
     let mut builtin = vec![
         entry(Command::StudioSettings, MenuStudioSettings, None),
         entry(Command::CommandPalette, MenuCommandPalette, None),
         entry(Command::QuickOpen, MenuQuickOpen, None),
         entry(Command::Quit, MenuQuit, None),
+        entry(Command::MicroProfiler, OpenMicroProfiler, None),
         // One action, two meanings: the H key opens it on Replace.
         KeymapEntry {
             command: Command::FindAll,
@@ -713,6 +724,7 @@ pub(crate) fn apply_bindings(cx: &mut App) {
             .collect();
         let added: Vec<KeyBinding> = entries
             .iter()
+            .filter(|entry| entry.command.available())
             .flat_map(|entry| {
                 bindings(entry.command)
                     .into_iter()

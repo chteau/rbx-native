@@ -11,19 +11,41 @@ license.workspace = true
 # used here, so no other crate can replace it. `luau` implies vendoring.
 mlua = { version = "0.12", features = ["luau"] }
 rbx_dom = { path = "../rbx_dom" }
+# `ContentProvider:PreloadAsync` of instances: the assets they refer to.
+rbx_assets = { path = "../rbx_assets" }
+rbx_materials = { path = "../rbx_materials" }
+# The FloatCurve/MarkerCurve key bytes (`ValuesAndTimes`) and curve maths.
+rbx_animation = { path = "../rbx_animation" }
+glam = "0.33"
 rbx_reflection = { path = "../rbx_reflection" }
 # Plugin host: plugins ship as .rbxm/.rbxmx models, keep settings as JSON,
 # describe themselves in plugin.toml and reach the web through HttpService.
 rbx_binary = { path = "../rbx_binary" }
 rbx_csg = { path = "../rbx_csg" }
+# MeshPart operands carve as their meshes (`csg::mesh`), and
+# `CreateEditableMeshAsync`/`CreateMeshPartAsync` load mesh assets.
+rbx_mesh = { path = "../rbx_mesh" }
 rbx_xml = { path = "../rbx_xml" }
+# What plugins may do: the editor's one permission model.
+rbx_permissions = { path = "../rbx_permissions" }
+# `Stats:GetTotalMemoryUsageMb`: the process's resident memory on every OS.
+sysinfo = { version = "0.31", default-features = false, features = ["system"] }
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
 ureq = "3"
+rbx_net = { path = "../rbx_net" }
+# HttpService:CreateWebStreamClient's WebSocket kind; already in the build
+# through rbx_presence, with the same features.
+tungstenite = { version = "0.28", default-features = false, features = ["handshake", "rustls-tls-webpki-roots"] }
 uuid = { version = "1", features = ["v4"] }
 # `utf8.graphemes`, a Roblox addition to Luau's utf8 library; already in the
 # build through the editor's text widgets.
 unicode-segmentation = "1"
+
+[target.'cfg(unix)'.dependencies]
+# `CLOCK_THREAD_CPUTIME_ID`: script time on a script-paced run.
+libc = "0.2"
 
 [dev-dependencies]
 # Integration tests script a real place file and need the bundled API dump.

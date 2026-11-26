@@ -20,8 +20,9 @@ struct PostUniform {
     correction: vec4<f32>,
     // TintColor, as the raw components Studio shows: a gain, not a radiance.
     tint: vec4<f32>,
-    // x: 1 where a ColorGradingEffect resolved to TonemapperPreset.Retro, 0 for
-    // Default (or no effect at all). y: 1 where a BlurEffect is enabled, 0
+    // x: the tone curve: 0 a clamp (Default under Voxel or Compatibility, and
+    // a ColorGradingEffect's TonemapperPreset.Retro under any), 2 `filmic`
+    // (Default under ShadowMap or Future). y: 1 where a BlurEffect is enabled, 0
     // otherwise. z: the camera's near plane in studs, which is the whole of what
     // view_distance needs. w: 1 where a DepthOfFieldEffect is enabled.
     misc: vec4<f32>,
@@ -72,6 +73,21 @@ struct VertexOutput {
     @builtin(position) clip_position: vec4<f32>,
     @location(0) uv: vec2<f32>,
 }
+
+/// The real client's tone curve under ShadowMap and Future, a rational
+/// function fitted to its frames of a grey ramp lit at six known strengths
+/// (see `crate::lighting`'s `FILMIC_SUN`). It lifts nothing below about 0.1,
+/// rolls the highlights off and only reaches white near 2.
+fn filmic(x: vec3<f32>) -> vec3<f32> {
+    let curve = x * (FILMIC_A * x + FILMIC_B) / (x * (FILMIC_C * x + FILMIC_D) + FILMIC_E);
+    return min(curve, vec3<f32>(1.0));
+}
+
+const FILMIC_A: f32 = 2.4536;
+const FILMIC_B: f32 = 0.0353;
+const FILMIC_C: f32 = 2.1029;
+const FILMIC_D: f32 = 0.7171;
+const FILMIC_E: f32 = 0.1414;
 
 /// One oversized triangle rather than two: no vertex buffer, and no seam down
 /// the diagonal where two triangles would meet.
@@ -139,30 +155,44 @@ fn fs_upsample(in: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(sum / total, 1.0);
 }
 
-const SUN_RAY_TAPS: i32 = 12;
-/// Per-tap falloff: the last of 12 taps carries about a sixth of the first
-/// one's weight, which is soft enough that the march does not read as a row of
-/// discrete dots even at the boosted `Intensity` a proof screenshot uses.
-const SUN_RAY_DECAY: f32 = 0.85;
+const SUN_RAY_TAPS: i32 = 24;
+/// The glow's colour at Intensity 1 and how fast it fades, as a fraction of
+/// the frame's height per unit of Spread. Measured on the real client (the
+/// `sun_rays` fidelity scene against the same view without the effect): at
+/// Intensity 0.3 and Spread 0.8 it adds (0.46, 0.17, 0) in linear light a
+/// third of the frame from the sun and still (0.19, 0.06, 0) at the far
+/// edge, washing the sky and the floor alike, darker only where something
+/// stands between the pixel and the sun. Refitted once the sky panels stopped
+/// being mirrored (fidelity pass 5): the near floor takes less of the glow
+/// than the sky, so only what is past 250 studs counts as open.
+const SUN_RAY_TINT: vec3<f32> = vec3<f32>(4.1, 1.5, 0.0);
+const SUN_RAY_REACH: f32 = 0.81;
+const SUN_RAY_OPEN_STUDS: f32 = 250.0;  // fitted on `sun_rays`
 
-/// Standard god-rays: march toward sun with decreasing-weight average of HDR
-/// color. Self-occlusion is free: dark pixels (occluded) contribute less than
-/// bright sky. Spread is a fraction of pixel-to-sun distance, keeping mapping
-/// in normalized units rather than inventing a pixel-radius conversion.
+/// A glow from the sun over the whole frame, fading with the distance to it,
+/// times how much of the straight line from the pixel to the sun is open in
+/// the depth buffer, which is what leaves the shafts behind whatever stands in
+/// the way. Open is sky or anything past [`SUN_RAY_OPEN_STUDS`]: the real
+/// client washes a far floor as it does the sky, and only what stands near
+/// casts a shaft (the `sun_rays` scene). Each pixel starts its march at its own fraction of a
+/// step (interleaved gradient noise), so the taps' fixed spacing never lines
+/// up into bands across the frame; what is left is a fine grain.
 fn sun_rays(uv: vec2<f32>) -> vec3<f32> {
-    let step = (post.sun_rays.xy - uv) * (post.sun_rays.w / f32(SUN_RAY_TAPS));
+    let size = vec2<f32>(textureDimensions(scene_depth));
+    let to_sun = post.sun_rays.xy - uv;
+    let distance = length(to_sun * vec2<f32>(size.x / size.y, 1.0));
+    let last = vec2<i32>(size) - vec2<i32>(1);
 
-    var sample_uv = uv;
-    var sum = vec3<f32>(0.0);
-    var weight = 1.0;
-    var total = 0.0;
-    for (var tap = 0; tap < SUN_RAY_TAPS; tap++) {
-        sample_uv += step;
-        sum += textureSample(source, source_sampler, sample_uv).rgb * weight;
-        total += weight;
-        weight *= SUN_RAY_DECAY;
+    let pixel = uv * size;
+    let jitter = fract(52.9829189 * fract(dot(pixel, vec2<f32>(0.06711056, 0.00583715))));
+    var open = 0.0;
+    for (var tap = 1; tap <= SUN_RAY_TAPS; tap++) {
+        let at = uv + to_sun * ((f32(tap) - jitter) / f32(SUN_RAY_TAPS));
+        let texel = clamp(vec2<i32>(at * size), vec2<i32>(0), last);
+        open += select(0.0, 1.0, view_distance(textureLoad(scene_depth, texel, 0)) > SUN_RAY_OPEN_STUDS);
     }
-    return sum / total;
+    let reach = SUN_RAY_REACH * max(post.sun_rays.w, 0.05);
+    return SUN_RAY_TINT * exp(-distance / reach) * (open / f32(SUN_RAY_TAPS));
 }
 
 /// Studs the depth-of-field blur ramps in over past the sharp zone's own edge, as
@@ -262,22 +292,14 @@ fn fs_resolve(in: VertexOutput) -> @location(0) vec4<f32> {
         color += sun_rays(in.uv) * post.sun_rays.z;
     }
 
-    // Roblox publishes no formula for either preset. `Default` is exactly the
-    // plain clamp this renderer always used, so a place with no
-    // ColorGradingEffect (or one that resolves to Default) is unchanged; the
-    // only "curve" it has ever had is the `*Srgb` target's own gamma encode on
-    // write, which happens after this shader and cannot be toggled per effect.
-    // That rules out approximating `Retro` by "removing" a sqrt this pipeline
-    // never applied, it would just collapse back to Default. A Reinhard
-    // rolloff (`color / (1 + color)`) is used instead: a real, well-known
-    // legacy tonemap that reads flatter than the clamp, which is the
-    // principled approximation this renderer can actually justify.
+    // A plain clamp under Voxel and Compatibility, and under Retro whatever
+    // the Technology (the real client's Retro ramps match its Voxel ones to
+    // the step); the fitted filmic curve under ShadowMap and Future.
     let hdr = max(color, vec3<f32>(0.0));
-    var mapped = select(
-        clamp(hdr, vec3<f32>(0.0), vec3<f32>(1.0)),
-        hdr / (vec3<f32>(1.0) + hdr),
-        post.misc.x > 0.5,
-    );
+    var mapped = clamp(hdr, vec3<f32>(0.0), vec3<f32>(1.0));
+    if post.misc.x > 1.5 {
+        mapped = filmic(hdr);
+    }
 
     let layer = textureLoad(adornments, vec2<i32>(in.clip_position.xy), 0);
     if layer.a > 0.0 {

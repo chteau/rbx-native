@@ -183,6 +183,15 @@ impl Template {
     }
 }
 
+/// Studio's template parts are smooth all round. Written out, since a part
+/// that leaves them out reads the class defaults, studs on top and an inlet
+/// below, in the real client.
+fn smooth(dom: &mut WeakDom, part: Ref) {
+    for face in ["Top", "Bottom", "Left", "Right", "Front", "Back"] {
+        set(dom, part, &format!("{face}Surface"), enumeration(0));
+    }
+}
+
 fn set(dom: &mut WeakDom, r: Ref, key: &str, value: Variant) {
     dom.set_property(r, key, value).expect("instance exists");
 }
@@ -237,6 +246,7 @@ fn modern_workspace(dom: &mut WeakDom, workspace: Ref) {
     set(dom, baseplate, "size", vector3(2048.0, 16.0, 2048.0));
     set(dom, baseplate, "CFrame", at(0.0, -8.0, 0.0));
     set(dom, baseplate, "Color3uint8", rgb8(91, 91, 91));
+    smooth(dom, baseplate);
     let texture = child(dom, baseplate, "Texture", "Texture");
     set(dom, texture, "Texture", content("rbxassetid://6372755229"));
     set(dom, texture, "Face", enumeration(1));
@@ -250,6 +260,9 @@ fn modern_workspace(dom: &mut WeakDom, workspace: Ref) {
     set(dom, spawn, "size", vector3(12.0, 1.0, 12.0));
     set(dom, spawn, "CFrame", at(0.0, 0.5, 0.0));
     set(dom, spawn, "Color3uint8", rgb8(163, 162, 165));
+    smooth(dom, spawn);
+    // No spawn shield: Studio's template has `Duration` 0.
+    set(dom, spawn, "Duration", Variant::Int32(0));
     let decal = child(dom, spawn, "Decal", "Decal");
     set(
         dom,
@@ -445,6 +458,16 @@ mod tests {
         let floor = named(&dom, workspace, "Baseplate").unwrap();
         assert!(named(&dom, workspace, "SpawnLocation").is_some());
         assert!(named(&dom, floor, "Texture").is_some());
+        let spawn = named(&dom, workspace, "SpawnLocation").unwrap();
+        for part in [floor, spawn] {
+            let properties = dom.get(part).unwrap().properties();
+            assert_eq!(properties.get("TopSurface"), Some(&Variant::Enum(0)));
+            assert_eq!(properties.get("BottomSurface"), Some(&Variant::Enum(0)));
+        }
+        assert_eq!(
+            dom.get(spawn).unwrap().properties().get("Duration"),
+            Some(&Variant::Int32(0))
+        );
         let lighting = service(&dom, "Lighting");
         assert!(children(&dom, lighting).iter().any(|(c, _)| c == "Sky"));
     }

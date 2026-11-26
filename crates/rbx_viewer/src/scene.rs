@@ -55,17 +55,16 @@ pub(crate) use gui::{
     GradientPx as GuiGradient, Grouped as GuiGroup, ImageScale as GuiImageScale, Join as GuiJoin,
     Painted, ParticlesPx as GuiParticles, PixelRect as GuiPixelRect, Rect as GuiRect,
     Screen as GuiScreen, ScrollWindow as GuiScrollWindow, ShadowPx as GuiShadow, SpaceGui,
-    StrokePx as GuiStroke, Text as GuiText, TextMeasure as GuiTextMeasure, Tile as GuiTile,
-    Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
+    StrokePx as GuiStroke, Text as GuiText, TextMeasure as GuiTextMeasure, TextSpan as GuiTextSpan,
+    Tile as GuiTile, Typeset as GuiTypeset, ViewCamera as GuiViewCamera, Viewport as GuiViewport,
 };
 #[cfg(test)]
 pub(crate) use gui::{
     plan as gui_plan, resolve_with as gui_layout_with, GroupTint as GuiGroupTint,
-    TextSpan as GuiTextSpan,
 };
 pub use gui::{
-    pseudo_localize, rich_runs, shows_screen, GuiScrolls, PseudoLocale, RichRun, SafeInsets,
-    ScrollTarget, ThumbGrab,
+    player_gui, pseudo_localize, rich_runs, set_player_gui, shows_screen, GuiScrolls, PseudoLocale,
+    RichRun, SafeInsets, ScrollTarget, ThumbGrab,
 };
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;
@@ -130,6 +129,8 @@ pub(crate) struct Part {
     /// below one sends it to the renderer's blended pass.
     pub(crate) alpha: f32,
     pub(crate) reflectance: f32,
+    /// The `*Surface` pattern on each face of a block (see [`surfaces`]).
+    pub(crate) surfaces: u32,
     /// `BasePart.CastShadow`. A part that answers false is still drawn and
     /// still *receives* shadows; it simply never reaches the depth pass.
     casts_shadow: bool,
@@ -499,6 +500,8 @@ impl Scene {
         for gui in &self.gui_spaces {
             gui.assets(&mut references);
         }
+        // A script's `EditableImage` the renderer uploads from memory.
+        references.retain(|reference| crate::textures::editable_of(reference).is_none());
         // Wanted only once something has an image to fall back from: a place
         // with no `ImageLabel` at all never downloads it.
         if !references.is_empty() {
@@ -542,13 +545,55 @@ impl Scene {
         // A `ViewportFrame`'s parts point at the same layers, so they go
         // plastic-then-textured on the same schedule.
         let materials = &self.materials;
-        let mut reslot = |part: &mut Part| part.material = materials.slot(part.material.layer);
+        let mut reslot = |viewport: &mut GuiViewport| {
+            for part in &mut viewport.parts {
+                part.material = materials.slot(part.material.layer);
+            }
+            for instance in &mut viewport.meshes.instances {
+                instance.material = materials.slot(instance.material.layer);
+            }
+        };
         for screen in &mut self.gui {
-            screen.viewport_parts(&mut reslot);
+            screen.viewports(&mut reslot);
         }
         for gui in &mut self.gui_spaces {
-            gui.viewport_parts(&mut reslot);
+            gui.viewports(&mut reslot);
         }
+    }
+
+    fn each_viewport(&mut self, apply: &mut impl FnMut(&mut GuiViewport)) {
+        for screen in &mut self.gui {
+            screen.viewports(apply);
+        }
+        for gui in &mut self.gui_spaces {
+            gui.viewports(apply);
+        }
+    }
+
+    /// The mesh and texture assets the `ViewportFrame`s want, see
+    /// [`Scene::resolve_viewport_meshes`].
+    pub(crate) fn viewport_mesh_assets(&mut self) -> (Vec<AssetRef>, Vec<AssetRef>) {
+        let (mut meshes, mut textures) = (Vec::new(), Vec::new());
+        self.each_viewport(&mut |viewport| viewport.meshes.assets(&mut meshes, &mut textures));
+        meshes.sort_by_key(|key| format!("{key:?}"));
+        meshes.dedup();
+        textures.sort_by_key(|key| format!("{key:?}"));
+        textures.dedup();
+        (meshes, textures)
+    }
+
+    /// Joins every `ViewportFrame`'s meshes to whichever of `meshes` and
+    /// `images` it names, the way [`Scene::resolve_file_meshes`] does the
+    /// workspace's: a GUI re-plan starts a frame over with boxes, and this
+    /// puts back what has already downloaded.
+    pub(crate) fn resolve_viewport_meshes(
+        &mut self,
+        meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
+        images: &HashMap<AssetRef, Arc<Image>>,
+    ) {
+        self.each_viewport(&mut |viewport| {
+            viewport.meshes.resolve(&mut viewport.parts, meshes, images);
+        });
     }
 
     /// Every part's unit-mesh placement, keyed by DOM referent so the texture
@@ -621,11 +666,25 @@ impl Scene {
 
     /// Every mesh and texture asset a caller needs to download before calling
     /// [`Scene::resolve_file_meshes`].
-    pub(crate) fn file_mesh_assets(&self) -> (Vec<AssetRef>, Vec<AssetRef>) {
-        (
+    pub(crate) fn file_mesh_assets(&mut self) -> (Vec<AssetRef>, Vec<AssetRef>) {
+        let (mut meshes, mut textures) = (
             self.file_mesh_plan.mesh_refs(),
             self.file_mesh_plan.texture_refs(),
-        )
+        );
+        let (viewport_meshes, viewport_textures) = self.viewport_mesh_assets();
+        meshes.extend(
+            viewport_meshes
+                .into_iter()
+                .filter(|m| !meshes.contains(m))
+                .collect::<Vec<_>>(),
+        );
+        textures.extend(
+            viewport_textures
+                .into_iter()
+                .filter(|t| !textures.contains(t))
+                .collect::<Vec<_>>(),
+        );
+        (meshes, textures)
     }
 
     /// Every `HiddenSurfaceRemovalAsset` a caller still needs to download
@@ -669,6 +728,7 @@ impl Scene {
         self.file_mesh_plan
             .surfaces
             .clone_from(&self.hidden_surfaces);
+        self.resolve_viewport_meshes(&meshes, &images);
         let (mut resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
         resolved.skins_on_gpu = self.resolved_file_meshes.skins_on_gpu;
         for part in &mut self.parts {
@@ -970,6 +1030,10 @@ pub(super) fn assemble_part(
         color: color.map(|channel| srgb_to_linear(f32::from(channel) / 255.0)),
         alpha: alpha(properties, material.kind),
         reflectance: number(properties.get("Reflectance")).clamp(0.0, 1.0),
+        surfaces: match geometry.kind {
+            ShapeKind::Box => surfaces(properties),
+            _ => 0,
+        },
         casts_shadow: casts_shadow(properties),
         size: geometry.size,
         id,
@@ -978,12 +1042,14 @@ pub(super) fn assemble_part(
     }
 }
 
-/// `1 - Transparency`, except on a ForceField: Roblox draws one as a shell
-/// however solid the part claims to be, so it is capped at half-opaque, which
-/// also routes it through the renderer's blended pass, a file mesh's as
-/// much as a box's.
+/// `1 - Transparency`, faded further by `LocalTransparencyModifier` (the
+/// client's own see-through, a character up close to the camera), except on
+/// a ForceField: Roblox draws one as a shell however solid the part claims
+/// to be, so it is capped at half-opaque, which also routes it through the
+/// renderer's blended pass, a file mesh's as much as a box's.
 pub(super) fn alpha(properties: &std::collections::BTreeMap<String, Variant>, kind: Kind) -> f32 {
-    let alpha = 1.0 - number(properties.get("Transparency")).clamp(0.0, 1.0);
+    let local = 1.0 - number(properties.get("LocalTransparencyModifier")).clamp(0.0, 1.0);
+    let alpha = (1.0 - number(properties.get("Transparency")).clamp(0.0, 1.0)) * local;
     match kind {
         Kind::ForceField => alpha.min(FORCE_FIELD_ALPHA),
         _ => alpha,
@@ -992,6 +1058,38 @@ pub(super) fn alpha(properties: &std::collections::BTreeMap<String, Variant>, ki
 
 /// `BasePart.CastShadow`, which Studio only serializes when a builder has turned
 /// it off: its absence means the part casts, like everything else in a place.
+/// A block's six `*Surface` properties packed three bits a face, in
+/// `Enum.NormalId` order (Right, Top, Back, Left, Bottom, Front), for
+/// `material.wgsl`'s `surface_relief`. Only the patterns the real client
+/// paints on a face are kept (Glue, Weld, Studs, Inlet, Universal); Smooth,
+/// the hinges and motors are left flat. The real client paints them on
+/// Plastic only: a SmoothPlastic or Metal floor saved with studded tops
+/// shows none.
+fn surfaces(properties: &std::collections::BTreeMap<String, Variant>) -> u32 {
+    const PLASTIC: u32 = 256;
+    if properties
+        .get("Material")
+        .is_some_and(|m| !matches!(m, Variant::Enum(PLASTIC)))
+    {
+        return 0;
+    }
+    const FACES: [&str; 6] = [
+        "RightSurface",
+        "TopSurface",
+        "BackSurface",
+        "LeftSurface",
+        "BottomSurface",
+        "FrontSurface",
+    ];
+    FACES
+        .iter()
+        .enumerate()
+        .fold(0, |packed, (face, name)| match properties.get(*name) {
+            Some(&Variant::Enum(kind @ 1..=5)) => packed | kind << (3 * face),
+            _ => packed,
+        })
+}
+
 pub(super) fn casts_shadow(properties: &std::collections::BTreeMap<String, Variant>) -> bool {
     !matches!(properties.get("CastShadow"), Some(Variant::Bool(false)))
 }
