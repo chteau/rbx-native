@@ -3560,12 +3560,18 @@ goldens. Plan and status in `docs/research/local-run/PLAN.md`.
   user, the groups their key manages and the experience owner, from Open
   Cloud, kept on disk for offline), `ViewportFrame`s draw their meshes,
   textured Neon and see-through MeshParts draw like Studio, and the event
-  re-entrancy cap only counts a handler firing its own event.
+  re-entrancy cap only counts a handler firing its own event. An opaque
+  textured MeshPart shows its image's own colour where the image is clear
+  (only an R15 body part shows its Color there), and a see-through Neon part
+  draws at Studio's brightness with no glow, both measured in Studio 0.748.
 - [ ] 📋 **Still open**: the off conformance rows (buoyancy, pathfinding,
   terrain edges, BallSocket drift, jump apex), plugins inside a run,
   `CollectionService:CreateCollection`, `ControllerManager` character
   controllers, `FieldOfViewMode` keeping its angle when the window resizes
-  (not measured), and opening a `.rbxnrec` in the repro viewer.
+  (not measured), opening a `.rbxnrec` in the repro viewer, and see-through
+  parts blending the way Studio does (it mixes in gamma space, a SmoothPlastic
+  part at Transparency 0.4 over black is (159, 96, 1) here and (96, 52, 1)
+  there).
 
 ### Platform
 - [x] **Offline mode** (`rbx_net`): every outside request goes through
