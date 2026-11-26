@@ -3,6 +3,7 @@
 ## 2026-11-26
 
 - **EditableMesh follow-ups.** `CreateEditableMeshAsync` and `CreateEditableImageAsync` check who owns the asset now, like Studio: you, a group your key can manage, or the experience's owner, in Edit and in Play (local). I keep the answer on disk so offline still knows it, and offline with nothing kept the load fails like Studio's does with no network. MeshParts and SpecialMeshes inside a ViewportFrame draw as their real meshes with textures instead of grey boxes, so OpenArena's bot heads and menu banner show up. A textured Neon MeshPart doesn't glow anymore and a see-through one keeps its texture's alpha, I checked both in real Studio, that was OpenArena's white muzzle flash. And the "Maximum event re-entrancy depth exceeded" spam is gone, the cap only counts a handler firing its own event now. (@chteau)
+- **Windows and macOS CI green again.** Remote play on Windows dropped the connection with os error 997 now and then: Winsock doesn't like a socket whose read timed out, so on Windows the relay's sockets are non-blocking and wait out the tick themselves. The HttpService test's little server now reads the whole request before answering, Windows reset it otherwise. And the fidelity test skips a GUI scene whose font no source has (Builder Sans isn't in Studio's packages, only in an installed client), since its text comes out in the OS's own font. (@chteau)
 
 ## 2026-11-25
 
