@@ -58,9 +58,12 @@ pub(super) fn serve(shared: &Arc<Shared>, mut stream: TcpStream, request: &Reque
             break;
         }
         while let Ok(message) = inbox.try_recv() {
-            if ws.send(Message::binary(message)).is_err() {
+            if crate::tick::send(&mut ws, Message::binary(message)).is_err() {
                 break 'serve;
             }
+        }
+        if crate::tick::flush(&mut ws).is_err() {
+            break;
         }
         match ws.read() {
             Ok(Message::Binary(data)) if data.len() > 8 => {
@@ -88,11 +91,7 @@ pub(super) fn serve(shared: &Arc<Shared>, mut stream: TcpStream, request: &Reque
             }
             Ok(Message::Close(_)) => break,
             Ok(_) => {}
-            Err(tungstenite::Error::Io(e))
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) => {}
+            Err(e) if crate::tick::nothing_read(&e, TICK) => {}
             Err(_) => break,
         }
     }

@@ -363,6 +363,10 @@ fn dom_with_a_text_label() -> WeakDom {
 }
 
 fn dom_with_a_text_label_at(weight: u16) -> WeakDom {
+    dom_with_a_text_label_in("Shelf", weight)
+}
+
+fn dom_with_a_text_label_in(family: &str, weight: u16) -> WeakDom {
     let mut dom = dom_with_unresolvable_decal();
     let starter = Ref::new(9200);
     dom.insert(Instance::new(starter, "StarterGui", "StarterGui"));
@@ -377,7 +381,7 @@ fn dom_with_a_text_label_at(weight: u16) -> WeakDom {
     properties.insert(
         "FontFace".to_string(),
         Variant::Font(rbx_dom::Font {
-            family: "rbxasset://fonts/families/Shelf.json".to_string(),
+            family: format!("rbxasset://fonts/families/{family}.json"),
             weight,
             style: rbx_dom::FontStyle::Normal,
             cached_face_id: None,
@@ -575,4 +579,34 @@ fn a_face_the_family_names_but_nobody_has_falls_back_to_the_nearest() {
         .bytes_of(&extra_bold)
         .expect("the nearest face stands in");
     assert_eq!(asset, &AssetRef::Native("fonts/Shelf-Bold.ttf".to_string()));
+}
+
+// A family no source has sets its text in the system's sans-serif, which
+// says nothing in the warnings; `missing_fonts` is where it shows. A family
+// that landed, even on its nearest face, is not missing.
+#[test]
+fn a_family_nobody_has_is_a_missing_font() {
+    let database = ReflectionDatabase::embedded();
+    let nothing = Toggles {
+        textures: false,
+        materials: false,
+        lights: false,
+        clock_time: None,
+        show_development_gui: false,
+    };
+    let settled = |dom: WeakDom| {
+        let mut resident = Resident::fed_by(std::sync::Arc::new(FontShelf));
+        let mut loaded = Loaded::from_dom(&dom, &database, nothing, &mut resident).expect("load");
+        for _ in 0..4 {
+            resident.settle(std::time::Duration::from_secs(5));
+            loaded.resolve(&mut resident);
+        }
+        loaded.missing_fonts()
+    };
+
+    assert_eq!(settled(dom_with_a_text_label_at(400)), Vec::new());
+    assert_eq!(
+        settled(dom_with_a_text_label_in("Gone", 400)),
+        vec![crate::fonts::Face::named("Gone", 400, false)]
+    );
 }

@@ -338,13 +338,16 @@ fn session(
                 stats
                     .sent
                     .fetch_add(message.len() as u64, Ordering::Relaxed);
-                if let Err(e) = socket.send(Message::binary(message)) {
+                if let Err(e) = crate::tick::send(socket, Message::binary(message)) {
                     dequeued(stats, &bytes);
                     return Some(e.to_string());
                 }
             }
             dequeued(stats, &bytes);
             *next_id = next_id.wrapping_add(1);
+        }
+        if let Err(e) = crate::tick::flush(socket) {
+            return Some(e.to_string());
         }
         match socket.read() {
             Ok(Message::Binary(data)) if data.len() > 8 => {
@@ -362,11 +365,7 @@ fn session(
             }
             Ok(Message::Close(_)) => return Some("the relay closed the connection".into()),
             Ok(_) => {}
-            Err(tungstenite::Error::Io(e))
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                ) => {}
+            Err(e) if crate::tick::nothing_read(&e, TICK) => {}
             Err(e) => return Some(e.to_string()),
         }
     }

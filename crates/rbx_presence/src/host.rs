@@ -377,7 +377,7 @@ fn upgrade(
         stream,
         "HTTP/1.1 101 Switching Protocols\r\nupgrade: websocket\r\nconnection: Upgrade\r\nsec-websocket-accept: {accept}\r\n\r\n"
     );
-    let _ = stream.set_read_timeout(Some(tick));
+    let _ = crate::tick::set(&stream, tick);
     let _ = stream.set_write_timeout(Some(IO_TIMEOUT));
     let config = max_message.map(|most| {
         tungstenite::protocol::WebSocketConfig::default()
@@ -399,7 +399,7 @@ fn socket(shared: &Arc<Shared>, stream: TcpStream, request: &Request, user_id: u
     let (outbox_id, outbox) = shared.subscribe();
     let first = serde_json::to_string(&shared.room().snapshot()).unwrap_or_default();
     let mut client: Option<Client> = None;
-    if ws.send(Message::text(first)).is_ok() {
+    if crate::tick::send(&mut ws, Message::text(first)).is_ok() {
         loop {
             if shared.stop.load(Ordering::SeqCst) {
                 let _ = ws.close(None);
@@ -407,12 +407,12 @@ fn socket(shared: &Arc<Shared>, stream: TcpStream, request: &Request, user_id: u
             }
             let mut failed = false;
             while let Ok(text) = outbox.try_recv() {
-                if ws.send(Message::text(text)).is_err() {
+                if crate::tick::send(&mut ws, Message::text(text)).is_err() {
                     failed = true;
                     break;
                 }
             }
-            if failed {
+            if failed || crate::tick::flush(&mut ws).is_err() {
                 break;
             }
             match ws.read() {
@@ -441,11 +441,7 @@ fn socket(shared: &Arc<Shared>, stream: TcpStream, request: &Request, user_id: u
                 }
                 Ok(Message::Close(_)) => break,
                 Ok(_) => {}
-                Err(tungstenite::Error::Io(e))
-                    if matches!(
-                        e.kind(),
-                        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-                    ) => {}
+                Err(e) if crate::tick::nothing_read(&e, SOCKET_TICK) => {}
                 Err(_) => break,
             }
         }

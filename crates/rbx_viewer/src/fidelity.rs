@@ -410,7 +410,8 @@ pub fn content(uri: &str) -> Variant {
 
 /// Draws `scene` as this renderer does at [`CAPTURE`], once every asset it
 /// asked for has landed: RGBA8, row by row, and the warnings loading it
-/// raised (an asset that could not be fetched, say). Its screens are drawn
+/// raised (an asset that could not be fetched, say, or a font family that
+/// fell back to the system's). Its screens are drawn
 /// as the player sees them, under the top bar.
 pub fn render(scene: &Scene) -> Result<(Vec<u8>, Vec<String>), String> {
     let (place, player_gui) = scene.place();
@@ -444,7 +445,29 @@ fn draw(scene: &Scene, place: &WeakDom) -> Result<(Vec<u8>, Vec<String>), String
         headless.render_frame(width, height)?;
     }
     let pixels = headless.take_frame()?.ok_or("no frame was queued")?.pixels;
-    Ok((pixels, headless.drain_warnings()))
+    // A face that never landed is drawn in whatever sans-serif the machine
+    // has, so the picture is the OS's, not ours: as good as a missing asset.
+    let mut warnings = headless.drain_warnings();
+    warnings.extend(
+        headless
+            .missing_fonts()
+            .into_iter()
+            .map(|family| format!("{family}: no face, set in the system's sans-serif")),
+    );
+    Ok((pixels, warnings))
+}
+
+/// Why this machine's frames can't be held to the goldens, which were drawn
+/// with full-size materials and sun map: a GPU with little memory of its own
+/// (a software adapter, most integrated ones) starts smaller. Only known once
+/// a scene has been rendered, as that opens the device.
+pub fn reduced() -> Option<String> {
+    crate::gpu::reduced().then(|| {
+        format!(
+            "this GPU draws {} px materials, the goldens are full size",
+            crate::gpu::material_resolution()
+        )
+    })
 }
 
 /// Where the committed references and goldens live.
