@@ -139,9 +139,34 @@ fn http_requests_reach_a_local_server_and_fail_like_roblox_offline() {
     let port = listener.local_addr().unwrap().port();
     let server = std::thread::spawn(move || {
         let (mut stream, _) = listener.accept().unwrap();
+        // The whole request, body too: the client may send the body in a
+        // write of its own, and closing with it unread resets the
+        // connection (Windows does, before the client reads the answer).
+        let mut request = Vec::new();
         let mut buffer = [0u8; 4096];
-        let n = stream.read(&mut buffer).unwrap();
-        let request = String::from_utf8_lossy(&buffer[..n]).into_owned();
+        loop {
+            let n = stream.read(&mut buffer).unwrap();
+            request.extend_from_slice(&buffer[..n]);
+            let text = String::from_utf8_lossy(&request);
+            let Some((head, body)) = text.split_once("\r\n\r\n") else {
+                assert!(n > 0, "the request ended inside its headers");
+                continue;
+            };
+            let length = head
+                .lines()
+                .find_map(|line| {
+                    line.to_ascii_lowercase()
+                        .strip_prefix("content-length:")?
+                        .trim()
+                        .parse()
+                        .ok()
+                })
+                .unwrap_or(0);
+            if n == 0 || body.len() >= length {
+                break;
+            }
+        }
+        let request = String::from_utf8_lossy(&request).into_owned();
         let body = r#"{"ok":true}"#;
         write!(
             stream,
