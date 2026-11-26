@@ -444,8 +444,98 @@ fn a_textured_neon_mesh_part_is_plain_and_a_see_through_one_keeps_its_alpha() {
     };
     assert_eq!(entry(1).material.kind, Kind::Plastic);
     assert_eq!(entry(2).material.kind, Kind::Neon);
-    assert!(entry(1).reveals_color);
-    assert!(!entry(3).reveals_color);
+    assert_eq!(entry(1).backing, Backing::Solid);
+    assert_eq!(entry(3).backing, Backing::Image);
+}
+
+/// Studio 0.748, one face image on opaque MeshParts: a Rig Builder head
+/// shows its grey colour where the image is empty, the same head out of the
+/// rig, renamed in it or under an R6 Humanoid shows the image's own colour.
+#[test]
+fn only_an_r15_body_part_shows_its_colour_through_its_image() {
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(9000);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    let rig = |dom: &mut WeakDom, id: u32, rig_type: Option<u32>| {
+        let model = Ref::new(id);
+        dom.insert(Instance::new(model, "Model", "Rig"));
+        dom.set_parent(model, Some(workspace));
+        let humanoid = Ref::new(id + 1);
+        let mut instance = Instance::new(humanoid, "Humanoid", "Humanoid");
+        if let Some(value) = rig_type {
+            instance
+                .properties_mut()
+                .insert("RigType".to_string(), Variant::Enum(value));
+        }
+        dom.insert(instance);
+        dom.set_parent(humanoid, Some(model));
+        model
+    };
+    let r15 = rig(&mut dom, 100, Some(1));
+    let r6 = rig(&mut dom, 200, Some(0));
+    let unset = rig(&mut dom, 300, None);
+    let cases = [
+        (1, "Head", r15, Backing::Color),
+        (2, "LeftHand", r15, Backing::Color),
+        (3, "Head2", r15, Backing::Solid),
+        (4, "Head", r6, Backing::Solid),
+        (5, "Head", unset, Backing::Solid),
+        (6, "Head", workspace, Backing::Solid),
+    ];
+    for (id, name, parent, _) in cases {
+        let referent = Ref::new(id);
+        let mut instance = Instance::new(referent, "MeshPart", name);
+        let properties = instance.properties_mut();
+        properties.insert(
+            "MeshId".to_string(),
+            Variant::String("rbxassetid://1".to_string()),
+        );
+        properties.insert(
+            "TextureID".to_string(),
+            Variant::String("rbxassetid://2".to_string()),
+        );
+        properties.insert("size".to_string(), vector3_variant(1.0, 1.0, 1.0));
+        properties.insert("CFrame".to_string(), cframe_at(0.0, 0.0, 0.0));
+        dom.insert(instance);
+        dom.set_parent(referent, Some(parent));
+    }
+
+    let plan = planned(&dom);
+    for (id, name, _, backing) in cases {
+        let entry = plan
+            .entries
+            .iter()
+            .find(|e| e.referent == Ref::new(id))
+            .unwrap();
+        assert_eq!(entry.backing, backing, "{name} #{id}");
+    }
+}
+
+/// The copy each backing draws: the flash image Roblox serves (black where
+/// its alpha is 0) stays black on a plain opaque MeshPart, takes the part's
+/// red on a body part, and is left alone with its alpha where that is kept.
+#[test]
+fn a_backed_image_fills_its_empty_texels_with_what_shows_through() {
+    let texture = AssetRef::Thumb("flash".to_string());
+    let mut images = HashMap::new();
+    images.insert(
+        texture.clone(),
+        Arc::new(Image {
+            width: 2,
+            height: 1,
+            pixels: vec![0, 0, 0, 0, 255, 247, 191, 143],
+        }),
+    );
+    let red = [1.0, 0.0, 0.0];
+    let pixels =
+        |key: &AssetRef, images: &HashMap<AssetRef, Arc<Image>>| images[key].pixels.clone();
+
+    let solid = backed(&texture, Backing::Solid, red, &mut images);
+    assert_eq!(pixels(&solid, &images), [0, 0, 0, 255, 255, 247, 191, 255]);
+    let over = backed(&texture, Backing::Color, red, &mut images);
+    assert_eq!(pixels(&over, &images)[..4], [255, 0, 0, 255]);
+    assert_eq!(backed(&texture, Backing::Image, red, &mut images), texture);
 }
 
 /// A script's `EditableMesh` as the VM publishes it.
