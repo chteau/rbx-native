@@ -81,10 +81,31 @@ pub struct Services {
     /// Studio's local secrets for `HttpService:GetSecret`: name → (value,
     /// the domain it may be sent to).
     pub secrets: HashMap<String, (String, String)>,
-    /// The creators (user or group ids) whose assets the place may open
-    /// as editables: the experience's owner, the editor's user. Empty
-    /// skips the check.
-    pub asset_owners: Vec<u64>,
+    /// Whose assets the place may open as editables; `None` skips the
+    /// check.
+    pub asset_owners: Option<Arc<dyn AssetOwners>>,
+}
+
+/// The users and groups whose assets `CreateEditableMeshAsync` and
+/// `CreateEditableImageAsync` may load.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Creators {
+    pub users: Vec<u64>,
+    pub groups: Vec<u64>,
+}
+
+/// Works out [`Creators`] for the experience `universe` (0 for a place
+/// that isn't published). Called off the UI thread, from the script's
+/// own async call; `Err` when they can't be known (offline with nothing
+/// remembered).
+pub trait AssetOwners: Send + Sync + std::fmt::Debug {
+    fn owners(&self, universe: u64) -> std::result::Result<Creators, String>;
+}
+
+impl AssetOwners for Creators {
+    fn owners(&self, _universe: u64) -> std::result::Result<Creators, String> {
+        Ok(self.clone())
+    }
 }
 
 /// A model asset's file (binary or XML), by id. Called off the script
@@ -254,7 +275,7 @@ impl Default for Services {
             assets: None,
             web_session: None,
             secrets: HashMap::new(),
-            asset_owners: Vec::new(),
+            asset_owners: None,
         }
     }
 }

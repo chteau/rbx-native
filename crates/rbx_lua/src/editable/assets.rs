@@ -16,23 +16,35 @@ pub(super) fn error(message: impl Into<String>) -> mlua::Error {
     mlua::Error::runtime(message.into())
 }
 
-/// Whether the place may open asset `id` as an editable.
-fn permitted(env: &Env, id: u64) -> bool {
-    if env.owners.is_empty() {
-        return true;
-    }
-    // A lookup that fails (offline, an unknown asset) leaves it to the
-    // download to say what's wrong.
-    let Ok(info) = crate::server::product_info(id as i64, "Asset", env.cache_dir.clone()) else {
-        return true;
+/// Whether the place may open asset `id` as an editable: its creator has
+/// to be one of the env's owners. Studio can't load an asset with no
+/// network at all, so offline an asset whose creator was never looked up
+/// (nothing kept under the cache) fails as a download would.
+fn permitted(env: &Env, id: u64) -> std::result::Result<(), Failure> {
+    let Some(owners) = &env.owners else {
+        return Ok(());
+    };
+    let info = match crate::server::product_info(id as i64, "Asset", env.cache_dir.clone()) {
+        Ok(info) => info,
+        Err(why) if rbx_net::is_offline_message(&why) => return Err(Failure::Other),
+        // An unknown asset: the download says what's wrong.
+        Err(_) => return Ok(()),
     };
     let creator = &info["Creator"];
-    match creator["CreatorTargetId"]
+    let Some(creator_id) = creator["CreatorTargetId"]
         .as_u64()
         .or_else(|| creator["Id"].as_u64())
-    {
-        Some(creator) => env.owners.contains(&creator),
-        None => true,
+    else {
+        return Ok(());
+    };
+    let owners = owners.owners(env.universe).map_err(|_| Failure::Other)?;
+    let allowed = match creator["CreatorType"].as_str() {
+        Some("Group") => &owners.groups,
+        _ => &owners.users,
+    };
+    match allowed.contains(&creator_id) {
+        true => Ok(()),
+        false => Err(Failure::Denied),
     }
 }
 
@@ -49,8 +61,8 @@ pub(super) fn download(env: &Env, uri: &str, check: bool) -> std::result::Result
     let source = env.assets().ok_or(Failure::Other)?;
     match AssetRef::parse(uri) {
         Ok(AssetRef::Id(id)) => {
-            if check && !permitted(env, id) {
-                return Err(Failure::Denied);
+            if check {
+                permitted(env, id)?;
             }
             source.fetch(id).map_err(|e| {
                 match e.contains("404") || e.to_lowercase().contains("not found") {

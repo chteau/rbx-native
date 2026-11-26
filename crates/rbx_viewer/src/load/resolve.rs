@@ -217,7 +217,20 @@ impl Loaded {
     /// Warnings are dropped like [`Loaded::resolve_fonts`]'s are: a
     /// streaming loader reports those through `Resident::poll`, and this
     /// path only ever runs on one.
+    /// A re-planned `ViewportFrame` starts over with boxes: its meshes are
+    /// asked for and joined here the same way.
     pub(crate) fn resolve_gui_images(&mut self, resident: &mut Resident) {
+        let (meshes, textures) = self.scene.viewport_mesh_assets();
+        if !meshes.is_empty() {
+            self.want(&meshes);
+            self.want(&textures);
+            let (meshes, _warnings) = resident.meshes(&meshes);
+            let (images, _warnings) = match self.toggles.textures {
+                true => resident.images(&textures),
+                false => Default::default(),
+            };
+            self.scene.resolve_viewport_meshes(&meshes, &images);
+        }
         let references = self.scene.gui_assets();
         if references.is_empty() {
             return;

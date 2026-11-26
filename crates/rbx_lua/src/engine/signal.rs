@@ -288,23 +288,23 @@ const EVENT_DEPTH: u32 = 6;
 
 /// How deep in a chain of handlers re-firing `key` a handler of it run now
 /// would be: `None`, with the error Roblox reports, past [`EVENT_DEPTH`].
-/// A firing replayed from the change log (`change`) counts the rounds the
-/// event fired in back to back, any other the handler running now.
+/// A firing replayed from the change log (`change`) is as deep as the
+/// handler that made the change, one deeper when that handler was one of
+/// the same event's; any other is as deep as the handler running now. An
+/// instance a deferred thread or another event's handler made is no
+/// re-entrancy, however many rounds in a row such writes keep coming.
 fn handler_depth(lua: &Lua, key: &SignalKey, change: Option<u64>, func: &Function) -> Option<u32> {
     let engine = engine(lua);
-    let mut scheduler = engine.scheduler.borrow_mut();
-    let depth = match change {
-        Some(_) => scheduler.rounds[0].get(key).map_or(1, |d| d + 1),
-        None => match &scheduler.event {
-            Some((running, depth)) if running == key => depth + 1,
-            _ => 1,
-        },
+    let scheduler = engine.scheduler.borrow_mut();
+    let cause = match change {
+        Some(number) => scheduler.cause_of(number).map(|cause| &cause.event),
+        None => scheduler.event.as_ref(),
+    };
+    let depth = match cause {
+        Some((running, depth)) if running == key => depth + 1,
+        _ => 1,
     };
     if depth <= EVENT_DEPTH {
-        if change.is_some() {
-            let seen = scheduler.rounds[1].entry(key.clone()).or_insert(depth);
-            *seen = (*seen).max(depth);
-        }
         return Some(depth);
     }
     drop(scheduler);

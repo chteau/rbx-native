@@ -7,15 +7,15 @@ use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
-pub(super) struct Captured {
-    pub(super) method: String,
+pub(crate) struct Captured {
+    pub(crate) method: String,
     target: String,
-    pub(super) api_key: Option<String>,
+    pub(crate) api_key: Option<String>,
     body: String,
 }
 
 impl Captured {
-    pub(super) fn path(&self) -> &str {
+    pub(crate) fn path(&self) -> &str {
         self.target.split('?').next().unwrap()
     }
     pub(super) fn query(&self) -> String {
@@ -50,9 +50,9 @@ fn decode(s: &str) -> String {
     String::from_utf8(out).unwrap()
 }
 
-pub(super) type Log = Arc<Mutex<Vec<Captured>>>;
+pub(crate) type Log = Arc<Mutex<Vec<Captured>>>;
 
-pub(super) fn serve(replies: Vec<(u16, &str)>) -> (String, Log) {
+pub(crate) fn serve(replies: Vec<(u16, &str)>) -> (String, Log) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let root = format!("http://{}", listener.local_addr().unwrap());
     let log: Log = Arc::default();
@@ -122,7 +122,7 @@ pub(super) fn serve(replies: Vec<(u16, &str)>) -> (String, Log) {
     (root, log)
 }
 
-pub(super) fn client(root: &str) -> Client {
+pub(crate) fn client(root: &str) -> Client {
     Client::new(Some(ApiKey::new("k"))).with_apis_root(root)
 }
 

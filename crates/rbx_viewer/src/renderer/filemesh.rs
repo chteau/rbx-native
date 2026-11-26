@@ -83,6 +83,8 @@ pub(super) struct FileMeshes {
     /// Which `blended` batch holds each translucent instance.
     blended_index: HashMap<Ref, usize>,
     order: Vec<usize>,
+    /// Whether the blended set reads the opaque scene's depth (group 3).
+    scene_depth: bool,
 }
 
 impl FileMeshes {
@@ -92,6 +94,27 @@ impl FileMeshes {
         target: Target,
         frame_layout: &wgpu::BindGroupLayout,
         material_layout: &wgpu::BindGroupLayout,
+        resolved: &Resolved,
+        quality: &QualityProfile,
+    ) -> Self {
+        Self::with_depth(
+            device,
+            queue,
+            (target, true),
+            (frame_layout, material_layout),
+            resolved,
+            quality,
+        )
+    }
+
+    /// [`FileMeshes::new`], where `scene_depth` says whether the blended
+    /// set reads the opaque scene's depth: a pass with no such depth bound
+    /// (a `ViewportFrame`'s) builds it without.
+    pub(super) fn with_depth(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        (target, scene_depth): (Target, bool),
+        (frame_layout, material_layout): (&wgpu::BindGroupLayout, &wgpu::BindGroupLayout),
         resolved: &Resolved,
         quality: &QualityProfile,
     ) -> Self {
@@ -107,8 +130,8 @@ impl FileMeshes {
             appearance: &appearance_layout,
         };
         let mut meshes = FileMeshes {
-            opaque_pipelines: pipelines::build(device, target, &layouts, false),
-            blended_pipelines: pipelines::build(device, target, &layouts, true),
+            opaque_pipelines: pipelines::build(device, target, &layouts, false, scene_depth),
+            blended_pipelines: pipelines::build(device, target, &layouts, true, scene_depth),
             appearances: appearance::Sets::new(
                 device,
                 queue,
@@ -128,6 +151,7 @@ impl FileMeshes {
             blended: Vec::new(),
             blended_index: HashMap::new(),
             order: Vec::new(),
+            scene_depth,
         };
         meshes.rebuild(device, queue, resolved);
         meshes
@@ -253,8 +277,8 @@ impl FileMeshes {
             materials,
             appearance: &self.appearance_layout,
         };
-        self.opaque_pipelines = pipelines::build(device, target, &layouts, false);
-        self.blended_pipelines = pipelines::build(device, target, &layouts, true);
+        self.opaque_pipelines = pipelines::build(device, target, &layouts, false, self.scene_depth);
+        self.blended_pipelines = pipelines::build(device, target, &layouts, true, self.scene_depth);
     }
 
     /// Re-sorts what has to blend for this frame's camera, furthest first: the

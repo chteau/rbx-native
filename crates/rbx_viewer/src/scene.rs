@@ -545,13 +545,55 @@ impl Scene {
         // A `ViewportFrame`'s parts point at the same layers, so they go
         // plastic-then-textured on the same schedule.
         let materials = &self.materials;
-        let mut reslot = |part: &mut Part| part.material = materials.slot(part.material.layer);
+        let mut reslot = |viewport: &mut GuiViewport| {
+            for part in &mut viewport.parts {
+                part.material = materials.slot(part.material.layer);
+            }
+            for instance in &mut viewport.meshes.instances {
+                instance.material = materials.slot(instance.material.layer);
+            }
+        };
         for screen in &mut self.gui {
-            screen.viewport_parts(&mut reslot);
+            screen.viewports(&mut reslot);
         }
         for gui in &mut self.gui_spaces {
-            gui.viewport_parts(&mut reslot);
+            gui.viewports(&mut reslot);
         }
+    }
+
+    fn each_viewport(&mut self, apply: &mut impl FnMut(&mut GuiViewport)) {
+        for screen in &mut self.gui {
+            screen.viewports(apply);
+        }
+        for gui in &mut self.gui_spaces {
+            gui.viewports(apply);
+        }
+    }
+
+    /// The mesh and texture assets the `ViewportFrame`s want, see
+    /// [`Scene::resolve_viewport_meshes`].
+    pub(crate) fn viewport_mesh_assets(&mut self) -> (Vec<AssetRef>, Vec<AssetRef>) {
+        let (mut meshes, mut textures) = (Vec::new(), Vec::new());
+        self.each_viewport(&mut |viewport| viewport.meshes.assets(&mut meshes, &mut textures));
+        meshes.sort_by_key(|key| format!("{key:?}"));
+        meshes.dedup();
+        textures.sort_by_key(|key| format!("{key:?}"));
+        textures.dedup();
+        (meshes, textures)
+    }
+
+    /// Joins every `ViewportFrame`'s meshes to whichever of `meshes` and
+    /// `images` it names, the way [`Scene::resolve_file_meshes`] does the
+    /// workspace's: a GUI re-plan starts a frame over with boxes, and this
+    /// puts back what has already downloaded.
+    pub(crate) fn resolve_viewport_meshes(
+        &mut self,
+        meshes: &HashMap<AssetRef, Arc<rbx_mesh::SkinnedMesh>>,
+        images: &HashMap<AssetRef, Arc<Image>>,
+    ) {
+        self.each_viewport(&mut |viewport| {
+            viewport.meshes.resolve(&mut viewport.parts, meshes, images);
+        });
     }
 
     /// Every part's unit-mesh placement, keyed by DOM referent so the texture
@@ -624,11 +666,25 @@ impl Scene {
 
     /// Every mesh and texture asset a caller needs to download before calling
     /// [`Scene::resolve_file_meshes`].
-    pub(crate) fn file_mesh_assets(&self) -> (Vec<AssetRef>, Vec<AssetRef>) {
-        (
+    pub(crate) fn file_mesh_assets(&mut self) -> (Vec<AssetRef>, Vec<AssetRef>) {
+        let (mut meshes, mut textures) = (
             self.file_mesh_plan.mesh_refs(),
             self.file_mesh_plan.texture_refs(),
-        )
+        );
+        let (viewport_meshes, viewport_textures) = self.viewport_mesh_assets();
+        meshes.extend(
+            viewport_meshes
+                .into_iter()
+                .filter(|m| !meshes.contains(m))
+                .collect::<Vec<_>>(),
+        );
+        textures.extend(
+            viewport_textures
+                .into_iter()
+                .filter(|t| !textures.contains(t))
+                .collect::<Vec<_>>(),
+        );
+        (meshes, textures)
     }
 
     /// Every `HiddenSurfaceRemovalAsset` a caller still needs to download
@@ -672,6 +728,7 @@ impl Scene {
         self.file_mesh_plan
             .surfaces
             .clone_from(&self.hidden_surfaces);
+        self.resolve_viewport_meshes(&meshes, &images);
         let (mut resolved, hidden) = filemesh::resolve(&self.file_mesh_plan, meshes, images);
         resolved.skins_on_gpu = self.resolved_file_meshes.skins_on_gpu;
         for part in &mut self.parts {

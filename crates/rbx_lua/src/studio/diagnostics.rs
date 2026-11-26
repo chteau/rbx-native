@@ -174,20 +174,6 @@ fn test_service(lua: &Lua, ctx: &Ctx, referent: Ref, key: &str) -> Result<Option
     Ok(Some(Value::Function(f)))
 }
 
-/// What the process holds, in MB: the resident set, as Studio's figure is
-/// its own process's.
-fn resident_mb() -> f64 {
-    std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|status| {
-            status
-                .lines()
-                .find_map(|l| l.strip_prefix("VmRSS:"))
-                .and_then(|v| v.split_whitespace().next()?.parse::<f64>().ok())
-        })
-        .map_or(0.0, |kb| kb / 1024.0)
-}
-
 /// Studio answers `GetMemoryUsageMbForTag` with 0 for every tag outside a
 /// playtest; a live server gives the Lua heap for `LuaHeap` and `Script`
 /// (the ProfilerApi golden), 0 for the rest. A tag's name works as well as
@@ -195,7 +181,9 @@ fn resident_mb() -> f64 {
 /// rest of `Stats`' functions need a capability no script has.
 fn stats(lua: &Lua, key: &str) -> Result<Option<Value>> {
     let f = match key {
-        "GetTotalMemoryUsageMb" => lua.create_function(|_, _: MultiValue| Ok(resident_mb()))?,
+        "GetTotalMemoryUsageMb" => {
+            lua.create_function(|_, _: MultiValue| Ok(crate::profiler::resident_mb()))?
+        }
         "GetMemoryUsageMbForTag" => lua.create_function(|lua, args: MultiValue| {
             let tag = arg(&args, 0);
             let named = tag.is_string()

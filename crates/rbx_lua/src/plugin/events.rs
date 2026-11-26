@@ -418,7 +418,7 @@ impl Hooks for PluginHooks {
         // Editables work in Edit as in Studio, no Local Run needed.
         match class {
             "AssetService" | "MeshPart" => {
-                let editables = std::rc::Rc::new(crate::editable::Env::edit(ctx));
+                let editables = std::rc::Rc::new(crate::editable::Env::edit(lua, ctx)?);
                 let found = match class {
                     "AssetService" => crate::editable::member(lua, &editables, key)?,
                     _ => crate::editable::mesh_part_member(lua, &editables, referent, key)?,

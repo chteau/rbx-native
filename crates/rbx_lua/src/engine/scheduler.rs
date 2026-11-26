@@ -92,9 +92,44 @@ pub(crate) struct Scheduler {
     pub(crate) event: Option<(super::signal::SignalKey, u32)>,
     /// The same for each queued deferred handler thread.
     pub(crate) event_depth: HashMap<usize, (super::signal::SignalKey, u32)>,
-    /// The depth each event fired at in the last and in this round of
-    /// instance events replayed from the change log.
-    pub(crate) rounds: [HashMap<super::signal::SignalKey, u32>; 2],
+    /// Which handler made each stretch of the change log, in the last and
+    /// in this round of instance events replayed from it: a change a
+    /// handler of the same event made re-fires it one deeper, any other
+    /// change starts at the top.
+    pub(crate) causes: [Vec<Cause>; 2],
+}
+
+/// The changes numbered past `after` up to `until` (see
+/// `changes::first_number`), made by a handler of `event` at its depth.
+#[derive(Clone, Debug)]
+pub(crate) struct Cause {
+    after: u64,
+    until: u64,
+    pub(crate) event: (super::signal::SignalKey, u32),
+}
+
+impl Scheduler {
+    /// The handler that made change `number`, if one did.
+    pub(crate) fn cause_of(&self, number: u64) -> Option<&Cause> {
+        self.causes
+            .iter()
+            .flatten()
+            .find(|cause| cause.after < number && number <= cause.until)
+    }
+}
+
+/// Files what the handler of `event` that ran while the change log grew
+/// past `after` changed.
+fn caused(lua: &Lua, after: u64, event: Option<(super::signal::SignalKey, u32)>) {
+    let engine = engine(lua);
+    let until = engine.ctx.dom().mutations();
+    if let Some(event) = event.filter(|_| until > after) {
+        engine.scheduler.borrow_mut().causes[1].push(Cause {
+            after,
+            until,
+            event,
+        });
+    }
 }
 
 impl Scheduler {
@@ -326,8 +361,10 @@ pub(crate) fn spawn_handler(
     event: (super::signal::SignalKey, u32),
 ) -> Result<()> {
     let engine = engine(lua);
-    let outer = engine.scheduler.borrow_mut().event.replace(event);
+    let outer = engine.scheduler.borrow_mut().event.replace(event.clone());
+    let after = engine.ctx.dom().mutations();
     let spawned = spawn(lua, func, args);
+    caused(lua, after, Some(event));
     engine.scheduler.borrow_mut().event = outer;
     spawned
 }
@@ -336,12 +373,12 @@ pub(crate) fn spawn_handler(
 pub(crate) fn next_round(lua: &Lua) {
     let engine = engine(lua);
     let mut scheduler = engine.scheduler.borrow_mut();
-    scheduler.rounds[0] = std::mem::take(&mut scheduler.rounds[1]);
+    scheduler.causes[0] = std::mem::take(&mut scheduler.causes[1]);
 }
 
 /// Forgets the rounds, at the start of a resumption point.
 pub(crate) fn reset_rounds(lua: &Lua) {
-    engine(lua).scheduler.borrow_mut().rounds = Default::default();
+    engine(lua).scheduler.borrow_mut().causes = Default::default();
 }
 
 /// The script timeout's deadline, which the VM's interrupt reads: as in
@@ -788,12 +825,15 @@ pub(crate) fn run_deferred(lua: &Lua) -> Result<()> {
         }
         for (thread, args) in deferred {
             let key = thread.to_pointer() as usize;
-            {
+            let event = {
                 let mut scheduler = engine.scheduler.borrow_mut();
                 scheduler.depth = scheduler.defer_depth.remove(&key).unwrap_or(0);
                 scheduler.event = scheduler.event_depth.remove(&key);
-            }
+                scheduler.event.clone()
+            };
+            let after = engine.ctx.dom().mutations();
             let resumed = resume(lua, thread, args);
+            caused(lua, after, event);
             let mut scheduler = engine.scheduler.borrow_mut();
             scheduler.depth = 0;
             scheduler.event = None;

@@ -103,19 +103,6 @@ fn peer_label(peer: Peer) -> String {
     }
 }
 
-/// The resident memory of the editor process, in MB.
-fn resident_mb() -> f64 {
-    std::fs::read_to_string("/proc/self/status")
-        .ok()
-        .and_then(|status| {
-            status
-                .lines()
-                .find_map(|l| l.strip_prefix("VmRSS:"))
-                .and_then(|v| v.split_whitespace().next()?.parse::<f64>().ok())
-        })
-        .map_or(0.0, |kb| kb / 1024.0)
-}
-
 fn small(text: impl Into<SharedString>) -> Div {
     div()
         .flex_none()
@@ -368,6 +355,9 @@ impl Shell {
             .px(px(8.))
             .gap(px(2.))
             .children(rows)
-            .child(small(format!("Editor process {:.0} MB", resident_mb())))
+            .child(small(format!(
+                "Editor process {:.0} MB",
+                rbx_lua::profiler::resident_mb()
+            )))
     }
 }

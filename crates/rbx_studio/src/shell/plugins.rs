@@ -103,6 +103,10 @@ impl Shell {
         rbx_lua::set_asset_source(rbx_sim::asset_source(std::sync::Arc::new(
             super::local_run::EditFetcher,
         )));
+        rbx_lua::set_asset_owners(
+            super::local_run::owners::shared(),
+            super::local_run::owners::cache_dir(),
+        );
         host.set_permissions(self.permissions.clone());
         let mut wasm = Vec::new();
         self.plugins.built_in.clear();

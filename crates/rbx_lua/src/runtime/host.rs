@@ -103,11 +103,11 @@ impl Hooks for CommandBarHooks {
             "Selection" => super::selection::member(lua, ctx, key),
             "AssetService" => crate::editable::member(
                 lua,
-                &std::rc::Rc::new(crate::editable::Env::edit(ctx)),
+                &std::rc::Rc::new(crate::editable::Env::edit(lua, ctx)?),
                 key,
             ),
             "MeshPart" => {
-                let env = std::rc::Rc::new(crate::editable::Env::edit(ctx));
+                let env = std::rc::Rc::new(crate::editable::Env::edit(lua, ctx)?);
                 crate::editable::mesh_part_member(lua, &env, referent, key)
             }
             _ => Ok(None),

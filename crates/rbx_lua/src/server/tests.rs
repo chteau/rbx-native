@@ -119,3 +119,32 @@ fn collision_groups_register_and_pair() {
     assert_eq!(vm.take_output().lines(), ["false true"]);
     assert!(!vm.collision_groups().borrow().collides("A", "Default"));
 }
+
+// Instances a deferred thread keeps making, round after round, are no
+// re-entrancy of `DescendantAdded`: no handler of it made them. Only a
+// handler re-firing its own event is capped (ScriptLimits golden).
+#[test]
+fn instances_made_round_after_round_are_not_re_entrancy() {
+    let (dom, refs) = place(&[(
+        "Script",
+        "S",
+        "local heard = 0
+         workspace.DescendantAdded:Connect(function()
+             heard += 1
+             if heard == 12 then print('heard', heard) end
+         end)
+         local made = 1
+         workspace.ChildAdded:Connect(function()
+             if made < 12 then
+                 made += 1
+                 task.defer(function() Instance.new('Part', workspace) end)
+             end
+         end)
+         Instance.new('Part', workspace)",
+    )]);
+    let mut vm = vm(dom);
+    vm.start_script(refs[0]).unwrap();
+    vm.resume();
+    vm.resume();
+    assert_eq!(vm.take_output().lines(), ["heard 12"]);
+}

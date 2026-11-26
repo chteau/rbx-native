@@ -3556,7 +3556,11 @@ goldens. Plan and status in `docs/research/local-run/PLAN.md`.
   viewport redraws what a script changes, in Play (local) and in the command
   bar and plugins (no beta needed there, Studio has them in Edit too, and
   fixed-size meshes grow in Edit like Studio's). OpenArena's MD3 models
-  render and animate.
+  render and animate. The asset ownership check is real (the signed-in
+  user, the groups their key manages and the experience owner, from Open
+  Cloud, kept on disk for offline), `ViewportFrame`s draw their meshes,
+  textured Neon and see-through MeshParts draw like Studio, and the event
+  re-entrancy cap only counts a handler firing its own event.
 - [ ] 📋 **Still open**: the off conformance rows (buoyancy, pathfinding,
   terrain edges, BallSocket drift, jump apex), plugins inside a run,
   `CollectionService:CreateCollection`, `ControllerManager` character

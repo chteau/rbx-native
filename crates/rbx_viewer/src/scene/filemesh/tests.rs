@@ -402,6 +402,52 @@ fn a_force_field_mesh_part_is_capped_at_half_opaque_like_a_part() {
     assert_eq!(plan.entries[0].alpha, 0.5);
 }
 
+/// What real Studio drew for OpenArena's muzzle flash (a textured
+/// MeshPart, Neon or SmoothPlastic, Transparency 0 or above): a textured
+/// Neon one is lit like SmoothPlastic, and a see-through one keeps its
+/// image's alpha rather than laying the image over its colour.
+#[test]
+fn a_textured_neon_mesh_part_is_plain_and_a_see_through_one_keeps_its_alpha() {
+    let mut dom = WeakDom::new();
+    let workspace = Ref::new(9000);
+    dom.insert(Instance::new(workspace, "Workspace", "Workspace"));
+    dom.set_parent(workspace, None);
+    // 288 is `Enum.Material.Neon` (creator-docs' Material.yaml).
+    for (id, texture, transparency) in [(1, true, 0.0), (2, false, 0.0), (3, true, 0.4)] {
+        let referent = Ref::new(id);
+        let mut instance = Instance::new(referent, "MeshPart", "Flash");
+        let properties = instance.properties_mut();
+        properties.insert(
+            "MeshId".to_string(),
+            Variant::String("rbxassetid://1".to_string()),
+        );
+        if texture {
+            properties.insert(
+                "TextureID".to_string(),
+                Variant::String("rbxassetid://2".to_string()),
+            );
+        }
+        properties.insert("Material".to_string(), Variant::Enum(288));
+        properties.insert("Transparency".to_string(), Variant::Float32(transparency));
+        properties.insert("size".to_string(), vector3_variant(1.0, 1.0, 1.0));
+        properties.insert("CFrame".to_string(), cframe_at(0.0, 0.0, 0.0));
+        dom.insert(instance);
+        dom.set_parent(referent, Some(workspace));
+    }
+
+    let plan = planned(&dom);
+    let entry = |id| {
+        plan.entries
+            .iter()
+            .find(|e| e.referent == Ref::new(id))
+            .unwrap()
+    };
+    assert_eq!(entry(1).material.kind, Kind::Plastic);
+    assert_eq!(entry(2).material.kind, Kind::Neon);
+    assert!(entry(1).reveals_color);
+    assert!(!entry(3).reveals_color);
+}
+
 /// A script's `EditableMesh` as the VM publishes it.
 struct Built(rbx_dom::editable::Triangles);
 

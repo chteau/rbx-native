@@ -236,6 +236,7 @@ impl ServerHooks {
             physics: Some(self.physics.clone()),
             assets: config.assets.clone(),
             owners: config.asset_owners.clone(),
+            universe: config.game_id as u64,
             cache_dir: config.cache_dir.clone(),
             client: self.client.get(),
             edit: false,

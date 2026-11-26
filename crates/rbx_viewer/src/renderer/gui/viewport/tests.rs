@@ -364,3 +364,117 @@ fn a_frame_drawn_alone_composites_as_the_gui_does() {
     red.composite(&mut pixels, [0.0, 0.0, 0.0]);
     assert_eq!(pixels, [255, 0, 0, 255]);
 }
+
+/// [`place`] with the frame's cube a `MeshPart` instead, whose mesh is one
+/// triangle filling the lower left half of its box.
+fn mesh_place() -> (WeakDom, rbx_mesh::SkinnedMesh) {
+    let mut dom = place();
+    let frame = dom
+        .root_refs()
+        .iter()
+        .flat_map(|&root| dom.get(root).unwrap().children().to_vec())
+        .find(|&child| dom.get(child).unwrap().class() == "ViewportFrame")
+        .unwrap();
+    let cube = dom
+        .get(frame)
+        .unwrap()
+        .children()
+        .iter()
+        .copied()
+        .find(|&child| dom.get(child).unwrap().class() == "Part")
+        .unwrap();
+    dom.remove(cube);
+    let part = dom.new_instance("MeshPart", "Head", Some(frame));
+    for (name, value) in [
+        ("CFrame", cframe(0.0, 0.0, 0.0)),
+        ("MeshId", Variant::String("rbxassetid://7".to_owned())),
+        (
+            "size",
+            Variant::Vector3(Vector3Data {
+                x: 2.0,
+                y: 2.0,
+                z: 2.0,
+            }),
+        ),
+        ("Color3uint8", Variant::Color3uint8 { r: 255, g: 0, b: 0 }),
+    ] {
+        dom.set_property(part, name, value).unwrap();
+    }
+    let vertex = |x: f32, y: f32| rbx_mesh::Vertex {
+        position: [x, y, 0.0],
+        normal: [0.0, 0.0, 1.0],
+        uv: [0.0, 0.0],
+        color: [255; 4],
+    };
+    let mesh = rbx_mesh::SkinnedMesh::from(rbx_mesh::Mesh {
+        version: (4, 1),
+        vertices: vec![vertex(-1.0, -1.0), vertex(1.0, -1.0), vertex(-1.0, 1.0)],
+        indices: vec![0, 1, 2],
+        lods: Vec::new(),
+        bounds: rbx_mesh::Aabb {
+            min: [-1.0; 3],
+            max: [1.0; 3],
+        },
+    });
+    (dom, mesh)
+}
+
+#[test]
+fn a_mesh_part_in_a_frame_draws_its_mesh_not_its_box() {
+    let Some((device, queue)) = crate::gpu::for_tests() else {
+        return;
+    };
+    let database = ReflectionDatabase::embedded();
+    let (dom, mesh) = mesh_place();
+    let mut scene = Scene::from_dom(&dom, &database).unwrap();
+    let (meshes, _) = scene.viewport_mesh_assets();
+    assert_eq!(meshes, [AssetRef::Id(7)]);
+    let landed = std::collections::HashMap::from([(AssetRef::Id(7), std::sync::Arc::new(mesh))]);
+    scene.resolve_viewport_meshes(&landed, &std::collections::HashMap::new());
+
+    let quality = QualityLevel::default().profile();
+    let material_layout = material::layout(&device);
+    let materials = Materials::new(
+        &device,
+        &queue,
+        &material_layout,
+        scene.materials(),
+        &quality,
+    );
+    let mut viewports = Viewports::new(&device, &queue, &material_layout, &quality);
+    let mut atlas = Atlas::new(
+        &device,
+        &queue,
+        &[],
+        &crate::load::Answered::new(),
+        &quality,
+    );
+    let mut fonts = Typesetter::new();
+    let mut elements = gui_layout_with(
+        scene.gui_screens(),
+        [SIZE.0 as f32, SIZE.1 as f32],
+        &mut fonts,
+    );
+    viewports.bake_all(
+        &device,
+        &queue,
+        &materials.bind_group,
+        &mut atlas,
+        "test",
+        &mut elements,
+    );
+    let image = elements[0].image.as_ref().expect("the frame baked");
+    let pixels = read_back(&device, &queue, &viewports.textures[&image.asset]);
+    let at = |x: u32, y: u32| {
+        let start = ((y * SIZE.0 + x) * 4) as usize;
+        pixels[start..start + 4].to_vec()
+    };
+    // Lower left of the middle: inside the triangle. Upper right: inside
+    // the box the triangle replaced, and nothing drawn there now.
+    let inside = at(SIZE.0 / 2 - 2, SIZE.1 / 2 + 1);
+    assert!(
+        inside[0] > 150 && inside[1] < 20 && inside[3] == 255,
+        "the triangle is drawn red: {inside:?}"
+    );
+    assert_eq!(at(SIZE.0 / 2 + 1, SIZE.1 / 2 - 2)[3], 0, "the box is gone");
+}
