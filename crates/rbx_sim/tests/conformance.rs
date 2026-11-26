@@ -1,6 +1,7 @@
 //! rbx_sim against the goldens recorded from real Roblox. A test whose
 //! golden names a `known_gap` is reported, not failed; an unrecorded one
-//! is skipped, and so is a field named in the golden's `known_gaps`.
+//! is skipped, and so is a field named in the golden's `known_gaps`, and a
+//! test whose Roblox assets aren't in the asset cache (a fresh CI machine).
 
 use rbx_sim::conformance::{self, TESTS};
 
@@ -13,6 +14,11 @@ fn matches_the_recorded_goldens() {
         else {
             continue;
         };
+        let missing = conformance::missing_assets(test.name);
+        if !missing.is_empty() {
+            eprintln!("skipped {}: assets {missing:?} aren't cached", test.name);
+            continue;
+        }
         let mine = ours.get(test.name).cloned().unwrap_or_default();
         let rows = conformance::compare(test, &golden, &mine);
         let off: Vec<String> = rows

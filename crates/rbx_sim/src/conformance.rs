@@ -1465,6 +1465,30 @@ const FIXTURES: &[(u64, &[u8])] = &[
     ),
 ];
 
+/// Roblox's own assets a test loads (animations, sounds, meshes): an
+/// offline run finds them only in the asset cache, which a fresh machine
+/// (CI) doesn't have.
+const CACHED_ASSETS: &[(&str, &[u64])] = &[
+    ("AnimationTrack", &[2510197830, 2510202577]),
+    ("SoundPlayback", &[12222216, 9125644905]),
+    ("AudioApi", &[12222216]),
+    ("ToolPose", &[182393478]),
+    ("EditableAssets", &[1082802, 1082804]),
+];
+
+/// The assets test `name` loads that neither the fixtures nor the asset
+/// cache have: an offline run can't check it.
+pub fn missing_assets(name: &str) -> Vec<u64> {
+    let cache = rbx_assets::AssetCache::new(None).ok();
+    CACHED_ASSETS
+        .iter()
+        .filter(|(test, _)| *test == name)
+        .flat_map(|(_, ids)| ids.iter().copied())
+        .filter(|id| !FIXTURES.iter().any(|(f, _)| f == id))
+        .filter(|id| cache.as_ref().and_then(|c| c.get_id(*id)).is_none())
+        .collect()
+}
+
 /// The fixtures, then `fetcher` if there is one (an offline run has none,
 /// and finds nothing else).
 struct Fixtures(Option<std::sync::Arc<dyn rbx_assets::AssetFetcher>>);
