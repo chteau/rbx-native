@@ -257,7 +257,9 @@ pub const USER_AGENT: &str = concat!("rbx-native/", env!("CARGO_PKG_VERSION"));
 /// An agent config with the gate and [`USER_AGENT`] in: what every app agent
 /// is built from.
 pub fn config() -> ureq::config::ConfigBuilder<AgentScope> {
-    Agent::config_builder().middleware(gate).user_agent(USER_AGENT)
+    Agent::config_builder()
+        .middleware(gate)
+        .user_agent(USER_AGENT)
 }
 
 /// A default agent with the gate in, for one-off requests.
