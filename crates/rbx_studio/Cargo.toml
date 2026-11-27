@@ -186,6 +186,8 @@ cpal = "0.15"
 # (`shell::chrome`) and macOS's About panel (`menu_bar::native`). Both
 # already in Cargo.lock through GPUI's macOS back end.
 [target.'cfg(target_os = "macos")'.dependencies]
+# The session log's stderr redirect (`crash_log::session`), as on Linux.
+libc = "0.2"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "std",

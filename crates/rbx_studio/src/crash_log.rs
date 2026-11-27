@@ -1,10 +1,15 @@
 //! Crash logs: a panic (or, on Windows, a native crash) writes what happened
 //! to `<config>/logs/crash-<time>-<pid>.log`, and the next launch offers it
-//! in a notice. On Windows, where a double-clicked editor has no console,
-//! stderr is also copied into `session-<time>-<pid>.log` as it is written
-//! (started from a terminal or a script, stderr is left as it is).
-//! Only the newest few of each are kept, and anything that looks like a key,
-//! cookie or token is masked before it reaches a file.
+//! in a notice. Everything written to stderr also goes, as it is written,
+//! into `session-<time>-<pid>.log` there (see [`session`]), on every OS:
+//! a double-clicked editor has no console to read it from. Help › Open Logs
+//! Folder opens the folder. Only the newest few of each are kept, and
+//! anything that looks like a key, cookie or token is masked before it
+//! reaches a file.
+
+mod session;
+
+pub(crate) use session::{finish as finish_session, start as start_session};
 
 use std::collections::VecDeque;
 use std::fs;
@@ -21,7 +26,6 @@ use crate::tokens;
 const KEPT: usize = 10;
 
 /// Lines of stderr a crash log ends with.
-#[cfg(windows)]
 const TAIL: usize = 200;
 
 /// Where a crash gets reported: GitHub issues, with the log attached.
@@ -29,7 +33,7 @@ pub(crate) const ISSUES_URL: &str = "https://github.com/chteau/rbx-native/issues
 /// The community Discord, for help and feedback.
 pub(crate) const DISCORD_URL: &str = "https://discord.gg/5KSmhcqHt5";
 
-/// The newest stderr lines (Windows only), for a crash log to end with.
+/// The newest stderr lines, for a crash log to end with.
 static TAIL_LINES: Mutex<VecDeque<String>> = Mutex::new(VecDeque::new());
 
 /// Crash logs this session wrote. A panic something caught (a renderer that
@@ -51,8 +55,6 @@ pub(crate) fn init() {
     for prefix in ["crash-", "panic-", "session-"] {
         prune(&folder, prefix);
     }
-    #[cfg(windows)]
-    tee_stderr(&folder);
     let default = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default(info);
@@ -85,6 +87,15 @@ pub(crate) fn quit_cleanly() {
                 path.with_file_name(name.replacen("crash-", "panic-", 1)),
             );
         }
+    }
+}
+
+/// Help › Open Logs Folder: the folder in the file manager, made first so
+/// it opens even before anything was written.
+pub(crate) fn open_folder(cx: &mut App) {
+    if let Some(folder) = folder() {
+        let _ = fs::create_dir_all(&folder);
+        cx.open_with_system(&folder);
     }
 }
 
@@ -217,63 +228,6 @@ fn redact(text: &str) -> String {
         }
     }
     out
-}
-
-/// When stderr goes nowhere (a double-clicked editor has no console), points
-/// it, and stdout if it goes nowhere either, at a pipe whose reader copies
-/// every line, masked, into the session log and [`TAIL_LINES`]. Rust's stderr
-/// looks its handle up on every write, so `eprintln!` follows. A stderr that
-/// already goes somewhere (a terminal, a caller's pipe) is left alone: a
-/// copying thread could still be behind when the process exits, and what
-/// the caller reads would lose its last lines.
-#[cfg(windows)]
-fn tee_stderr(folder: &Path) {
-    use std::io::{BufRead, BufReader, Write};
-    use std::os::windows::io::IntoRawHandle;
-    use windows_sys::Win32::Foundation::{HANDLE, INVALID_HANDLE_VALUE};
-    use windows_sys::Win32::System::Console::{
-        GetStdHandle, SetStdHandle, STD_ERROR_HANDLE, STD_OUTPUT_HANDLE,
-    };
-
-    let usable = |handle: HANDLE| !handle.is_null() && handle != INVALID_HANDLE_VALUE;
-    // SAFETY: a plain Win32 query.
-    if usable(unsafe { GetStdHandle(STD_ERROR_HANDLE) }) {
-        return;
-    }
-    let Ok(mut file) = fs::File::create(folder.join(file_name("session-"))) else {
-        return;
-    };
-    let Ok((reader, writer)) = std::io::pipe() else {
-        return;
-    };
-    // SAFETY: plain Win32 calls; the pipe's writer is leaked to stay valid
-    // for the life of the process.
-    unsafe {
-        let writer = writer.into_raw_handle();
-        SetStdHandle(STD_ERROR_HANDLE, writer);
-        if !usable(GetStdHandle(STD_OUTPUT_HANDLE)) {
-            SetStdHandle(STD_OUTPUT_HANDLE, writer);
-        }
-    }
-    let _ = std::thread::Builder::new()
-        .name("rbxstudio-stderr".to_owned())
-        .spawn(move || {
-            let mut reader = BufReader::new(reader);
-            let mut line = Vec::new();
-            while reader
-                .read_until(b'\n', &mut line)
-                .is_ok_and(|read| read > 0)
-            {
-                let text = redact(String::from_utf8_lossy(&line).trim_end());
-                line.clear();
-                let _ = writeln!(file, "{text}");
-                let mut tail = lock(&TAIL_LINES);
-                if tail.len() == TAIL {
-                    tail.pop_front();
-                }
-                tail.push_back(text);
-            }
-        });
 }
 
 #[cfg(windows)]

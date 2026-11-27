@@ -48,6 +48,16 @@ fn primary_detail(name: &str) -> Option<&'static str> {
 /// and the popup's own offset), plus the anchor's 8px margin below it.
 const BAR_BOTTOM: Pixels = px(80.);
 
+/// How tall a dropdown may grow: down to the window's bottom or the
+/// screen's usable bottom, whichever comes first, never below one row.
+pub(super) fn menu_room(viewport: Pixels, window_top: Pixels, screen_bottom: Option<Pixels>) -> Pixels {
+    let bottom = match screen_bottom {
+        Some(screen) => viewport.min(screen - window_top),
+        None => viewport,
+    };
+    (bottom - BAR_BOTTOM).max(tokens::primary_target())
+}
+
 /// `action_context` is where an item's action dispatches from, the handle
 /// focus was on before the bar took it, so a command reads the same world it
 /// would have if its shortcut had been typed instead.
@@ -61,7 +71,14 @@ pub(super) fn dropdown(
     // Room under the bar. The File menu is taller than a 1080p window at
     // 125 %, and the anchor's snap then pushed it up over the bar itself;
     // capped here it stays under its title and scrolls instead.
-    let room = window.viewport_size().height - BAR_BOTTOM;
+    // A window taller than its screen (a 1456×819 Mac keeps the size it was
+    // opened at elsewhere) would let the menu run off the bottom, so the
+    // screen's usable bottom caps it too.
+    let room = menu_room(
+        window.viewport_size().height,
+        window.bounds().origin.y,
+        window.display(cx).map(|display| display.visible_bounds().bottom()),
+    );
     // Read once as the menu opens: a command that needs Roblox reads
     // "You're offline" under its name, greyed out.
     let offline = crate::offline::blocked();

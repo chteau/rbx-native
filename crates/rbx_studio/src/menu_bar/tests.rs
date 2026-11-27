@@ -2,8 +2,8 @@ use gpui_kit::{Action, OwnedMenuItem};
 
 use super::{
     menus, MenuAbout, MenuClosePlace, MenuExportFbx, MenuExportGltf, MenuInsertTemplate,
-    MenuLinkRobloxPlace, MenuMergePlace, MenuOpenAutoSaves, MenuPlaceholder, MenuPublishToRoblox,
-    MenuSave, MenuSaveToFile, MenuSaveToRoblox, MenuVersionHistory,
+    MenuLinkRobloxPlace, MenuMergePlace, MenuOpenAutoSaves, MenuOpenLogs, MenuPlaceholder,
+    MenuPublishToRoblox, MenuSave, MenuSaveToFile, MenuSaveToRoblox, MenuVersionHistory,
 };
 use crate::script_templates::Template;
 
@@ -49,7 +49,7 @@ fn the_bar_holds_the_five_titles_in_order() {
 
 /// Help holds About RbxNative, the way to the version and the credits.
 #[test]
-fn help_opens_about() {
+fn help_opens_about_and_the_logs_folder() {
     let menus = menus(&[]);
     let help = menus
         .iter()
@@ -57,8 +57,12 @@ fn help_opens_about() {
         .expect("a Help menu");
     assert!(matches!(
         help.items.as_slice(),
-        [OwnedMenuItem::Action { name, action, .. }]
+        [
+            OwnedMenuItem::Action { name, action, .. },
+            OwnedMenuItem::Action { name: logs, action: open, .. },
+        ]
             if name == "About RbxNative" && action.partial_eq(&MenuAbout)
+                && logs == "Open Logs Folder" && open.partial_eq(&MenuOpenLogs)
     ));
 }
 
@@ -306,4 +310,16 @@ fn file_new_and_open_show_their_registry_shortcut(cx: &mut gpui_kit::TestAppCont
         move |window, cx| gpui_kit::div().child(super::popup::dropdown(&items, None, window, cx)),
     );
     assert_eq!(found.len(), 2);
+}
+
+/// A window taller than its screen (1456×819 here) still keeps a dropdown
+/// on the screen; one that fits is capped by its own bottom.
+#[test]
+fn a_dropdown_stops_at_the_screen_bottom() {
+    use super::popup::menu_room;
+    use gpui_kit::px;
+    assert_eq!(menu_room(px(1000.), px(25.), Some(px(819.))), px(819. - 25. - 80.));
+    assert_eq!(menu_room(px(600.), px(25.), Some(px(819.))), px(600. - 80.));
+    assert_eq!(menu_room(px(600.), px(0.), None), px(520.));
+    assert!(menu_room(px(50.), px(0.), None) > px(0.));
 }

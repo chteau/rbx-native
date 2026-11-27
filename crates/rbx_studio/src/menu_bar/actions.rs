@@ -112,6 +112,7 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     }
     let shell = Target;
     cx.on_action(|_: &MenuOpenAutoSaves, cx| crate::recovery::open_folder(cx));
+    cx.on_action(|_: &MenuOpenLogs, cx| crate::crash_log::open_folder(cx));
     cx.on_action({
         move |action: &MenuInsertTemplate, cx| {
             let index = action.index;
@@ -325,6 +326,9 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         (Panel::Layers, &MenuToggleLayers),
         (Panel::Loren, &MenuToggleLoren),
         (Panel::AvatarSettings, &MenuToggleAvatarSettings),
+        (Panel::MicroProfiler, &MenuToggleMicroProfiler),
+        (Panel::RemoteInspector, &MenuToggleRemoteInspector),
+        (Panel::LeakFinder, &MenuToggleLeakFinder),
     ] {
         toggle.install(panel, shell, cx);
     }
@@ -344,7 +348,9 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         move |_: &MenuInsertPart, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.insert_instance("Part", cx));
+            let _ = shell.update(cx, |shell, cx| {
+                shell.insert_part_in_view("Part", None, cx)
+            });
         }
     });
     cx.on_action({
@@ -518,3 +524,6 @@ panel_toggle!(MenuTogglePlaytests);
 panel_toggle!(MenuToggleLayers);
 panel_toggle!(MenuToggleLoren);
 panel_toggle!(MenuToggleAvatarSettings);
+panel_toggle!(MenuToggleMicroProfiler);
+panel_toggle!(MenuToggleRemoteInspector);
+panel_toggle!(MenuToggleLeakFinder);

@@ -81,6 +81,7 @@ actions!(
         MenuStudioSettings,
         /// Help › About RbxNative, and macOS's app menu item of that name.
         MenuAbout,
+        MenuOpenLogs,
         /// Cmd+Q on macOS: the close button's question, then the whole app.
         MenuQuit,
         MenuCustomizeShortcuts,
@@ -137,6 +138,9 @@ actions!(
         MenuToggleLayers,
         MenuToggleLoren,
         MenuToggleAvatarSettings,
+        MenuToggleMicroProfiler,
+        MenuToggleRemoteInspector,
+        MenuToggleLeakFinder,
         /// Shared by every item below that has no real handler yet; always
         /// paired with `.disabled(true)` (see `menus`), so `PopupMenu` never
         /// lets a click reach it, `actions::install` still gives it a no-op
@@ -377,6 +381,22 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
                     MenuItem::action("Layers", MenuToggleLayers),
                     MenuItem::action("Loren", MenuToggleLoren),
                     MenuItem::action("Avatar Settings", MenuToggleAvatarSettings),
+                ])
+                // Local Run's debug docks, with the rest of the docks as
+                // Studio lists its MicroProfiler. Behind the beta.
+                .chain(
+                    crate::beta::enabled(crate::shell::LOCAL_RUN_BETA_ID)
+                        .then(|| {
+                            [
+                                MenuItem::action("MicroProfiler", MenuToggleMicroProfiler),
+                                MenuItem::action("Remote Inspector", MenuToggleRemoteInspector),
+                                MenuItem::action("Leak Finder", MenuToggleLeakFinder),
+                            ]
+                        })
+                        .into_iter()
+                        .flatten(),
+                )
+                .chain(vec![
                     MenuItem::separator(),
                     // The accessibility settings the reference guidance calls
                     // for a native app to expose itself rather than inherit
@@ -395,7 +415,11 @@ pub(crate) fn menus(templates: &[Template]) -> Vec<OwnedMenu> {
             )
             .owned(),
         Menu::new("Help")
-            .items(vec![MenuItem::action("About RbxNative", MenuAbout)])
+            .items(vec![
+                MenuItem::action("About RbxNative", MenuAbout),
+                // Where the session and crash logs are, for a bug report.
+                MenuItem::action("Open Logs Folder", MenuOpenLogs),
+            ])
             .owned(),
     ]
 }
