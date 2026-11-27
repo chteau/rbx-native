@@ -134,6 +134,12 @@ pub(crate) struct Plan {
 }
 
 impl Plan {
+    /// Drops `referent`'s entry: the union left the place, and the next
+    /// resolve must not carve it back in.
+    pub(crate) fn forget(&mut self, referent: Ref) {
+        self.entries.retain(|entry| entry.referent != referent);
+    }
+
     /// One `(referent, asset)` pair per union whose tree is behind its
     /// `AssetId`, in first-seen order; a union carrying its tree inline has
     /// nothing to download (the assets such a tree names deeper down are
@@ -403,6 +409,16 @@ pub(crate) struct Merged {
 }
 
 impl Merged {
+    /// Drops everything merged for `referent`, a union that left the place:
+    /// the resolved set is rebuilt from these on every file mesh pass (an
+    /// asset landing, a new mesh in the place), and a deleted union kept
+    /// here came back with it, drawn where it no longer was.
+    pub(crate) fn forget(&mut self, referent: Ref) {
+        self.hidden.remove(&referent);
+        self.instances.retain(|instance| instance.referent != referent);
+        self.absorbed.remove(&referent);
+    }
+
     /// Merges one [`resolve`] in, ignoring whatever it says about a union
     /// already merged.
     ///

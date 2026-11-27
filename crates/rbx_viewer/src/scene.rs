@@ -840,18 +840,7 @@ impl Scene {
         // and is unique across the whole resolved set: whatever an earlier
         // call put there is dropped, and the accumulated set goes back on top
         // in the order a cold load would have produced it.
-        let unions: HashSet<Ref> = self
-            .unions_resolved
-            .instances
-            .iter()
-            .map(|instance| instance.referent)
-            .collect();
-        resolved
-            .instances
-            .retain(|instance| !unions.contains(&instance.referent));
-        resolved
-            .instances
-            .extend(self.unions_resolved.instances.iter().cloned());
+        resolved.replace(&self.unions_resolved.instances);
         // Both callers have just rebuilt or appended to the lists an
         // isolation flags, with no DOM in hand to ask again.
         if self.isolation.is_some() {
