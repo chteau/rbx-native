@@ -47,6 +47,13 @@ pub(crate) trait Hooks {
     /// Asked first by `game:GetService(name)`.
     fn service(&self, lua: &Lua, ctx: &Ctx, name: &str) -> Result<Option<Value>>;
 
+    /// Whether `game.<name>` is the service `name` even before anything
+    /// asked for it: Studio's edit DataModel starts with every service in
+    /// it, so the command bar's `game.Selection` works.
+    fn implicit_service(&self, _name: &str) -> bool {
+        false
+    }
+
     /// Asked by `game`'s `__index` for a member it does not have itself
     /// (its signals, in the plugin host).
     fn game_member(&self, _lua: &Lua, _key: &str) -> Result<Option<Value>> {

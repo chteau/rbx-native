@@ -1099,6 +1099,15 @@ impl WorkspaceView {
             return;
         }
         let layout = Layout::of(cx.keyboard_layout().name());
+        if self.play.is_some() && pressed && keystroke.key == "v" && keystroke.modifiers.secondary()
+        {
+            if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
+                if self.core_gui.paste(&text) {
+                    cx.notify();
+                    return;
+                }
+            }
+        }
         if self.play.is_some() && self.core_gui.key(keystroke, pressed) {
             if self.core_gui.has_keys() {
                 if let Some(play) = self.play.as_mut() {
@@ -1113,6 +1122,22 @@ impl WorkspaceView {
             // and may report the modifier change after it.
             if pressed {
                 play.shift(keystroke.modifiers.shift);
+            }
+            if pressed {
+                // What the key typed, in the layout's own characters, for a
+                // focused TextBox; Ctrl+V (Cmd+V) pastes, as in Roblox.
+                if keystroke.key == "v" && keystroke.modifiers.secondary() {
+                    if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
+                        play.text(&text);
+                    }
+                } else if !keystroke.modifiers.platform
+                    // AltGr comes as Ctrl+Alt on Windows and types.
+                    && keystroke.modifiers.control == keystroke.modifiers.alt
+                {
+                    if let Some(typed) = keystroke.key_char.as_deref() {
+                        play.text(typed);
+                    }
+                }
             }
             if play.key(&keystroke.key, pressed, layout == Layout::Azerty) {
                 return;
@@ -1514,8 +1539,13 @@ impl Render for WorkspaceView {
             // handler here.
             .id("workspace-viewport")
             .track_focus(&self.focus)
-            .key_context(summon::CONTEXT)
+            .key_context(if self.play.is_some() {
+                summon::PLAY_CONTEXT
+            } else {
+                summon::CONTEXT
+            })
             .on_action(cx.listener(Self::summon_handles))
+            .on_action(cx.listener(Self::play_tab))
             .relative()
             .size_full()
             .bg(tokens::viewport_background())

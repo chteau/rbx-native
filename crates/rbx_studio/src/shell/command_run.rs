@@ -77,6 +77,15 @@ impl Shell {
     /// timer.
     pub(super) fn run_command(&mut self, source: &str, cx: &mut Context<Self>) {
         self.command_bar.remember(source);
+        // During a local run the line is the game's, as in Studio's Play:
+        // its output comes back tagged with the peer it ran on.
+        if self.local_run_command(source, cx) {
+            let echo = Feedback::Output(String::new());
+            self.output.push_run(source, echo.clone(), Vec::new());
+            self.command_bar.set_feedback(echo);
+            cx.notify();
+            return;
+        }
         let _ = self.run_with(source, cx, |runtime, source| {
             runtime.start(source);
         });

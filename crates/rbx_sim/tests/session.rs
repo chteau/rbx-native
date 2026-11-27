@@ -1108,3 +1108,78 @@ fn the_play_camera_projects_like_studio_in_every_orthographic_mode() {
         assert!(has(&lines, me, expected), "{expected}: {lines:#?}");
     }
 }
+
+/// Studio's Stop, measured: `PlayerRemoving` sees the character still in
+/// Workspace with its parts, `BindToClose` still counts the player, then
+/// the character leaves the world whole (parent nil, not destroyed), and a
+/// loop reading the character's parts never finds one gone.
+#[test]
+fn stop_tears_down_in_studio_s_order() {
+    let mut s = session(
+        place(
+            "local Players = game:GetService('Players') \
+             local function watch(c) task.spawn(function() while true do \
+               if not pcall(function() return c.HumanoidRootPart end) then print('lost root') break end \
+               game:GetService('RunService').Heartbeat:Wait() end end) end \
+             for _, p in Players:GetPlayers() do if p.Character then watch(p.Character) end p.CharacterAdded:Connect(watch) end \
+             Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(watch) end) \
+             Players.PlayerRemoving:Connect(function(p) local c = p.Character \
+               print('removing', c ~= nil and c.Parent == workspace and c:FindFirstChild('HumanoidRootPart') ~= nil) end) \
+             game:BindToClose(function() print('closing', #Players:GetPlayers()) task.wait(0.1) end) \
+             local function gone(c) c.AncestryChanged:Connect(function(_, parent) \
+               if parent == nil then print('left', c:FindFirstChild('HumanoidRootPart') ~= nil) end end) end \
+             for _, p in Players:GetPlayers() do if p.Character then gone(p.Character) end p.CharacterAdded:Connect(gone) end \
+             Players.PlayerAdded:Connect(function(p) p.CharacterAdded:Connect(gone) end)",
+            "",
+        ),
+        1,
+    );
+    let mut lines = Vec::new();
+    for _ in 0..120 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    s.shutdown();
+    printed(&mut s, &mut lines);
+    let removing = lines.iter().position(|(_, l)| l == "removing true");
+    let closing = lines.iter().position(|(_, l)| l == "closing 1");
+    let left = lines.iter().position(|(_, l)| l == "left true");
+    assert!(removing.is_some() && removing < closing, "{lines:#?}");
+    assert!(closing.is_some() && closing < left, "{lines:#?}");
+    assert!(!has(&lines, Peer::Server, "lost root"), "{lines:#?}");
+}
+
+/// The Command Bar during Play runs in the peer it is sent to, as Studio's
+/// does in the server's or the focused client's DataModel.
+#[test]
+fn a_command_runs_in_the_peer_it_is_sent_to() {
+    use rbx_sim::replay::Action;
+    let mut s = session(place("", ""), 1);
+    for _ in 0..60 {
+        s.step();
+    }
+    s.act(
+        Peer::Server,
+        Action::Command(
+            "print('server', game:GetService('RunService'):IsServer(), #game.Players:GetPlayers())"
+                .into(),
+        ),
+    );
+    s.act(
+        Peer::Client(0),
+        Action::Command("print('client', game.Players.LocalPlayer.Name) error('boom')".into()),
+    );
+    let mut lines = Vec::new();
+    for _ in 0..5 {
+        s.step();
+        printed(&mut s, &mut lines);
+    }
+    assert!(has(&lines, Peer::Server, "server true 1"), "{lines:#?}");
+    assert!(has(&lines, Peer::Client(0), "client Player1"), "{lines:#?}");
+    assert!(
+        lines
+            .iter()
+            .any(|(p, l)| *p == Peer::Client(0) && l.contains("CommandBar:1: boom")),
+        "{lines:#?}"
+    );
+}

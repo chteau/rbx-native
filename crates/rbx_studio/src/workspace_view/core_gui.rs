@@ -41,6 +41,10 @@ const NUMBER_KEYS: [&str; 10] = [
 /// The client's UI face, read from the Roblox content the player already
 /// has (never shipped with us); the app's own face otherwise.
 const FONT: &str = "Builder Sans";
+/// The backpack's labels, still the legacy font in Studio's Play. Measured
+/// there, "TestTool" is 42 px wide in its 60 px slot and a longer name
+/// wraps mid-word ("MyVeryLon" / "gToolName"): Source Sans at 12 px here.
+const HOTBAR_FONT: &str = "Source Sans Pro";
 const WHITE: u32 = 0xf7f7f8;
 /// The top bar buttons' fill.
 const BAR: u32 = 0x191f24;
@@ -258,7 +262,11 @@ impl CoreGuiView {
 
     fn toggle_chat(&mut self) {
         self.chat_open = !self.chat_open && self.chat_allowed();
-        if !self.chat_open {
+        if self.chat_open {
+            // Opened, it shows lit with its bar, and only fades once left
+            // alone for a while.
+            self.chat_seen = Some(Instant::now());
+        } else {
             self.draft = None;
         }
         self.chat_seen = Some(Instant::now());
@@ -295,6 +303,7 @@ impl CoreGuiView {
                         draft.pop();
                     }
                     "space" => draft.push(' '),
+                    "v" if keystroke.modifiers.secondary() => {}
                     _ => {
                         if let Some(typed) = keystroke
                             .key_char
@@ -328,7 +337,12 @@ impl CoreGuiView {
                 }
                 true
             }
-            "/" if pressed && self.typing_allowed() => {
+            // The typed `/`, wherever the layout has it: a Shift chord
+            // on AZERTY can come as `:` with `/` as the character typed.
+            _ if pressed
+                && (key == "/" || keystroke.key_char.as_deref() == Some("/"))
+                && self.typing_allowed() =>
+            {
                 self.focus_chat();
                 true
             }
@@ -340,6 +354,17 @@ impl CoreGuiView {
             }
             _ => false,
         }
+    }
+
+    /// Ctrl+V (Cmd+V) in the chat bar: the clipboard's text, on one line.
+    /// Whether the bar took it.
+    pub(crate) fn paste(&mut self, text: &str) -> bool {
+        let Some(draft) = self.draft.as_mut() else {
+            return false;
+        };
+        draft.extend(text.chars().map(|c| if c.is_control() { ' ' } else { c }));
+        self.chat_seen = Some(Instant::now());
+        true
     }
 
     fn ask(&mut self, confirm: Confirm) {
@@ -440,7 +465,9 @@ fn client_font(cx: &mut App) -> bool {
         };
         let faces: Vec<Cow<'static, [u8]>> = ["Regular", "Medium", "Bold"]
             .iter()
-            .filter_map(|face| cache.get_native(&format!("fonts/BuilderSans-{face}.otf")))
+            .map(|face| format!("fonts/BuilderSans-{face}.otf"))
+            .chain(["fonts/SourceSansPro-Regular.ttf".to_owned()])
+            .filter_map(|path| cache.get_native(&path))
             .map(Cow::Owned)
             .collect();
         !faces.is_empty() && cx.text_system().add_fonts(faces).is_ok()
@@ -1054,8 +1081,9 @@ impl WorkspaceView {
                     })
                     .on_mouse_down(
                         MouseButton::Left,
-                        cx.listener(|view, _: &MouseDownEvent, _, cx| {
+                        cx.listener(|view, _: &MouseDownEvent, window, cx| {
                             cx.stop_propagation();
+                            window.focus(&view.focus, cx);
                             view.core_gui.focus_chat();
                             cx.notify();
                         }),
@@ -1070,6 +1098,18 @@ impl WorkspaceView {
             .flex()
             .flex_col()
             .rounded(px(8.))
+            // Faded to its lines, a click anywhere on it is still the
+            // chat's: it lights up with the bar focused, as Roblox's does,
+            // instead of going through to the game.
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|view, _: &MouseDownEvent, window, cx| {
+                    cx.stop_propagation();
+                    window.focus(&view.focus, cx);
+                    view.core_gui.focus_chat();
+                    cx.notify();
+                }),
+            )
             .when(lit, |this| {
                 this.bg(linear_gradient(
                     180.,
@@ -1275,7 +1315,16 @@ impl WorkspaceView {
         backdrop.child(
             panel
                 .child(tabs)
-                .child(div().flex_1().min_h_0().overflow_hidden().child(page))
+                // A short viewport scrolls the page rather than clipping
+                // the People rows off under the buttons.
+                .child(
+                    div()
+                        .id("core-menu-page")
+                        .flex_1()
+                        .min_h_0()
+                        .overflow_y_scroll()
+                        .child(page.pb(px(14.))),
+                )
                 .child(buttons),
         )
     }
@@ -1524,6 +1573,9 @@ impl WorkspaceView {
                         .w_full()
                         .text_center()
                         .overflow_hidden()
+                        .font_family(HOTBAR_FONT)
+                        .text_size(px(12.))
+                        .line_height(px(14.))
                         .child(slot.name.clone()),
                 })
                 .child(
@@ -1743,6 +1795,38 @@ mod tests {
         press(&mut view, "l");
         press(&mut view, "enter");
         assert_eq!(view.take_actions(), [CoreAction::Leave]);
+    }
+
+    #[test]
+    fn the_chat_opened_from_its_button_starts_lit() {
+        let mut view = playing(everything());
+        view.chat_seen = None;
+        view.toggle_chat();
+        assert!(view.chat_open);
+        assert!(view
+            .chat_seen
+            .is_some_and(|at| at.elapsed() < super::CHAT_FADE));
+    }
+
+    #[test]
+    fn a_paste_lands_in_the_chat_bar_on_one_line() {
+        let mut view = playing(everything());
+        assert!(!view.paste("ignored"));
+        view.focus_chat();
+        assert!(view.paste("hello\nworld"));
+        assert_eq!(view.draft.as_deref(), Some("hello world"));
+    }
+
+    #[test]
+    fn a_slash_typed_with_shift_opens_the_chat() {
+        let mut view = playing(everything());
+        let colon = Keystroke {
+            key: ":".into(),
+            key_char: Some("/".into()),
+            ..Keystroke::default()
+        };
+        assert!(view.key(&colon, true));
+        assert!(view.draft.is_some());
     }
 
     #[test]

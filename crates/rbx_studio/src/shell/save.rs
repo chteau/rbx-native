@@ -66,6 +66,7 @@ impl Shell {
         if keystroke.key == "escape"
             && (self.close_roblox_dialog()
                 | self.cancel_close_place()
+                | self.cancel_live_prompt()
                 | self.cancel_rig_dialog()
                 | self.close_publish_result()
                 | self.close_animation_publish()

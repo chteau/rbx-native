@@ -160,6 +160,28 @@ fn errors_in_spawned_threads_are_output_not_failures() {
 }
 
 #[test]
+fn studio_s_edit_services_are_members_of_game() {
+    let printed = lines(
+        "print(game.Selection == game:GetService('Selection'), game.Selection.ClassName) \
+         print(pcall(function() return game.NotAService end))",
+    );
+    assert_eq!(printed[0], "true Selection");
+    assert!(printed[1].starts_with("false"), "{printed:?}");
+}
+
+#[test]
+fn wait_for_child_finds_waits_and_times_out() {
+    let printed = lines(
+        "local f = Instance.new('Folder') f.Name = 'Box' f.Parent = workspace \
+         print(workspace:WaitForChild('Box').Name) \
+         task.delay(0.01, function() local g = Instance.new('Folder') g.Name = 'Late' g.Parent = workspace end) \
+         print(workspace:WaitForChild('Late').Name) \
+         print(workspace:WaitForChild('Never', 0.02))",
+    );
+    assert_eq!(printed, ["Box", "Late", "nil"]);
+}
+
+#[test]
 fn task_library_and_time_globals() {
     let printed = lines(
         "task.delay(0.01, function(x) print('delayed', x) end, 3) \
