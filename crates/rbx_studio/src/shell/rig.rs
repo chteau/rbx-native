@@ -1,4 +1,4 @@
-//! Model › Insert Rig…: a `Model` with a `Humanoid`, built from nothing, in
+//! Edit › Insert Rig…: a `Model` with a `Humanoid`, built from nothing, in
 //! Studio's own R6 or R15 layout.
 //!
 //! `build_rig` is a pure function of its options and the place's joint

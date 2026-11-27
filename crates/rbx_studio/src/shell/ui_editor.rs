@@ -261,7 +261,7 @@ pub(super) fn is_gui_object(dom: &WeakDom, database: &ReflectionDatabase, refere
 
 impl Shell {
     /// Switches Row A's document, from a click on its tab, a script
-    /// opening, the View menu. Opening the UI Editor lands on its canvas, and
+    /// opening, the Window menu. Opening the UI Editor lands on its canvas, and
     /// opening an editor whose tab was closed gives it the tab back.
     pub(super) fn set_document(&mut self, document: Document, cx: &mut Context<Self>) {
         self.reopen_document(document);
@@ -290,7 +290,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// The Stylesheet sub-tab, from the View menu's Style Editor item.
+    /// The Stylesheet sub-tab, from the Window menu's Style Editor item.
     pub(super) fn show_stylesheet(&mut self, cx: &mut Context<Self>) {
         self.set_ui_tab(Tab::Stylesheet, cx);
     }

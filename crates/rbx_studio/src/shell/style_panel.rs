@@ -280,7 +280,7 @@ impl Shell {
     }
 
     /// Brings the style sheets to the front: the UI Editor document, on its
-    /// Stylesheet sub-tab, the View menu's Style Editor item (see
+    /// Stylesheet sub-tab, the Window menu's Style Editor item (see
     /// `crate::menu_bar`).
     pub(crate) fn reveal_style_editor(&mut self, cx: &mut Context<Self>) {
         self.set_document(super::chrome::Document::UiEditor, cx);

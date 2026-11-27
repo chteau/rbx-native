@@ -325,6 +325,15 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
         (Panel::Layers, &MenuToggleLayers),
         (Panel::Loren, &MenuToggleLoren),
         (Panel::AvatarSettings, &MenuToggleAvatarSettings),
+        (Panel::CallStack, &MenuToggleCallStack),
+        (Panel::Watch, &MenuToggleWatch),
+        (Panel::Localization, &MenuToggleLocalization),
+        (Panel::MicroProfiler, &MenuToggleMicroProfiler),
+        (Panel::FindInPlace, &MenuToggleFindInPlace),
+        (Panel::ScriptAnalysis, &MenuToggleScriptAnalysis),
+        (Panel::RemoteInspector, &MenuToggleRemoteInspector),
+        (Panel::LeakFinder, &MenuToggleLeakFinder),
+        (Panel::LoadTest, &MenuToggleLoadTest),
     ] {
         toggle.install(panel, shell, cx);
     }
@@ -478,6 +487,7 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
             let _ = shell.update(cx, |shell, cx| shell.request_palette(false, cx));
         }
     });
+    install_studio_menus(shell, cx);
     cx.on_action(move |_: &MenuPlaceholder, _cx| {});
 }
 
@@ -518,3 +528,60 @@ panel_toggle!(MenuTogglePlaytests);
 panel_toggle!(MenuToggleLayers);
 panel_toggle!(MenuToggleLoren);
 panel_toggle!(MenuToggleAvatarSettings);
+panel_toggle!(MenuToggleCallStack);
+panel_toggle!(MenuToggleWatch);
+panel_toggle!(MenuToggleLocalization);
+panel_toggle!(MenuToggleMicroProfiler);
+panel_toggle!(MenuToggleFindInPlace);
+panel_toggle!(MenuToggleScriptAnalysis);
+panel_toggle!(MenuToggleRemoteInspector);
+panel_toggle!(MenuToggleLeakFinder);
+panel_toggle!(MenuToggleLoadTest);
+
+/// The View, Plugins, Test, Window and Help items Studio's bar has and the
+/// old File/Edit/Model/View bar didn't.
+fn install_studio_menus(shell: Target, cx: &mut App) {
+    use crate::scale::Scale;
+    cx.on_action(move |_: &MenuZoomIn, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_zoom(Scale::In, cx));
+    });
+    cx.on_action(move |_: &MenuZoomOut, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_zoom(Scale::Out, cx));
+    });
+    cx.on_action(move |_: &MenuShowUi, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_toggle_show_ui(cx));
+    });
+    cx.on_action(move |_: &MenuFullbright, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_toggle_fullbright(cx));
+    });
+    cx.on_action(move |_: &MenuManagePlugins, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_manage_plugins(cx));
+    });
+    cx.on_action(move |_: &MenuPluginsFolder, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_plugins_folder(cx));
+    });
+    cx.on_action(move |_: &MenuPopularPlugins, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_popular_plugins(cx));
+    });
+    cx.on_action(move |_: &MenuReloadPlugins, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_reload_plugins(cx));
+    });
+    cx.on_action(move |_: &MenuPlay, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_play(cx));
+    });
+    cx.on_action(move |_: &MenuStop, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_stop(cx));
+    });
+    cx.on_action(move |_: &MenuControllerEmulator, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_controller_emulator(cx));
+    });
+    cx.on_action(move |_: &MenuToggleTerrainEditor, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.menu_toggle_terrain_editor(cx));
+    });
+    cx.on_action(|_: &MenuDocumentation, cx| cx.open_url(DOCUMENTATION_URL));
+    cx.on_action(|_: &MenuDeveloperForum, cx| cx.open_url(DEVELOPER_FORUM_URL));
+}
+
+/// Where Studio's Help › Documentation and Developer Forum go.
+pub(super) const DOCUMENTATION_URL: &str = "https://create.roblox.com/docs";
+pub(super) const DEVELOPER_FORUM_URL: &str = "https://devforum.roblox.com";

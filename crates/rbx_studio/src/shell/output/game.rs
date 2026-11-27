@@ -22,7 +22,7 @@
 pub(crate) enum Context {
     Server,
     Client,
-    /// Model › Run (local) and Play (local): server and client scripts in
+    /// Test › Run (local) and Play (local): server and client scripts in
     /// one simulation.
     LocalRun,
 }

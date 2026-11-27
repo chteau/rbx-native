@@ -1,4 +1,4 @@
-//! Home › Game Settings: the linked experience's settings and the place
+//! File › Experience Settings: the linked experience's settings and the place
 //! file's own, on one set of pages shaped like Studio's Experience
 //! Settings, each row saying where its value lives (see `catalog`). Edits
 //! wait for Save: the cloud ones go to Roblox, the local ones land in the

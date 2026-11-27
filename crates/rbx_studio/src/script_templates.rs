@@ -1,6 +1,6 @@
 //! User-defined starter scripts, read from disk so people can add and share
 //! them without a rebuild, the same idea as the editor's icon and theme
-//! packs, for what the Model menu and the ribbon's Script tile seed a new
+//! packs, for what the Edit menu and the ribbon's Script tile seed a new
 //! script with.
 //!
 //! Layout, under the config directory `settings.rs` already owns:

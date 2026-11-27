@@ -244,7 +244,7 @@ impl Shell {
     }
 
     /// The user-defined entries of the ribbon's Script menu and the menu
-    /// bar's Model menu (see `crate::script_templates`): inserts the `index`th
+    /// bar's Edit menu (see `crate::script_templates`): inserts the `index`th
     /// extra template as its own class with its own source. An index that no
     /// longer resolves is a no-op rather than a panic, both menus are built
     /// from this same list (the ribbon a frame earlier, the menu bar once at

@@ -1,5 +1,5 @@
 //! Keeping the user's script templates current while the editor runs: the
-//! Model menu and the ribbon's Script menu list them, and both must follow
+//! Edit menu and the ribbon's Script menu list them, and both must follow
 //! a template added, renamed or deleted, from the templates window or by
 //! hand, without a restart.
 

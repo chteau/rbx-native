@@ -28,7 +28,7 @@ fn name_process() {
     objc2_foundation::NSProcessInfo::processInfo().setProcessName(&name);
 }
 
-/// Rebuilt with the in-window bar, whose Model menu lists the user's
+/// Rebuilt with the in-window bar, whose Edit menu lists the user's
 /// templates.
 pub(super) fn set(templates: &[Template], cx: &App) {
     let app = Menu::new("RbxNative").items([

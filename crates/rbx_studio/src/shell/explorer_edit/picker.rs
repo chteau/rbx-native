@@ -121,7 +121,7 @@ impl Shell {
         }
     }
 
-    /// Model › Insert Object…: Ctrl+I's picker, from a menu click. A menu
+    /// Edit › Insert Object…: Ctrl+I's picker, from a menu click. A menu
     /// action runs outside the window, so the picker opens in the next turn.
     pub(crate) fn insert_object_from_menu(&self, cx: &mut Context<Self>) {
         let handle = self.window_handle;

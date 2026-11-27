@@ -1,4 +1,4 @@
-//! Model › Run (local): the place runs live on `rbx_sim`, off a copy of it.
+//! Test › Run (local): the place runs live on `rbx_sim`, off a copy of it.
 //! The 3D viewport, Explorer and Properties show the simulation moving, the
 //! Output streams what scripts print, Pause holds it and Stop puts the
 //! edited place back exactly as it was. Behind its beta switch.

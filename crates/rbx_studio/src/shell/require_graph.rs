@@ -1,4 +1,4 @@
-//! View › Require Graph, behind the `require-graph` beta switch: every
+//! Window › Require Graph, behind the `require-graph` beta switch: every
 //! script and `ModuleScript` as a box, an edge for each `require(...)` that
 //! `rbx_audit::require_graph` resolves, and beside the graph what it finds
 //! wrong: cycles, client scripts requiring server-only modules, requires no
