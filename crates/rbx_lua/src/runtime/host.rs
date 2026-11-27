@@ -79,6 +79,124 @@ impl Host for CommandBar {
 /// so these hang off real instances.
 pub(super) struct CommandBarHooks;
 
+/// The services Studio's edit DataModel holds from the start (Studio 0.748,
+/// `game:GetChildren()` from its command bar), which `game.<Name>` reaches
+/// there without a `GetService` first.
+const STUDIO_EDIT_SERVICES: [&str; 112] = [
+    "AnalyticsService",
+    "AnimationClipProvider",
+    "AssetService",
+    "AvatarCreationService",
+    "BadgeService",
+    "BrowserService",
+    "CaptureService",
+    "ChangeHistoryService",
+    "Chat",
+    "CollectionService",
+    "ContentProvider",
+    "ContextActionService",
+    "ControllerService",
+    "CookiesService",
+    "CoreGui",
+    "Debris",
+    "DebuggerManager",
+    "DraftsService",
+    "DraggerService",
+    "EncodingService",
+    "FriendService",
+    "GamePassService",
+    "GamepadService",
+    "GenerationService",
+    "GroupService",
+    "GuiService",
+    "GuidRegistryService",
+    "HSRDataContentProvider",
+    "HapticService",
+    "HttpRbxApiService",
+    "HttpService",
+    "InsertService",
+    "InstanceExtensionsService",
+    "InstanceFileSyncService",
+    "JointsService",
+    "KeyboardService",
+    "KeyframeSequenceProvider",
+    "Lighting",
+    "LocalizationService",
+    "LogService",
+    "LuaWebService",
+    "MarketplaceService",
+    "MaterialService",
+    "MemStorageService",
+    "MeshContentProvider",
+    "MicroProfilerService",
+    "MouseService",
+    "NotificationService",
+    "PackageService",
+    "Packages",
+    "PathfindingService",
+    "PermissionsService",
+    "PhysicsService",
+    "PlacesService",
+    "Players",
+    "PluginDebugService",
+    "PluginGuiService",
+    "PluginManagementService",
+    "PointsService",
+    "PolicyService",
+    "ProcessInstancePhysicsService",
+    "PublishService",
+    "ReflectionService",
+    "RemoteCommandService",
+    "RemoteDebuggerServer",
+    "ReplicatedFirst",
+    "ReplicatedStorage",
+    "RunService",
+    "ScriptContext",
+    "ScriptDebuggerService",
+    "ScriptEditorService",
+    "ScriptService",
+    "Selection",
+    "SelectionHighlightManager",
+    "SerializationService",
+    "ServerScriptService",
+    "ServerStorage",
+    "ServiceVisibilityService",
+    "SharedTableRegistry",
+    "SlimContentProvider",
+    "SolidModelContentProvider",
+    "SoundService",
+    "SpawnerService",
+    "StarterGui",
+    "StarterPack",
+    "StarterPlayer",
+    "Stats",
+    "StudioCaptureService",
+    "StudioDeviceSimulatorService",
+    "StudioService",
+    "StudioTestService",
+    "StylingService",
+    "TeamCreateService",
+    "TeleportService",
+    "TestService",
+    "TextBoxService",
+    "TextChatService",
+    "TextService",
+    "TimerService",
+    "TouchInputService",
+    "TweenService",
+    "UGCValidationService",
+    "UniqueIdLookupService",
+    "UserInputService",
+    "UserService",
+    "VRService",
+    "VideoCaptureService",
+    "VideoScreenCaptureService",
+    "VideoService",
+    "VirtualInputManager",
+    "VisualizationModeService",
+    "Workspace",
+];
+
 impl Hooks for CommandBarHooks {
     fn index(
         &self,
@@ -96,6 +214,10 @@ impl Hooks for CommandBarHooks {
         }
         if let Some(value) = crate::studio::member(lua, ctx, referent, class, key)? {
             return Ok(Some(value));
+        }
+        // The game's own: the child, or a wait for it (the bar can yield).
+        if key == "WaitForChild" {
+            return crate::server::wait_for_child(lua).map(|f| Some(Value::Function(f)));
         }
         match class {
             "HttpService" => http_member(lua, key),
@@ -128,6 +250,10 @@ impl Hooks for CommandBarHooks {
 
     fn service(&self, _lua: &Lua, _ctx: &Ctx, _name: &str) -> Result<Option<Value>> {
         Ok(None)
+    }
+
+    fn implicit_service(&self, name: &str) -> bool {
+        STUDIO_EDIT_SERVICES.contains(&name)
     }
 
     fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {

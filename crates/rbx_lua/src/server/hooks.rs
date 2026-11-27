@@ -704,7 +704,7 @@ return function(self, name, timeout)
 end
 "#;
 
-fn wait_for_child(lua: &Lua) -> Result<Function> {
+pub(crate) fn wait_for_child(lua: &Lua) -> Result<Function> {
     const KEY: &str = "rbxn.server.wait_for_child";
     if let Some(f) = lua.named_registry_value::<Option<Function>>(KEY)? {
         return Ok(f);
