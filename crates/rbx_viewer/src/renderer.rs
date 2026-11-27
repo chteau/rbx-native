@@ -973,6 +973,7 @@ impl Renderer {
         self.shadows
             .render_points(queue, &mut encoder, (&self.meshes, terrain), &points);
         self.scene_pass(&mut encoder, targets, &cull);
+        self.post.seed_bloom(&mut encoder);
         // Between the two halves, never inside either: the copy's source is
         // a colour attachment of both. A no-op in a place with no glass,
         // which has no copy to take.

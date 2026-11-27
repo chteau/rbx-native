@@ -67,8 +67,8 @@ impl Entry {
             .filter(|reference| resolved.images.contains_key(reference));
         let (mut mesh_key, mut color) = (self.mesh.clone(), self.color_for(texture.is_some()));
         // Laid over a colour this resolution has not baked: a full one does.
-        if let Some(reference) = texture.clone().filter(|_| self.reveals_color) {
-            let key = super::over_key(&reference, self.color);
+        if let Some(reference) = texture.clone() {
+            let key = super::backed_key(&reference, self.backing, self.color);
             if !resolved.images.contains_key(&key) {
                 return None;
             }

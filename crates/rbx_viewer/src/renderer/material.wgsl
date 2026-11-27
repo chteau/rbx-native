@@ -54,6 +54,12 @@ const VARIANT_ALPHA_CUTOFF: f32 = 0.5;
 // Calibrated to clear a bloom threshold and lift adjacent surfaces by ~18 sRGB
 // steps. Trades off neon brightness (255) against surface clipping at threshold.
 const NEON_HDR: f32 = 6.0;
+// A see-through Neon part is another thing in Studio: no glow at all (see
+// `Post::seed_bloom`), and over black it comes out as its gamma-encoded colour
+// times this, times its opacity squared. Fitted on a (255, 170, 0) part at
+// Transparency 0.4 and 0.7 in Studio 0.748 (Future, quality 21): (238, 222, 0)
+// and (164, 133, 1) over a black wall.
+const NEON_SEE_THROUGH: f32 = 2.9;
 // A ForceField is a tinted shell rather than a surface; the tint is the part's
 // colour and the reflection is what sells the "energy" look.
 const FORCE_FIELD_REFLECTANCE: f32 = 0.2;
@@ -569,6 +575,12 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
         let to_eye = normalize(lighting.camera.xyz - input.world_position);
         let rim = max(force_field_rim(input.world_normal, to_eye), surface.edge);
         alpha = force_field_alpha(alpha, rim, input.pattern);
+    }
+    if input.kind == KIND_NEON && alpha < 1.0 {
+        // Straight alpha like everything else here, so the second factor of
+        // the opacity is the blend's own.
+        let neon = srgb_encode(input.albedo) * NEON_SEE_THROUGH * lighting.tuning.x * alpha;
+        return vec4<f32>(neon, alpha);
     }
     // A pass with no copy behind it binds one unread texel (a
     // `ViewportFrame`'s own, a place with no glass in it at all): there is
