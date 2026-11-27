@@ -11,8 +11,6 @@ use crate::retry;
 /// Exactly this, no parameters: see [`Client::send_json`].
 const JSON: &str = "application/json";
 
-const USER_AGENT: &str = concat!("rbx-native/", env!("CARGO_PKG_VERSION"));
-
 /// Blocking client for the Roblox Cloud + legacy public APIs. Cheap to clone:
 /// the underlying `ureq::Agent` pools connections behind an `Arc`.
 #[derive(Clone)]
@@ -48,7 +46,6 @@ type GetBuilder = ureq::RequestBuilder<ureq::typestate::WithoutBody>;
 impl Client {
     pub fn new(api_key: Option<ApiKey>) -> Self {
         let config = rbx_net::config()
-            .user_agent(USER_AGENT)
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(30)))
             .build();
@@ -288,11 +285,6 @@ mod tests {
         assert_eq!(client.require_api_key().unwrap().as_str(), "secret");
     }
 
-    #[test]
-    fn user_agent_includes_crate_name_and_version() {
-        assert!(USER_AGENT.starts_with("rbx-native/"));
-        assert!(USER_AGENT.len() > "rbx-native/".len());
-    }
     #[test]
     fn a_json_write_names_bare_application_json() {
         use std::io::{Read, Write};

@@ -68,7 +68,8 @@ jobs:
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
         run: |
-          version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/rbx_studio/Cargo.toml | head -n 1)"
+          version="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "rbx_studio") | .version')"
           app="$RUNNER_TEMP/app/RbxNative.app"
           .github/release/macos-app.sh target/release/rbxstudio "$version" "$app"
           .github/release/macos-dmg.sh "$app" "$RUNNER_TEMP/RbxNative.dmg"
