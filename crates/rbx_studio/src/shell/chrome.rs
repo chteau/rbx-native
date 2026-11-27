@@ -382,7 +382,8 @@ impl Shell {
             .into_any_element()
     }
 
-    /// **Row B**: the ribbon's category tabs, in the black strip above it.
+    /// **Row B**: the ribbon's category tabs, in the black strip above it,
+    /// and the dock layout switcher at its right end.
     pub(super) fn ribbon_tabs(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let active = self.ribbon_tab;
         self.ribbon_tabs_nav
@@ -436,6 +437,8 @@ impl Shell {
                         self.ribbon_tabs_nav.item(index, tab, cx)
                     }),
             )
+            .child(div().flex_1())
+            .child(self.layout_switcher(cx))
     }
 }
 
