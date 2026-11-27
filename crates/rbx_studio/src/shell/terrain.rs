@@ -177,7 +177,7 @@ impl Shell {
             &self.ribbon_nav,
             "ribbon-terrain-editor",
             gpui_kit::assets::IconName::Mountain,
-            "Terrain Editor",
+            "Terrain",
             cx,
         )
         .when(showing, |this| {

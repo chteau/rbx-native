@@ -81,6 +81,27 @@ pub(in crate::shell) static GUI_INSERTS: [Insert; 4] = [
     insert("BillboardGui", IconName::Presentation, "BillboardGui", None),
 ];
 
+/// Model › Effect's inserts, in Studio 0.748's order: each goes into the
+/// selection, as Studio's do.
+pub(in crate::shell) static EFFECT_INSERTS: [Insert; 11] = [
+    insert("Beam", IconName::Spline, "Beam", None),
+    insert("Explosion", IconName::Bomb, "Explosion", None),
+    insert("Fire", IconName::Flame, "Fire", None),
+    insert("Highlight", IconName::Highlighter, "Highlight", None),
+    insert(
+        "ParticleEmitter",
+        IconName::Sparkles,
+        "ParticleEmitter",
+        None,
+    ),
+    insert("Smoke", IconName::Cloudy, "Smoke", None),
+    insert("Sparkles", IconName::Sparkle, "Sparkles", None),
+    insert("Trail", IconName::Waypoints, "Trail", None),
+    insert("PointLight", IconName::Lightbulb, "PointLight", None),
+    insert("SpotLight", IconName::Flashlight, "SpotLight", None),
+    insert("SurfaceLight", IconName::LampWallUp, "SurfaceLight", None),
+];
+
 /// Model › Sun's two bodies: which one the Sun tool places.
 pub(in crate::shell) const SUN_BODIES: [(Body, &str); 2] =
     [(Body::Sun, "Sun"), (Body::Moon, "Moon")];
@@ -104,14 +125,12 @@ pub(in crate::shell) enum RibbonCommand {
     PivotReset,
     SunBody(Body),
     SunMode(Mode),
-    /// Home › Terrain Editor: opens the editor on its last tool, or shuts it.
+    /// Home › Terrain: opens the editor on its last tool, or shuts it.
     TerrainEditor,
-    /// Avatar › Rig Builder: opens the dialog that inserts a rig.
+    /// Avatar › Character (the Rig Builder): opens the dialog that inserts a rig.
     RigBuilder,
-    /// Avatar › Animation: opens the Animation Editor document.
+    /// Avatar › Clip Editor: opens the Animation Editor document.
     AnimationEditor,
-    /// Home › Game Settings: opens (or raises) the Game Settings window.
-    GameSettings,
     /// Home › Data Stores: opens (or raises) the Data Stores window.
     DataStores,
     /// Home › Update Planning (beta): opens (or raises) its window.
@@ -121,10 +140,7 @@ pub(in crate::shell) enum RibbonCommand {
 impl RibbonCommand {
     /// Whether this needs Roblox's servers, and so greys out offline.
     pub(in crate::shell) fn needs_roblox(self) -> bool {
-        matches!(
-            self,
-            RibbonCommand::GameSettings | RibbonCommand::DataStores
-        )
+        matches!(self, RibbonCommand::DataStores)
     }
 
     pub(in crate::shell) fn run(self, shell: &mut Shell, cx: &mut Context<Shell>) {
@@ -149,7 +165,6 @@ impl RibbonCommand {
             RibbonCommand::AnimationEditor => {
                 shell.set_document(super::super::chrome::Document::Animation, cx)
             }
-            RibbonCommand::GameSettings => shell.open_game_settings(cx),
             RibbonCommand::DataStores => shell.open_data_stores(cx),
             RibbonCommand::UpdatePlanning => shell.open_update_planning(cx),
         }
@@ -157,7 +172,7 @@ impl RibbonCommand {
 }
 
 /// Every live ribbon command as `(category, name, shortcut, command)`, for
-/// the palette. Home › Script's built-ins are left out: the Model menu
+/// the palette. Home › Script's built-ins are left out: the Edit menu
 /// already lists the same three inserts under their own names, and the
 /// palette lists that menu.
 pub(in crate::shell) fn palette_entries(
@@ -166,6 +181,14 @@ pub(in crate::shell) fn palette_entries(
     for item in &PART_INSERTS {
         entries.push((
             "Part",
+            item.label.to_owned(),
+            None,
+            RibbonCommand::Insert(item),
+        ));
+    }
+    for item in &EFFECT_INSERTS {
+        entries.push((
+            "Effect",
             item.label.to_owned(),
             None,
             RibbonCommand::Insert(item),
@@ -236,15 +259,9 @@ pub(in crate::shell) fn palette_entries(
     }
     entries.push((
         "Home",
-        "Terrain Editor".to_owned(),
+        "Terrain".to_owned(),
         None,
         RibbonCommand::TerrainEditor,
-    ));
-    entries.push((
-        "Home",
-        "Game Settings".to_owned(),
-        None,
-        RibbonCommand::GameSettings,
     ));
     entries.push((
         "Home",
@@ -262,13 +279,13 @@ pub(in crate::shell) fn palette_entries(
     }
     entries.push((
         "Avatar",
-        "Rig Builder".to_owned(),
+        "Character (Rig Builder)".to_owned(),
         None,
         RibbonCommand::RigBuilder,
     ));
     entries.push((
         "Avatar",
-        "Animation Editor".to_owned(),
+        "Clip Editor (Animation Editor)".to_owned(),
         None,
         RibbonCommand::AnimationEditor,
     ));

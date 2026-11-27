@@ -82,13 +82,10 @@ impl Shell {
         let nav = &self.ribbon_nav;
         let active = self.transform.effective() == Tool::Pivot;
         let edit = match self.transform.refusal(Tool::Pivot) {
-            Some(reason) => ribbon::unavailable_tile(
-                "ribbon-pivot",
-                IconName::LocateFixed,
-                "Edit Pivot",
-                reason,
-            ),
-            None => ribbon::tile(nav, "ribbon-pivot", IconName::LocateFixed, "Edit Pivot", cx)
+            Some(reason) => {
+                ribbon::unavailable_tile("ribbon-pivot", IconName::LocateFixed, "Pivot", reason)
+            }
+            None => ribbon::tile(nav, "ribbon-pivot", IconName::LocateFixed, "Pivot", cx)
                 .when(active, |this| ribbon::selected(this, tokens::tool_pivot()))
                 .tooltip(|window, cx| {
                     super::tooltip::text(

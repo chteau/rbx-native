@@ -37,15 +37,14 @@ fn the_rows_that_need_roblox_are_the_cloud_commands() {
     let commands = all();
     for label in [
         "File: Save to Roblox",
-        "File: Publish to Roblox",
+        "File: Publish",
         "File: Version History",
-        "File: Game Settings",
-        "Home: Game Settings",
+        "File: Experience Settings",
         "Home: Data Stores",
     ] {
         assert!(find(&commands, label).needs_roblox, "{label}");
     }
-    for label in ["File: Save to File", "Edit: Undo", "Home: Terrain Editor"] {
+    for label in ["File: Save to File", "Edit: Undo", "Home: Terrain"] {
         assert!(!find(&commands, label).needs_roblox, "{label}");
     }
 }
@@ -101,14 +100,14 @@ fn tools_and_docks_are_rows_too() {
 }
 
 #[test]
-fn a_users_template_is_listed_under_model() {
+fn a_users_template_is_listed_under_edit() {
     let template = crate::script_templates::Template {
         name: "Service".into(),
         class: "ModuleScript",
         source: String::new(),
     };
     let commands = registry(&menus(&[template]), []);
-    find(&commands, "Model: Insert Service (ModuleScript)");
+    find(&commands, "Edit: Insert Service (ModuleScript)");
 }
 
 #[gpui_kit::test]
@@ -174,7 +173,7 @@ fn an_empty_query_lists_everything_recent_first() {
     assert_eq!(rows[..2], ["Edit: Redo", "File: Save to File"]);
     // Then registry order, the recent ones not repeated.
     assert_eq!(rows[2], "File: New");
-    assert_eq!(rows[3], "File: Open");
+    assert_eq!(rows[3], "File: Open from File");
 }
 
 #[test]

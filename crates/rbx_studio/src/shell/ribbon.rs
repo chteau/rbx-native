@@ -10,22 +10,18 @@
 //!   ones that belong to the tile beside them (Copy's paste/cut/duplicate)
 //!   or that are really a readout (the snap increments).
 //!
-//! A tile is only clickable when this editor has a real handler behind it.
-//! Everything Studio's ribbon offers that this editor doesn't do yet stays
-//! visibly disabled with a tooltip saying so, rather than vanishing,
-//! seeing the shape of what belongs here is worth more than a shorter
-//! ribbon, and it's the same rule `menu_bar`'s greyed items already follow.
-//! What Studio's own ribbon doesn't show (Team Test, the UI tab's Anchor,
-//! Align and Auto Scale) isn't drawn at all: a greyed tile there would only
-//! promise something that isn't coming.
+//! Which tiles each tab shows, and in what order, is `layout`'s: Roblox
+//! Studio 0.748's ribbon, with this editor's own commands beside their
+//! nearest Studio neighbour. A Studio command this editor doesn't have
+//! isn't drawn at all; a tile that is drawn but has nothing to act on yet
+//! (Copy with nothing selected, Play mid-test) greys with the reason on
+//! hover, the same rule `menu_bar`'s greyed items follow.
 
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{h_flex, v_flex, Icon};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::chrome::Document;
-use super::layout::Panel;
 use super::roving::Roving;
 
 use crate::script_templates::ScriptTemplates;
@@ -37,19 +33,20 @@ use super::play::{session::StopReason, Phase};
 use super::Shell;
 
 mod commands;
+mod items;
+pub(super) mod layout;
 mod model_tiles;
+mod toggles;
 
-pub(super) use commands::{
-    palette_entries, RibbonCommand, GUI_INSERTS, PART_INSERTS, SUN_BODIES, SUN_MODES,
-};
+#[cfg(test)]
+pub(super) use commands::PART_INSERTS;
+pub(super) use commands::{palette_entries, RibbonCommand, GUI_INSERTS, SUN_BODIES, SUN_MODES};
 use commands::{Insert, SCRIPT_INSERTS};
 pub(super) use model_tiles::is_locked;
 
-/// The ribbon's category tabs. The frame names six; this editor has real
-/// commands for Home, UI and Model, a page of its own for running a place
-/// (Test, which the frame has no tab for). A tile with nothing behind it
-/// stays on the page, greyed, with the reason on hover, the same answer the
-/// menu bar's greyed items give.
+/// The ribbon's category tabs: Studio's, in Studio's order, plus Test,
+/// which holds what Studio 0.748 keeps in its quick-access row and Test
+/// menu (Play, Stop, the device and controller emulators).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub(crate) enum Tab {
     #[default]
@@ -92,98 +89,19 @@ impl Shell {
         // open page, so the group is opened here and closed once the page
         // has actually been built (see `shell::roving`).
         self.ribbon_nav.begin(&self.tab_order, None, cx);
-        let groups: Vec<Vec<AnyElement>> = match self.ribbon_tab {
-            Tab::Home => vec![
-                self.clipboard_tiles(cx),
-                self.transform_tools(cx),
-                self.insert_tiles(cx),
-                self.terrain_tiles(cx),
-                self.settings_tiles(cx),
-                self.panel_tiles(cx),
-            ],
-            Tab::Avatar => {
-                let settings = vec![self.avatar_settings_tile(cx)];
-                let mut tiles = self.rig_tiles(cx);
-                tiles.push(self.animation_tile(cx));
-                tiles.push(
-                    tile(
-                        &self.ribbon_nav,
-                        "ribbon-accessory",
-                        IconName::Package,
-                        "Accessory",
-                        cx,
-                    )
-                    .tooltip(|window, cx| {
-                        super::tooltip::text(
-                            "Accessory \u{2014} fit a mesh to a body as an accessory or layered clothing, test it, and generate it",
-                            window,
-                            cx,
-                        )
-                    })
-                    .on_click(cx.listener(|shell, _, _, cx| shell.open_ugc_fitting(None, None, cx)))
-                    .into_any_element(),
-                );
-                tiles.push(self.avatar_setup_tile(cx));
-                let items = vec![
-                    tile(
-                        &self.ribbon_nav,
-                        "ribbon-check-item",
-                        IconName::ShieldCheck,
-                        "Check Item",
-                        cx,
-                    )
-                    .tooltip(|window, cx| {
-                        super::tooltip::text(
-                            "Check Item \u{2014} check an avatar item against Roblox\u{2019}s Marketplace limits",
-                            window,
-                            cx,
-                        )
-                    })
-                    .on_click(cx.listener(|shell, _, _, cx| shell.open_ugc_validator(None, None, cx)))
-                    .into_any_element(),
-                    cloud_tile(
-                        &self.ribbon_nav,
-                        "ribbon-upload-item",
-                        IconName::CloudUpload,
-                        "Upload Item",
-                        "Upload Item \u{2014} upload an avatar item and finish it on the Creator Hub",
-                        |shell, cx| shell.open_ugc_upload(None, None, cx),
-                        cx,
-                    ),
-                    tile(
-                        &self.ribbon_nav,
-                        "ribbon-face-preview",
-                        IconName::ScanFace,
-                        "Face Preview",
-                        cx,
-                    )
-                    .tooltip(|window, cx| {
-                        super::tooltip::text(
-                            "Face Preview \u{2014} pose a dynamic head\u{2019}s FACS controls and see its landmarks",
-                            window,
-                            cx,
-                        )
-                    })
-                    .on_click(cx.listener(|shell, _, _, cx| shell.open_face_preview(cx)))
-                    .into_any_element(),
-                ];
-                vec![settings, tiles, items]
+        let mut groups: Vec<Vec<AnyElement>> = Vec::new();
+        for group in layout::groups(self.ribbon_tab, layout::Gates::current()) {
+            if group == [layout::Item::PluginToolbars] {
+                groups.extend(self.plugin_toolbar_groups(cx));
+                continue;
             }
-            Tab::Ui => vec![
-                vec![self.insert_gui(cx).into_any_element()],
-                vec![self.style_editor_tile(cx)],
-            ],
-            Tab::Script => vec![self.script_tiles(cx)],
-            Tab::Model => vec![
-                self.edit_tiles(cx),
-                self.solid_modeling_tiles(cx),
-                self.pivot_tiles(cx),
-                self.sun_tiles(cx),
-                self.import_tiles(cx),
-            ],
-            Tab::Test => vec![self.test_tiles(cx), self.viewport_tiles(cx)],
-            Tab::Plugins => self.plugin_ribbon_groups(cx),
-        };
+            groups.push(
+                group
+                    .into_iter()
+                    .flat_map(|item| self.ribbon_item(item, cx))
+                    .collect(),
+            );
+        }
 
         // One separator between groups, none at either end, the frame's own
         // rhythm, and the reason the groups are built as a list of lists
@@ -237,224 +155,6 @@ impl Shell {
             .children(children)
     }
 
-    /// The four transform tools, the local-axis toggle, Align, and the snap
-    /// increments they all obey.
-    ///
-    /// The tools, Local and Align sit inside one bordered cluster, icon
-    /// only, each still has its own tooltip, so nothing here loses its
-    /// accessible name by dropping a caption nobody needs to read twice.
-    /// The snap readouts stay their own thing beside it: they are values,
-    /// not tools.
-    fn transform_tools(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let active = self.transform.effective();
-        let cluster: Vec<AnyElement> = Tool::TRANSFORM
-            .map(|tool| {
-                let refusal = self.transform.refusal(tool);
-                let id = ("tool", tool as usize);
-                match refusal {
-                    Some(_) => refused_icon(&self.ribbon_nav, id, tool_icon(tool), cx),
-                    None => cluster_icon(&self.ribbon_nav, id, tool_icon(tool), cx),
-                }
-                .when(active == tool, |this| selected(this, tool_accent(tool)))
-                .tooltip(move |window, cx| {
-                    let text = match (refusal, tool.shortcut()) {
-                        (Some(reason), _) => format!("{} — {reason}", tool.label()),
-                        (None, Some(key)) => format!("{} ({key})", tool.label()),
-                        (None, None) => tool.label().to_owned(),
-                    };
-                    super::tooltip::text(text, window, cx)
-                })
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.transform_action(crate::transform::Action::Use(tool), cx);
-                }))
-                .into_any_element()
-            })
-            .into_iter()
-            .chain([
-                self.local_tile(cx).into_any_element(),
-                self.align_control(cx).into_any_element(),
-            ])
-            .collect();
-
-        vec![
-            v_flex()
-                .flex_none()
-                .h_full()
-                .justify_center()
-                .child(
-                    h_flex()
-                        .flex_none()
-                        .items_center()
-                        .gap(px(4.))
-                        .p(px(5.))
-                        .bg(tokens::field_select())
-                        .rounded(tokens::radius_container())
-                        .border_1()
-                        .border_color(tokens::border())
-                        .children(cluster),
-                )
-                .into_any_element(),
-            self.snap_stack(cx).into_any_element(),
-        ]
-    }
-
-    /// §5.7, the three insert menus. Every item routes through
-    /// `Shell::insert_instance` (or, for the Part menu's Block/Sphere/
-    /// Cylinder, `Shell::insert_part`: see `insert_item`), the same paths
-    /// the Model menu already uses, so a ribbon click and a menu-bar click
-    /// are the same code path.
-    fn insert_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let part = menu::dropdown_in_group(
-            self,
-            MenuId::InsertPart,
-            super::chrome::Trigger::new(tile(
-                &self.ribbon_nav,
-                "ribbon-insert-part",
-                IconName::Box,
-                "Part",
-                cx,
-            )),
-            PART_INSERTS.iter().map(insert_item).collect(),
-            cx,
-        );
-        let script = menu::dropdown_in_group(
-            self,
-            MenuId::InsertScript,
-            super::chrome::Trigger::new(tile(
-                &self.ribbon_nav,
-                "ribbon-insert-script",
-                IconName::FileCode,
-                "Script",
-                cx,
-            )),
-            script_items(&self.script_templates),
-            cx,
-        );
-
-        vec![
-            part.into_any_element(),
-            script.into_any_element(),
-            self.insert_gui(cx).into_any_element(),
-            {
-                let showing = self.is_panel_showing(Panel::Toolbox);
-                tile(
-                    &self.ribbon_nav,
-                    "ribbon-toolbox",
-                    IconName::Package,
-                    "Toolbox",
-                    cx,
-                )
-                .when(showing, |this| {
-                    this.bg(tokens::accent_soft())
-                        .text_color(tokens::check_on())
-                })
-                .tooltip(|window, cx| {
-                    super::tooltip::text(
-                        "Toolbox \u{2014} insert items from the Creator Store",
-                        window,
-                        cx,
-                    )
-                })
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.set_panel_open(Panel::Toolbox, !showing, cx);
-                }))
-                .into_any_element()
-            },
-        ]
-    }
-
-    /// Home's Settings group, Studio's own: Game Settings.
-    /// The viewport's own real controls, quality, orthographic, the axis
-    /// indicator, are mostly in the viewport dock's settings menu, because
-    /// they belong to the open document rather than to a Studio-named ribbon
-    /// group; Settings opens the same page, and Show UI is the one switch
-    /// Studio keeps on its ribbon.
-    fn viewport_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let shown = self.show_screen_gui;
-        let fullbright = self.fullbright;
-        let mut tiles =
-            vec![
-                tile(
-                    &self.ribbon_nav,
-                    "ribbon-viewport-settings",
-                    IconName::Settings,
-                    "Settings",
-                    cx,
-                )
-                .tooltip(|window, cx| {
-                    super::tooltip::text("Settings \u{2014} the viewport's settings", window, cx)
-                })
-                .on_click(cx.listener(|shell, _, _, cx| shell.open_settings_on("viewport", cx)))
-                .into_any_element(),
-                tile(
-                    &self.ribbon_nav,
-                    "ribbon-show-ui",
-                    IconName::Eye,
-                    "Show UI",
-                    cx,
-                )
-                .when(shown, |this| {
-                    this.bg(tokens::accent_soft())
-                        .text_color(tokens::check_on())
-                })
-                .tooltip(move |window, cx| super::tooltip::text(show_ui_tooltip(shown), window, cx))
-                .on_click(cx.listener(|shell, _, _, cx| {
-                    shell.set_screen_gui_shown(!shell.show_screen_gui, cx)
-                }))
-                .into_any_element(),
-                tile(
-                    &self.ribbon_nav,
-                    "ribbon-fullbright",
-                    IconName::Sun,
-                    "Fullbright",
-                    cx,
-                )
-                .when(fullbright, |this| {
-                    this.bg(tokens::accent_soft())
-                        .text_color(tokens::check_on())
-                })
-                .tooltip(move |window, cx| {
-                    super::tooltip::text(fullbright_tooltip(fullbright), window, cx)
-                })
-                .on_click(cx.listener(move |shell, _, _, cx| shell.set_fullbright(!fullbright, cx)))
-                .into_any_element(),
-            ];
-        if crate::beta::enabled(super::PSEUDO_LOC_BETA_ID) {
-            let on = self.pseudo_locale().is_some();
-            tiles.push(
-                tile(
-                    &self.ribbon_nav,
-                    "ribbon-pseudo-loc",
-                    IconName::Globe,
-                    "Pseudo-loc",
-                    cx,
-                )
-                .when(on, |this| {
-                    this.bg(tokens::accent_soft())
-                        .text_color(tokens::check_on())
-                })
-                .tooltip(|window, cx| {
-                    super::tooltip::text(
-                        "Pseudo-localize \u{2014} draw every GUI text longer and accented, and mark what no longer fits",
-                        window,
-                        cx,
-                    )
-                })
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    let locale = (!on).then(rbx_viewer::PseudoLocale::default);
-                    shell.set_pseudo_locale(locale, cx);
-                    if locale.is_some() {
-                        shell.set_panel_open(Panel::Localization, true, cx);
-                    }
-                }))
-                .into_any_element(),
-            );
-        }
-        tiles
-    }
-
-    /// Avatar's Avatar Setup tile: Studio's tool turns a character mesh into
-    /// a rig, which is what the auto-rigger does.
     /// Studio's first Avatar button, in a group of its own: the orange
     /// figure with a gear that opens the Avatar Settings dock.
     fn avatar_settings_tile(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -498,225 +198,25 @@ impl Shell {
             .into_any_element()
     }
 
+    /// Avatar's Setup tile: Studio's tool turns a character mesh into a
+    /// rig, which is what the auto-rigger does.
     fn avatar_setup_tile(&self, cx: &mut Context<Self>) -> AnyElement {
         tile(
             &self.ribbon_nav,
             "ribbon-avatar-setup",
             IconName::Settings,
-            "Avatar Setup",
+            "Setup",
             cx,
         )
         .tooltip(|window, cx| {
             super::tooltip::text(
-                "Avatar Setup \u{2014} auto-rig a character mesh into an R15 rig",
+                "Setup \u{2014} auto-rig a character mesh into an R15 rig",
                 window,
                 cx,
             )
         })
         .on_click(cx.listener(|shell, _, _, cx| shell.choose_autorig(cx)))
         .into_any_element()
-    }
-
-    /// The Script tab: Find and Replace open the Find in Place panel, from
-    /// any document, Analysis toggles the Script Analysis panel. Format has
-    /// nothing behind it.
-    fn script_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let finder = |id: &'static str,
-                      icon,
-                      label: &'static str,
-                      tip: &'static str,
-                      replace: bool,
-                      cx: &mut Context<Self>| {
-            tile(&self.ribbon_nav, id, icon, label, cx)
-                .tooltip(move |window, cx| {
-                    super::tooltip::text(format!("{label} \u{2014} {tip}"), window, cx)
-                })
-                .on_click(cx.listener(move |shell, _, window, cx| {
-                    shell.open_find_in_place(replace, window, cx)
-                }))
-                .into_any_element()
-        };
-        let analysis = self.is_panel_showing(Panel::ScriptAnalysis);
-        vec![
-            finder(
-                "ribbon-script-find",
-                IconName::Search,
-                "Find",
-                "search every script in the place",
-                false,
-                cx,
-            ),
-            finder(
-                "ribbon-script-replace",
-                IconName::Type,
-                "Replace",
-                "replace across every script in the place",
-                true,
-                cx,
-            ),
-            unavailable_tile(
-                "ribbon-script-format",
-                IconName::Code,
-                "Format",
-                "a Luau formatter isn't bundled",
-            )
-            .into_any_element(),
-            tile(
-                &self.ribbon_nav,
-                "ribbon-script-analysis",
-                IconName::Bug,
-                "Analysis",
-                cx,
-            )
-            .when(analysis, |this| {
-                this.bg(tokens::accent_soft())
-                    .text_color(tokens::check_on())
-            })
-            .tooltip(|window, cx| {
-                super::tooltip::text("Analysis \u{2014} the Script Analysis panel", window, cx)
-            })
-            .on_click(cx.listener(move |shell, _, _, cx| {
-                shell.set_panel_open(Panel::ScriptAnalysis, !analysis, cx);
-            }))
-            .into_any_element(),
-            {
-                let bytecode = self.is_panel_showing(Panel::Bytecode);
-                tile(
-                    &self.ribbon_nav,
-                    "ribbon-script-bytecode",
-                    IconName::Code,
-                    "Bytecode",
-                    cx,
-                )
-                .when(bytecode, |this| {
-                    this.bg(tokens::accent_soft())
-                        .text_color(tokens::check_on())
-                })
-                .tooltip(|window, cx| {
-                    super::tooltip::text(
-                        "Bytecode \u{2014} what Luau compiles this script to",
-                        window,
-                        cx,
-                    )
-                })
-                .on_click(cx.listener(move |shell, _, _, cx| {
-                    shell.set_panel_open(Panel::Bytecode, !bytecode, cx);
-                }))
-                .into_any_element()
-            },
-        ]
-    }
-
-    fn settings_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let mut tiles = vec![
-            cloud_tile(
-                &self.ribbon_nav,
-                "ribbon-game-settings",
-                IconName::Settings,
-                "Game Settings",
-                "Game Settings — the experience's settings and this place's own",
-                |shell, cx| RibbonCommand::GameSettings.run(shell, cx),
-                cx,
-            ),
-            cloud_tile(
-                &self.ribbon_nav,
-                "ribbon-data-stores",
-                IconName::Database,
-                "Data Stores",
-                "Data Stores — browse and edit the experience's data stores",
-                |shell, cx| RibbonCommand::DataStores.run(shell, cx),
-                cx,
-            ),
-        ];
-        if crate::beta::enabled(crate::update_planning::BETA_ID) {
-            tiles.push(
-                tile(
-                    &self.ribbon_nav,
-                    "ribbon-update-planning",
-                    IconName::CalendarClock,
-                    "Update Planning",
-                    cx,
-                )
-                .tooltip(|window, cx| {
-                    super::tooltip::text(
-                        "Update Planning \u{2014} countdown icons swapped in on schedule",
-                        window,
-                        cx,
-                    )
-                })
-                .on_click(
-                    cx.listener(|shell, _, _, cx| RibbonCommand::UpdatePlanning.run(shell, cx)),
-                )
-                .into_any_element(),
-            );
-        }
-        tiles
-    }
-
-    /// One toggle per dock, and the reason they exist: a dock closed from
-    /// its own tab has no tab left to bring it back with. The View menu
-    /// carries the same toggles, through the same call, a window you can
-    /// shut and not reopen is a window you have lost.
-    fn panel_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let mut tiles = vec![
-            (Panel::Explorer, IconName::ListTree, "Explorer"),
-            (Panel::Properties, IconName::SlidersHorizontal, "Properties"),
-            (Panel::Output, IconName::Terminal, "Output"),
-            (Panel::Viewport, IconName::MonitorCog, "Viewport"),
-            (Panel::InputActions, IconName::Gamepad2, "Input Actions"),
-            (
-                Panel::SecurityAudit,
-                IconName::ShieldAlert,
-                "Security Audit",
-            ),
-            (Panel::PrePublish, IconName::ListChecks, "Pre-publish"),
-            (Panel::Playtests, IconName::Film, "Playtests"),
-            (Panel::Layers, IconName::Layers, "Layers"),
-            (Panel::Loren, IconName::Layers, "Loren"),
-            (Panel::FindInPlace, IconName::Search, "Find in Place"),
-            (Panel::MicroProfiler, IconName::Activity, "MicroProfiler"),
-            (
-                Panel::RemoteInspector,
-                IconName::Network,
-                "Remote Inspector",
-            ),
-            (Panel::LeakFinder, IconName::Bug, "Leak Finder"),
-            (Panel::LoadTest, IconName::Users, "Load Test"),
-            (Panel::Localization, IconName::Globe, "Localization"),
-        ];
-        let beta_hidden = super::ui_editor::beta_hidden_panels();
-        tiles.retain(|(panel, ..)| !beta_hidden.contains(panel));
-        // Argon and Wally have no tab of their own to reopen from outside
-        // the Script Editor, because they're nowhere to be seen outside it
-        // either, see `Shell::hidden_panels`.
-        if self.document == Document::Scripts {
-            tiles.push((Panel::Argon, IconName::RefreshCw, "Argon"));
-            tiles.push((Panel::Wally, IconName::Package, "Wally"));
-            tiles.push((
-                Panel::ScriptAnalysis,
-                IconName::ListChecks,
-                "Script Analysis",
-            ));
-            tiles.push((Panel::Watch, IconName::Eye, "Watch"));
-            tiles.push((Panel::CallStack, IconName::Layers, "Call Stack"));
-            tiles.push((Panel::Tests, IconName::CircleCheck, "Tests"));
-            tiles.push((Panel::Bytecode, IconName::Code, "Bytecode"));
-        }
-        tiles
-            .into_iter()
-            .map(|(panel, icon, label)| {
-                let showing = self.is_panel_showing(panel);
-                tile(&self.ribbon_nav, label, icon, label, cx)
-                    .when(showing, |this| {
-                        this.bg(tokens::accent_soft())
-                            .text_color(tokens::check_on())
-                    })
-                    .on_click(cx.listener(move |shell, _, _, cx| {
-                        shell.set_panel_open(panel, !showing, cx);
-                    }))
-                    .into_any_element()
-            })
-            .collect()
     }
 
     /// The UI tab's Style Editor, as in Studio: the UI Editor on its
@@ -753,7 +253,7 @@ impl Shell {
                 &self.ribbon_nav,
                 "ribbon-insert-gui",
                 IconName::AppWindow,
-                "UI",
+                "GUI",
                 cx,
             )),
             vec![
@@ -764,111 +264,6 @@ impl Shell {
             ],
             cx,
         )
-    }
-
-    /// Group/Ungroup are live (`shell::group`, the same Ctrl+G/Ctrl+U
-    /// handlers the Model menu calls). Material, Color, Lock and Anchor live
-    /// in `model_tiles`, and act on the whole selection's parts.
-    /// Cut/Copy/Paste/Duplicate run the same `shell::clipboard` entry points
-    /// as `menu_bar`'s Edit menu and `Ctrl+X`/`C`/`V`/`D`.
-    ///
-    /// Each is greyed exactly while its own handler would return early
-    /// without doing anything, `clipboard::has_copyable` is that handler's
-    /// own guard, so the button and the command cannot disagree about when
-    /// there is something to act on. A control that is greyed is also out
-    /// of the roving group (see `unavailable_tile`), so arrowing along the
-    /// ribbon skips it rather than stopping on a dead end; the ribbon
-    /// already rebuilds that group every render, which is why its count is
-    /// allowed to change with the clipboard.
-    fn clipboard_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        const NOTHING_SELECTED: &str = "nothing is selected";
-        const CLIPBOARD_EMPTY: &str = "the clipboard is empty";
-
-        let nav = &self.ribbon_nav;
-        let copyable =
-            super::clipboard::has_copyable(&self.dom, &self.database, self.selected_all());
-
-        let copy = if copyable {
-            tile(nav, "ribbon-copy", IconName::Copy, "Copy", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.copy_selected(cx)))
-        } else {
-            unavailable_tile("ribbon-copy", IconName::Copy, "Copy", NOTHING_SELECTED)
-        };
-        let paste = if self.clipboard.is_empty() {
-            unavailable_row(
-                "ribbon-paste",
-                IconName::ClipboardPaste,
-                "Paste",
-                CLIPBOARD_EMPTY,
-            )
-        } else {
-            live_stack_row(nav, "ribbon-paste", IconName::ClipboardPaste, "Paste", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.paste_clipboard(cx)))
-        };
-        let cut = if copyable {
-            live_stack_row(nav, "ribbon-cut", IconName::Scissors, "Cut", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.cut_selected(cx)))
-        } else {
-            unavailable_row("ribbon-cut", IconName::Scissors, "Cut", NOTHING_SELECTED)
-        };
-        let duplicate = if copyable {
-            live_stack_row(nav, "ribbon-duplicate", IconName::CopyPlus, "Duplicate", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.duplicate_selected(cx)))
-        } else {
-            unavailable_row(
-                "ribbon-duplicate",
-                IconName::CopyPlus,
-                "Duplicate",
-                NOTHING_SELECTED,
-            )
-        };
-
-        vec![
-            copy.into_any_element(),
-            stack(vec![paste, cut, duplicate]).into_any_element(),
-        ]
-    }
-
-    /// Group and Ungroup grey on the same rule the clipboard tiles follow
-    /// (see [`Shell::clipboard_tiles`]): `group::has_groupable` and
-    /// `has_ungroupable` are the guards `group_selected` and
-    /// `ungroup_selected` return early on, so a live tile always has work to
-    /// do. Group needs one common, reparentable parent; Ungroup needs one
-    /// `Model` among the selection and ignores whatever else is there.
-    fn edit_tiles(&mut self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let nav = &self.ribbon_nav;
-        let selected = self.selected_all();
-        let group = if super::group::has_groupable(&self.dom, &self.database, selected) {
-            tile(nav, "ribbon-group", IconName::Group, "Group", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.group_selected(cx)))
-        } else {
-            unavailable_tile(
-                "ribbon-group",
-                IconName::Group,
-                "Group",
-                "nothing groupable is selected",
-            )
-        };
-        let ungroup = if super::group::has_ungroupable(&self.dom, &self.database, selected) {
-            tile(nav, "ribbon-ungroup", IconName::Ungroup, "Ungroup", cx)
-                .on_click(cx.listener(|shell, _, _, cx| shell.ungroup_selected(cx)))
-        } else {
-            unavailable_tile(
-                "ribbon-ungroup",
-                IconName::Ungroup,
-                "Ungroup",
-                "no Model is selected",
-            )
-        };
-
-        vec![
-            group.into_any_element(),
-            ungroup.into_any_element(),
-            self.material_tile(cx),
-            self.color_tile(cx),
-            self.flag_tile(model_tiles::Flag::Locked, cx),
-            self.flag_tile(model_tiles::Flag::Anchored, cx),
-        ]
     }
 }
 
