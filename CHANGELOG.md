@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-27
+
+- **Top bar reorganised like Studio.** Same look, same tabs, but the ribbon is laid out the way Studio 0.748 does it now, so coming over from Studio you find things where you expect them. I measured every tab, group, button and dropdown in real Studio and moved ours to match: Align and Effect on Model, Import on Home, Format and Command on Script, Character, Setup and UGC Validation on Avatar, with Studio's names. Our own stuff sits next to whatever it's closest to. The menu bar is Studio's too now: File, Edit, View, Plugins, Test, Window, Help, and every dock is in Window. And there's a layout switcher at the right of the tabs: pick a saved layout, save the current one as new, or manage them, in one click. (@chteau)
+
 ## 2026-11-26
 
 - **EditableMesh follow-ups.** `CreateEditableMeshAsync` and `CreateEditableImageAsync` check who owns the asset now, like Studio: you, a group your key can manage, or the experience's owner, in Edit and in Play (local). I keep the answer on disk so offline still knows it, and offline with nothing kept the load fails like Studio's does with no network. MeshParts and SpecialMeshes inside a ViewportFrame draw as their real meshes with textures instead of grey boxes, so OpenArena's bot heads and menu banner show up. A textured Neon MeshPart doesn't glow anymore and a see-through one keeps its texture's alpha, I checked both in real Studio, that was OpenArena's white muzzle flash. And the "Maximum event re-entrancy depth exceeded" spam is gone, the cap only counts a handler firing its own event now. (@chteau)

@@ -2232,6 +2232,16 @@ both the plain fetch failure and the silent fall back to a default
   so a floating panel gets its window back. The one matching the docks is
   marked Active; saving under a used name replaces it, and each has a
   delete. Kept in `settings.json` as `named_layouts`.
+- [x] **Top bar laid out like Studio 0.748**: the ribbon's tabs, groups,
+  button order and labels match current Studio (measured in Studio, tab by
+  tab), in this editor's own look. Studio commands land where Studio puts
+  them (Align and the Effect inserts on Model, Import on Home, Format and
+  Command on Script, Character/Setup/UGC Validation/Clip Editor on Avatar),
+  this editor's own commands sit beside their nearest neighbour, and Studio
+  commands it doesn't have aren't drawn. The menu bar is Studio's File /
+  Edit / View / Plugins / Test / Window / Help, with every dock in Window.
+  A layout switcher at the right of the tab row switches named layouts,
+  saves the current one as new and opens Settings › Layout to manage them.
 - [x] **Renderer calibration** in Studio Settings › Viewport › Advanced:
   `SUN_BASE`, `ATMOSPHERE_DENSITY_SCALE` and `PLASTIC_SPEC_STRENGTH` are
   settings (`rbx_viewer::Calibration`, defaulting to the tuned values and
@@ -3931,6 +3941,9 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   modeling for now. Later, a live link to Blender (send a selection over,
   get the mesh back as a MeshPart, keep the two in sync) for anything
   Parts and CSG can't do.
+- [ ] 📋 **Language support (UI translation)**, after 0.3.1: a string
+  catalog for the editor's own text, a language picker in Studio Settings,
+  English and French first.
 
 ### Play / Test workflow
 - [x] **Shareable bug repros**: the Playtests dock's Export repro… writes
