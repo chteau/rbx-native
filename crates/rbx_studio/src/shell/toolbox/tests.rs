@@ -2,7 +2,9 @@ use glam::Vec3;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_viewer::pick::Ray;
 
-use super::{bounds, clear_overlaps, count_scripts, face_of, land, subtree, Aim, OPEN_AIR_DISTANCE};
+use super::{
+    bounds, clear_overlaps, count_scripts, face_of, land, subtree, Aim, OPEN_AIR_DISTANCE,
+};
 
 fn vec3(x: f32, y: f32, z: f32) -> rbx_dom::Vector3Data {
     rbx_dom::Vector3Data { x, y, z }

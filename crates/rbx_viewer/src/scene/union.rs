@@ -415,7 +415,8 @@ impl Merged {
     /// here came back with it, drawn where it no longer was.
     pub(crate) fn forget(&mut self, referent: Ref) {
         self.hidden.remove(&referent);
-        self.instances.retain(|instance| instance.referent != referent);
+        self.instances
+            .retain(|instance| instance.referent != referent);
         self.absorbed.remove(&referent);
     }
 

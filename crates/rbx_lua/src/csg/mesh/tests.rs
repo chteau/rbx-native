@@ -301,5 +301,9 @@ fn a_mesh_part_drawing_an_editable_mesh_carves_as_that_mesh() {
     let solid = world_solid(&dom, &db, gem).unwrap();
     rbx_dom::editable::withdraw(editable);
     // The octahedron's 4/3 × 2³, not the box's 64.
-    assert!((solid.volume() - 32.0 / 3.0).abs() < 1e-6, "{}", solid.volume());
+    assert!(
+        (solid.volume() - 32.0 / 3.0).abs() < 1e-6,
+        "{}",
+        solid.volume()
+    );
 }

@@ -346,7 +346,11 @@ impl Properties {
         let anchor = instances.next()?;
         let others: Vec<&str> = instances.map(|instance| instance.class()).collect();
         if others.is_empty() {
-            return Some(format!("Properties - {} {:?}", anchor.class(), anchor.name()));
+            return Some(format!(
+                "Properties - {} {:?}",
+                anchor.class(),
+                anchor.name()
+            ));
         }
         let shared = std::iter::successors(Some(anchor.class()), |class| {
             self.db.class(class)?.superclass.as_deref()
@@ -357,7 +361,10 @@ impl Properties {
                 .all(|other| other == class || self.db.is_subclass_of(other, class))
         })
         .unwrap_or("Instance");
-        Some(format!("Properties - {shared} - {} items", others.len() + 1))
+        Some(format!(
+            "Properties - {shared} - {} items",
+            others.len() + 1
+        ))
     }
 
     /// [`Self::rows`] narrowed to the names the filter box matches.

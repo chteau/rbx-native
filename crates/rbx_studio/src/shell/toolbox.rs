@@ -500,7 +500,12 @@ pub(super) fn clear_overlaps(dom: &mut WeakDom, within: Ref, part: Ref) {
         let into = |(o_min, o_max): &(Vec3, Vec3)| {
             (min + EPSILON).cmplt(*o_max).all() && (max - EPSILON).cmpgt(*o_min).all()
         };
-        let Some(top) = others.iter().filter(|o| into(o)).map(|(_, o_max)| o_max.y).reduce(f32::max) else {
+        let Some(top) = others
+            .iter()
+            .filter(|o| into(o))
+            .map(|(_, o_max)| o_max.y)
+            .reduce(f32::max)
+        else {
             return;
         };
         crate::kits::translate(dom, &[part], Vec3::new(0., top - min.y, 0.));

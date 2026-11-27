@@ -606,7 +606,8 @@ pub(crate) fn command_for_action(action: &dyn Action) -> Option<Command> {
         MenuCommandPalette, MenuCopyInstance, MenuCutInstance, MenuDeleteInstance,
         MenuDuplicateInstance, MenuGroup, MenuInsertFolder, MenuInsertObject, MenuInsertPart,
         MenuNewPlace, MenuOpenPlace, MenuPasteInstance, MenuPasteIntoInstance, MenuQuickOpen,
-        MenuRedo, MenuSave, MenuSaveToFile, MenuStudioSettings, MenuToggleMicroProfiler, MenuUndo, MenuUngroup,
+        MenuRedo, MenuSave, MenuSaveToFile, MenuStudioSettings, MenuToggleMicroProfiler, MenuUndo,
+        MenuUngroup,
     };
     let id = action.as_any().type_id();
     let table: [(TypeId, Command); 21] = [
@@ -615,7 +616,10 @@ pub(crate) fn command_for_action(action: &dyn Action) -> Option<Command> {
         (TypeId::of::<MenuInsertObject>(), Command::InsertObject),
         (TypeId::of::<MenuSave>(), Command::Save),
         (TypeId::of::<MenuSaveToFile>(), Command::SaveAs),
-        (TypeId::of::<MenuToggleMicroProfiler>(), Command::MicroProfiler),
+        (
+            TypeId::of::<MenuToggleMicroProfiler>(),
+            Command::MicroProfiler,
+        ),
         (TypeId::of::<MenuUndo>(), Command::Undo),
         (TypeId::of::<MenuRedo>(), Command::Redo),
         (TypeId::of::<MenuCutInstance>(), Command::Cut),

@@ -50,7 +50,11 @@ const BAR_BOTTOM: Pixels = px(80.);
 
 /// How tall a dropdown may grow: down to the window's bottom or the
 /// screen's usable bottom, whichever comes first, never below one row.
-pub(super) fn menu_room(viewport: Pixels, window_top: Pixels, screen_bottom: Option<Pixels>) -> Pixels {
+pub(super) fn menu_room(
+    viewport: Pixels,
+    window_top: Pixels,
+    screen_bottom: Option<Pixels>,
+) -> Pixels {
     let bottom = match screen_bottom {
         Some(screen) => viewport.min(screen - window_top),
         None => viewport,
@@ -77,7 +81,9 @@ pub(super) fn dropdown(
     let room = menu_room(
         window.viewport_size().height,
         window.bounds().origin.y,
-        window.display(cx).map(|display| display.visible_bounds().bottom()),
+        window
+            .display(cx)
+            .map(|display| display.visible_bounds().bottom()),
     );
     // Read once as the menu opens: a command that needs Roblox reads
     // "You're offline" under its name, greyed out.

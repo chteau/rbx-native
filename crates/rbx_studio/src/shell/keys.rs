@@ -286,7 +286,15 @@ impl Shell {
         let block = class == "Part" && shape.is_none_or(|shape| shape == PART_TYPE_BLOCK);
         self.insert_instance_placed(class, shape, workspace, cx, |dom, part| {
             if block {
-                let _ = dom.set_property(part, "size", Variant::Vector3(Vector3Data { x: 4.0, y: 1.0, z: 2.0 }));
+                let _ = dom.set_property(
+                    part,
+                    "size",
+                    Variant::Vector3(Vector3Data {
+                        x: 4.0,
+                        y: 1.0,
+                        z: 2.0,
+                    }),
+                );
             }
             super::toolbox::land(dom, &[part], &aim);
             if let Some(step) = step {
@@ -415,7 +423,11 @@ pub(super) fn snap_footprint(dom: &mut WeakDom, part: Ref, step: f32) {
     if step <= 0.0 {
         return;
     }
-    let Some(Variant::CFrame(mut cframe)) = dom.get(part).and_then(|i| i.properties().get("CFrame")).cloned() else {
+    let Some(Variant::CFrame(mut cframe)) = dom
+        .get(part)
+        .and_then(|i| i.properties().get("CFrame"))
+        .cloned()
+    else {
         return;
     };
     cframe.position.x = (cframe.position.x / step).round() * step;

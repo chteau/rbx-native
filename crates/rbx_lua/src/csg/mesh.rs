@@ -46,7 +46,8 @@ fn mesh_uri(instance: &Instance) -> Option<&str> {
 /// `AssetService:CreateMeshPartAsync(Content.fromObject(mesh))`, with no
 /// `MeshId`): its triangles, three corners each.
 fn editable_triangles(instance: &Instance) -> Option<(Vec<[f32; 3]>, Vec<u32>)> {
-    let Some(Variant::Content(Content::Object(referent))) = instance.properties().get("MeshContent")
+    let Some(Variant::Content(Content::Object(referent))) =
+        instance.properties().get("MeshContent")
     else {
         return None;
     };
@@ -76,8 +77,7 @@ pub(super) fn world_solid(
     let source = guard.as_ref()?;
     let (positions, indices) = match mesh_uri(instance) {
         Some(uri) => {
-            match source(uri).and_then(|bytes| rbx_mesh::parse(&bytes).map_err(|e| e.to_string()))
-            {
+            match source(uri).and_then(|bytes| rbx_mesh::parse(&bytes).map_err(|e| e.to_string())) {
                 Ok(mesh) => (
                     mesh.vertices.iter().map(|v| v.position).collect(),
                     mesh.indices,

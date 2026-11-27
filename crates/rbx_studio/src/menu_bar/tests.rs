@@ -318,7 +318,10 @@ fn file_new_and_open_show_their_registry_shortcut(cx: &mut gpui_kit::TestAppCont
 fn a_dropdown_stops_at_the_screen_bottom() {
     use super::popup::menu_room;
     use gpui_kit::px;
-    assert_eq!(menu_room(px(1000.), px(25.), Some(px(819.))), px(819. - 25. - 80.));
+    assert_eq!(
+        menu_room(px(1000.), px(25.), Some(px(819.))),
+        px(819. - 25. - 80.)
+    );
     assert_eq!(menu_room(px(600.), px(25.), Some(px(819.))), px(600. - 80.));
     assert_eq!(menu_room(px(600.), px(0.), None), px(520.));
     assert!(menu_room(px(50.), px(0.), None) > px(0.));
