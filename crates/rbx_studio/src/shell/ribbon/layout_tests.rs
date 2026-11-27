@@ -59,7 +59,7 @@ fn every_ribbon_command() -> Vec<Item> {
         Setup,
         Accessory,
         UgcValidation,
-        UploadItem,
+        Upload,
         FacePreview,
         ClipEditor,
         StyleEditor,

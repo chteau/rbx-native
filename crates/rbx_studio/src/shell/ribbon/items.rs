@@ -72,7 +72,7 @@ impl Shell {
                 |shell, _, cx| shell.open_ugc_validator(None, None, cx),
                 cx,
             ),
-            Item::UploadItem => cloud_tile(
+            Item::Upload => cloud_tile(
                 &self.ribbon_nav,
                 "ribbon-upload-item",
                 IconName::CloudUpload,
