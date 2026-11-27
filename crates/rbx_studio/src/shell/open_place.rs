@@ -34,11 +34,10 @@ pub(super) fn is_place_file(path: &Path) -> bool {
             })
 }
 
-/// A fresh Baseplate on disk, in the places folder.
+/// A fresh, untitled Baseplate (see `home::untitled`).
 pub(super) fn create_baseplate() -> Result<PathBuf, String> {
-    home::new_place_path(Template::Baseplate)
-        .ok_or_else(|| "no config directory to create the place in".to_string())
-        .and_then(|path| Template::Baseplate.create(&path).map(|()| path))
+    let path = home::new_place_path(Template::Baseplate);
+    Template::Baseplate.create(&path).map(|()| path)
 }
 
 impl Shell {

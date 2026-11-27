@@ -286,6 +286,7 @@ fn main() {
         if let Ok(cache) = rbx_assets::AssetCache::new(None) {
             cache.trim_to_default();
         }
+        home::untitled::sweep();
     });
     // Loaded once, up front: the CLI's `--quality` still wins when given (see
     // `parse`), and the Explorer's initial visibility set comes straight from
@@ -317,6 +318,9 @@ fn main() {
         quality,
         ..settings
     };
+    // From here on stderr is the app's, not the command line's: copied into
+    // the session log, which Help › Open Logs Folder finds.
+    crash_log::start_session();
     // Before any place is built: the first build starts at this level
     // instead of the top, which a small GPU may not even fit.
     rbx_viewer::prefer_level(quality);
@@ -377,6 +381,8 @@ fn main() {
         cx.on_app_quit(|_| {
             crash_log::quit_cleanly();
             rbx_presence::client::leave_all(PRESENCE_LEAVE_LIMIT);
+            home::untitled::discard_all();
+            crash_log::finish_session();
             async {}
         })
         .detach();
@@ -416,6 +422,7 @@ fn main() {
                     if let Err(failed) = open_editor(&path, boot, cx) {
                         let (message, _) = *failed;
                         eprintln!("rbxstudio: {message}");
+                        crash_log::finish_session();
                         std::process::exit(1);
                     }
                     launcher::startup::check_in_background(has_key, cx);
@@ -535,7 +542,10 @@ pub(crate) fn open_editor(
             )))
         }
     };
-    if let Err(err) = home::remember(home::RecentPlace {
+    // An untitled place joins the Recent list once it's saved somewhere.
+    if home::untitled::is_untitled(path) {
+        home::untitled::opened(path);
+    } else if let Err(err) = home::remember(home::RecentPlace {
         path: dunce::canonicalize(path).unwrap_or(path.to_path_buf()),
         universe_id: None,
         place_id: None,
@@ -990,6 +1000,7 @@ fn read_script(path: &Path) -> String {
         Ok(source) => source,
         Err(err) => {
             eprintln!("rbxstudio: failed to read {}: {err}", path.display());
+            crash_log::finish_session();
             std::process::exit(1);
         }
     }
