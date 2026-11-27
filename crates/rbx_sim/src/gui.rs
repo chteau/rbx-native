@@ -187,6 +187,9 @@ pub struct Gui {
     pressed: [Option<Ref>; 2],
     pub(crate) focus: Option<Ref>,
     shift: [bool; 2],
+    /// The editor sends what keys type as `Input::Text`: a focused TextBox
+    /// takes that, not the US character of each key.
+    text_input: bool,
     disabled: HashSet<&'static str>,
     core: HashMap<String, Arg>,
     topbar: f64,
@@ -210,6 +213,7 @@ impl Default for Gui {
             pressed: [None; 2],
             focus: None,
             shift: [false; 2],
+            text_input: false,
             disabled: HashSet::new(),
             core: HashMap::new(),
             topbar: TOPBAR_TRANSPARENCY,
@@ -512,6 +516,24 @@ impl Gui {
                 }
                 out.processed = self.target(dom, db).is_some();
             }
+            Input::Text { text } => {
+                self.text_input = true;
+                let Some(box_) = self.focus else {
+                    return out;
+                };
+                out.processed = true;
+                if layout::flag(dom, db, box_, "TextEditable") {
+                    let multi = layout::flag(dom, db, box_, "MultiLine");
+                    let typed: String = text
+                        .chars()
+                        .filter(|c| !c.is_control() || (multi && *c == '\n'))
+                        .collect();
+                    if !typed.is_empty() {
+                        let text = text_of(dom, box_);
+                        out.after.push(Step::Text(box_, text + &typed));
+                    }
+                }
+            }
             Input::Key { code, down } => {
                 match code.as_str() {
                     "LeftShift" => self.shift[0] = *down,
@@ -549,7 +571,7 @@ impl Gui {
                     "Return" | "KeypadEnter" if editable => {
                         out.after.push(Step::Text(box_, text + "\n"));
                     }
-                    _ if editable => {
+                    _ if editable && !self.text_input => {
                         if let Some(c) = typed(code, self.shift[0] || self.shift[1]) {
                             out.after.push(Step::Text(box_, format!("{text}{c}")));
                         }

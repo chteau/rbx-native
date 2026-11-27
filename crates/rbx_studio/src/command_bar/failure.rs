@@ -56,7 +56,9 @@ fn parse(text: &str) -> (String, Vec<String>) {
 /// `None` for a C function or one of the runtime's own chunks.
 fn frame(line: &str) -> Option<String> {
     let (chunk, rest) = line.trim().split_once(':')?;
-    if chunk == "[C]" || INTERNAL.contains(&chunk) {
+    // `mlua`'s own Lua chunks (`__mlua_index`, the userdata `__index`
+    // shim) are plumbing too.
+    if chunk == "[C]" || INTERNAL.contains(&chunk) || chunk.starts_with("__mlua") {
         return None;
     }
     let (number, what) = rest.split_once(':').unwrap_or((rest, ""));
@@ -122,5 +124,23 @@ mod tests {
             Some("Script 'ReplicatedStorage.Mod', Line 3 - function go")
         );
         assert_eq!(frame("yielding:12: in function <yielding:10>"), None);
+    }
+
+    #[test]
+    fn mlua_s_own_chunks_are_left_out() {
+        let text = "runtime error: CommandBar:1: Nope is not a valid member of StarterPlayer\n\
+            stack traceback:\n\
+            [C]: in function 'error'\n\
+            __mlua_index:31: in function <__mlua_index:28>\n\
+            CommandBar:1: in main chunk";
+        let rows = rows(text, false);
+        assert!(
+            rows.iter()
+                .all(|row| !format!("{row:?}").contains("__mlua")),
+            "{rows:?}"
+        );
+        assert!(rows
+            .iter()
+            .any(|row| format!("{row:?}").contains("Script 'CommandBar', Line 1")));
     }
 }

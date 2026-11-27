@@ -11,6 +11,7 @@ mod chat;
 mod csg;
 mod curves;
 mod hooks;
+pub(crate) use hooks::wait_for_child;
 mod input;
 mod pathfinding;
 pub use pathfinding::{PathRequest, Waypoint};
@@ -926,6 +927,31 @@ impl ServerVm {
     /// Queues `script`'s body to run at the next [`ServerVm::resume`], in
     /// an environment of its own whose `script` is it. A script is started
     /// once; a second call does nothing.
+    /// A Command Bar line run in this DataModel, as Studio's does during
+    /// Play: a thread of its own named `CommandBar`, with no `script`,
+    /// started with the deferred threads on the next frame; what it prints
+    /// and its errors are this peer's output.
+    pub fn run_command(&self, source: &str) {
+        let scope = (|| -> mlua::Result<Table> {
+            let scope = self.lua.create_table()?;
+            let meta = self.lua.create_table()?;
+            meta.set("__index", self.lua.globals())?;
+            scope.set_metatable(Some(meta))?;
+            Ok(scope)
+        })();
+        let chunk = scope.and_then(|scope| {
+            crate::luau::load_scoped(&self.lua, source, "=CommandBar".to_owned(), scope)
+        });
+        match chunk.and_then(|chunk| self.lua.create_thread(chunk)) {
+            Ok(main) => engine(&self.lua)
+                .scheduler
+                .borrow_mut()
+                .deferred
+                .push_back((main, MultiValue::new())),
+            Err(error) => self.host.output(LineKind::Error, error.to_string()),
+        }
+    }
+
     pub fn start_script(&self, script: Ref) -> Result<(), LuaError> {
         if !self.started.borrow_mut().insert(script) {
             return Ok(());
@@ -1073,6 +1099,15 @@ impl ServerVm {
         events::registry_table(&self.lua, BIND_TO_CLOSE)
             .and_then(|t| t.get::<i64>("pending"))
             .map_or(true, |n| n <= 0)
+    }
+
+    /// Takes `root` out of the tree (parented to nil, not destroyed), its
+    /// `AncestryChanged` fired as a script's `Parent = nil` would.
+    pub fn unparent(&mut self, root: Ref) -> Vec<Change> {
+        self.guarded(|lua| {
+            engine(lua).ctx.dom_mut().set_parent(root, None);
+            Ok(())
+        })
     }
 
     pub fn destroy(&mut self, root: Ref) -> Vec<Change> {

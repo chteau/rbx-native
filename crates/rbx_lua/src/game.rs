@@ -27,6 +27,30 @@ impl LuaGame {
             .find(|referent| dom.get(*referent).is_some_and(|i| i.class() == class))
     }
 
+    fn get_service(&self, lua: &mlua::Lua, class: &str) -> mlua::Result<Value> {
+        if let Some(hooks) = crate::hooks::hooks(lua) {
+            if let Some(service) = hooks.service(lua, &self.ctx, class)? {
+                return Ok(service);
+            }
+        }
+        let found = LuaGame::service(&self.ctx.dom(), class);
+        let referent = match found {
+            Some(referent) => referent,
+            // As in Roblox, a service the place lacks is created under
+            // `game` on first request.
+            None if self.ctx.database().is_service(class) => {
+                let referent = self.ctx.dom_mut().new_instance(class, class, None);
+                crate::defaults::apply(&self.ctx, class, referent);
+                referent
+            }
+            // A class that exists but isn't a service gives nil; any
+            // other name is an error (the ScriptLimits golden).
+            None if self.ctx.database().class(class).is_some() => return Ok(Value::Nil),
+            None => return Err(not_a_service(class)),
+        };
+        LuaInstance::new(referent, self.ctx.clone()).into_lua(lua)
+    }
+
     fn child(dom: &WeakDom, name: &str) -> Option<Ref> {
         dom.root_refs()
             .iter()
@@ -71,27 +95,7 @@ impl UserData for LuaGame {
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("GetService", |lua, this, class: String| {
-            if let Some(hooks) = crate::hooks::hooks(lua) {
-                if let Some(service) = hooks.service(lua, &this.ctx, &class)? {
-                    return Ok(service);
-                }
-            }
-            let found = LuaGame::service(&this.ctx.dom(), &class);
-            let referent = match found {
-                Some(referent) => referent,
-                // As in Roblox, a service the place lacks is created under
-                // `game` on first request.
-                None if this.ctx.database().is_service(&class) => {
-                    let referent = this.ctx.dom_mut().new_instance(&class, &class, None);
-                    crate::defaults::apply(&this.ctx, &class, referent);
-                    referent
-                }
-                // A class that exists but isn't a service gives nil; any
-                // other name is an error (the ScriptLimits golden).
-                None if this.ctx.database().class(&class).is_some() => return Ok(Value::Nil),
-                None => return Err(not_a_service(&class)),
-            };
-            LuaInstance::new(referent, this.ctx.clone()).into_lua(lua)
+            this.get_service(lua, &class)
         });
         either(
             methods,
@@ -173,6 +177,9 @@ impl UserData for LuaGame {
                 if let Some(hooks) = crate::hooks::hooks(lua) {
                     if let Some(member) = hooks.game_member(lua, &key)? {
                         return Ok(member);
+                    }
+                    if hooks.implicit_service(&key) && this.ctx.database().is_service(&key) {
+                        return this.get_service(lua, &key);
                     }
                 }
                 if let Some(method) = crate::compat::instance_method(lua, &key)? {
