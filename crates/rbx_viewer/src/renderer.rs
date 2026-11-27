@@ -835,6 +835,7 @@ impl Renderer {
                 self.quality.force_field_intersections,
                 self.camera.orthographic_range(from),
             ),
+            0.0,
         );
         // The main pass's own visibility test: tight to the camera's frustum
         // and this level's render distance. The shadow pass below never uses
@@ -894,17 +895,18 @@ impl Renderer {
 
         let rotation_only = self.camera.view_rotation_projection(from, aspect);
         if let Some(sky) = &self.sky {
-            sky.camera.write(queue, &rotation_only, viewport, 0.0, 0.0);
+            sky.camera
+                .write(queue, &rotation_only, viewport, 0.0, 0.0, 1.0);
         }
         if let Some(stars) = &self.stars {
             stars
                 .camera
-                .write(queue, &rotation_only, viewport, 0.0, 0.0);
+                .write(queue, &rotation_only, viewport, 0.0, 0.0, 1.0);
         }
         if let Some(bodies) = &self.bodies {
             bodies
                 .camera
-                .write(queue, &rotation_only, viewport, 0.0, 0.0);
+                .write(queue, &rotation_only, viewport, 0.0, 0.0, 1.0);
         }
         // The same matrix the sun disc itself is drawn with, so the god-rays
         // in the resolve can never point anywhere the disc is not.
