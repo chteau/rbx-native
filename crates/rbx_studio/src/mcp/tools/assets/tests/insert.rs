@@ -1,9 +1,10 @@
-use rbx_dom::{Variant, WeakDom};
+use rbx_dom::{Variant, Vector3Data, WeakDom};
 use serde_json::{json, Value};
 
 use super::super::super::finished;
 use super::super::super::tests::place;
 use super::super::insert::{build, Kind};
+use super::super::toolbox_fetch;
 use super::{deliver, insert, mock, model_bytes, MESH, PNG};
 use crate::mcp::Insertion;
 
@@ -113,15 +114,111 @@ fn a_mesh_becomes_an_anchored_mesh_part_of_its_own_size() {
     let content = build(5, Kind::Mesh, MESH, "Rock").unwrap();
     let part = content.get(content.root_refs()[0]).unwrap();
     assert_eq!((part.class(), part.name()), ("MeshPart", "Rock"));
-    let Some(Variant::Vector3(size)) = part.properties().get("Size") else {
-        panic!("no Size");
-    };
-    assert_eq!((size.x, size.y, size.z), (4.0, 2.0, 6.0));
+    let six = Variant::Vector3(v3(4.0, 2.0, 6.0));
+    assert_eq!(part.properties().get("size"), Some(&six));
+    assert_eq!(part.properties().get("InitialSize"), Some(&six));
+    assert!(!part.properties().contains_key("Size"));
     assert_eq!(
         part.properties().get("Anchored"),
         Some(&Variant::Bool(true))
     );
     assert_eq!(Kind::sniff(MESH), Some(Kind::Mesh));
+}
+
+fn v3(x: f32, y: f32, z: f32) -> Vector3Data {
+    Vector3Data { x, y, z }
+}
+
+/// A `version 2.00` mesh whose corners are `min` and `max`.
+fn mesh_spanning(min: [f32; 3], max: [f32; 3]) -> Vec<u8> {
+    let mut body = Vec::from(b"version 2.00\n".as_slice());
+    body.extend_from_slice(&12u16.to_le_bytes());
+    body.extend_from_slice(&[36, 12]);
+    body.extend_from_slice(&3u32.to_le_bytes());
+    body.extend_from_slice(&1u32.to_le_bytes());
+    for corner in [min, max, [0.0; 3]] {
+        for c in corner {
+            body.extend_from_slice(&c.to_le_bytes());
+        }
+        body.extend(std::iter::repeat_n(0u8, 24));
+    }
+    for index in 0u32..3 {
+        body.extend_from_slice(&index.to_le_bytes());
+    }
+    body
+}
+
+/// The corners of three Toolbox meshes (the gun of asset 430286487, the
+/// hair of 454910984 and of 431984629), and the `Size` and `InitialSize`
+/// Studio gave the MeshPart `AssetService:CreateMeshPartAsync` made from
+/// each.
+const STUDIO_MESH_SIZES: [([f32; 3], [f32; 3], [f32; 3]); 3] = [
+    (
+        [-23.104_46, -12.098_463, -4.338_474_3],
+        [23.104_46, 12.098_461, 4.338_474_3],
+        [46.208_92, 24.196_924, 8.676_949],
+    ),
+    (
+        [-0.109_569_5, -0.246_325_02, -0.136_799],
+        [0.109_569_5, 0.246_325_02, 0.136_799],
+        [0.219_139, 0.492_650_03, 0.273_598],
+    ),
+    (
+        [-174.679_98, -388.253_9, -254.874_94],
+        [174.679_98, 388.253_9, 254.874_94],
+        [349.359_95, 776.507_8, 509.749_88],
+    ),
+];
+
+#[test]
+fn a_mesh_part_is_as_big_as_studio_makes_it_from_the_same_mesh() {
+    for (min, max, [x, y, z]) in STUDIO_MESH_SIZES {
+        let content = build(5, Kind::Mesh, &mesh_spanning(min, max), "Mesh").unwrap();
+        let part = content.get(content.root_refs()[0]).unwrap();
+        let studio = Variant::Vector3(v3(x, y, z));
+        assert_eq!(part.properties().get("size"), Some(&studio));
+        assert_eq!(part.properties().get("InitialSize"), Some(&studio));
+    }
+}
+
+#[test]
+fn a_mesh_past_2048_studs_is_refused_as_studio_refuses_it() {
+    // The house mesh of asset 437409334, 2589.7 studs deep.
+    let house = mesh_spanning(
+        [-630.000_06, -668.282_6, -1_294.861_4],
+        [630.000_06, 668.282_5, 1_294.861_4],
+    );
+    let err = build(5, Kind::Mesh, &house, "House").unwrap_err();
+    assert_eq!(
+        err,
+        "asset 5: Mesh extents size too large. Maximum is (2048, 2048, 2048)."
+    );
+}
+
+#[test]
+fn a_toolbox_mesh_part_keeps_the_size_its_asset_gives_it() {
+    // What Studio's Toolbox gave the same house as a MeshPart asset: the
+    // asset's own sizes, its 2589.7-stud depth held to 2048 only in `size`.
+    let size = v3(1_260.000_1, 1_336.565_1, 2_048.0);
+    let initial = v3(1_260.000_1, 1_336.565_1, 2_589.723);
+    let mut asset = WeakDom::new();
+    let part = asset.new_instance("MeshPart", "MeshPart", None);
+    asset.set_property(part, "size", Variant::Vector3(size)).unwrap();
+    asset
+        .set_property(part, "InitialSize", Variant::Vector3(initial))
+        .unwrap();
+    deliver(40, rbx_binary::serialize(&asset).unwrap());
+    let (content, _) = toolbox_fetch(1818).unwrap();
+    let [root] = content.root_refs() else {
+        panic!("the MeshPart itself expected, unwrapped");
+    };
+    let part = content.get(*root).unwrap();
+    assert_eq!(part.class(), "MeshPart");
+    assert_eq!(part.properties().get("size"), Some(&Variant::Vector3(size)));
+    assert_eq!(
+        part.properties().get("InitialSize"),
+        Some(&Variant::Vector3(initial))
+    );
 }
 
 #[test]
