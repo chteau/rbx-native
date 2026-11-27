@@ -2358,6 +2358,7 @@ impl Render for Shell {
         let dialogs: Vec<AnyElement> = [
             self.roblox_dialog(cx),
             self.play_dialog(cx),
+            self.live_data_dialog(cx),
             self.close_place_dialog(cx),
             self.playtests_export_dialog(cx),
             self.toolbox_notice_dialog(cx),

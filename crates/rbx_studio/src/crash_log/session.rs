@@ -262,7 +262,7 @@ mod platform {
             let me = GetCurrentProcess();
             DuplicateHandle(me, handle, me, &mut copy, 0, 0, DUPLICATE_SAME_ACCESS)
         };
-        (ok != 0).then_some(copy as *mut std::ffi::c_void)
+        (ok != 0).then_some(copy)
     }
 
     pub(super) fn undo(restore: Restore) {

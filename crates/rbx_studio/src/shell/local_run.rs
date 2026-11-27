@@ -27,6 +27,7 @@ use super::Shell;
 mod avatars;
 pub(crate) mod badges;
 pub(crate) mod data;
+mod live_prompt;
 mod offline;
 pub(in crate::shell) mod owners;
 mod remote;
@@ -135,6 +136,8 @@ pub(crate) struct LocalRun {
     /// Collaborators playing this editor's session, or this editor playing
     /// another's (see `remote`).
     pub(in crate::shell) remote: remote::RemotePlay,
+    /// A start waiting on the live DataStores question (see `live_prompt`).
+    live_prompt: Option<live_prompt::Pending>,
 }
 
 impl Default for LocalRun {
@@ -150,6 +153,7 @@ impl Default for LocalRun {
             peer: None,
             shown_gui: None,
             remote: remote::RemotePlay::default(),
+            live_prompt: None,
         }
     }
 }
@@ -312,6 +316,21 @@ fn queue_players(
     session.join_later(name, user_id, character);
     for n in 2..=players {
         session.join_later(&format!("Player{n}"), -(n as i64), None);
+    }
+}
+
+/// Output's line for Server & Clients, whose players are Studio's test
+/// players, `Player1` to `Player{count}`, all wearing the avatar `note`
+/// says was resolved (`name`'s, or the noob and why).
+fn test_players_note(count: usize, name: &str, note: &str) -> String {
+    let players = match count {
+        1 => "Player1".to_owned(),
+        n => format!("Player1 to Player{n}"),
+    };
+    if note == format!("Playing as {name}") {
+        format!("Playing as {players}, wearing {name}\u{2019}s avatar")
+    } else {
+        format!("Playing as {players}. {note}")
     }
 }
 
@@ -698,7 +717,7 @@ impl Shell {
     }
 
     pub(crate) fn run_local(&mut self, cx: &mut Context<Self>) {
-        if self.local_run_can_start() {
+        if self.local_run_can_start() && !self.live_data_asks(live_prompt::Pending::Run, cx) {
             self.start_local(None, None, cx);
         }
     }
@@ -738,7 +757,9 @@ impl Shell {
     /// Play (local), or with `windows` Server & Clients: that many test
     /// players, the server and each player in a window of their own.
     fn play_local_in(&mut self, windows: Option<usize>, cx: &mut Context<Self>) {
-        if !self.local_run_can_start() {
+        if !self.local_run_can_start()
+            || self.live_data_asks(live_prompt::Pending::Play(windows), cx)
+        {
             return;
         }
         self.play.live.local.starting = true;
@@ -856,7 +877,10 @@ impl Shell {
                     self.play.live.local.players,
                 ),
             }
-            note = Some(player.note);
+            note = Some(match windows {
+                Some(count) => test_players_note(count, &player.name, &player.note),
+                None => player.note,
+            });
         }
         let windowed = windows.is_some();
         // Play (local) shows the server under the loading screen until
@@ -948,6 +972,42 @@ impl Shell {
     }
 
     /// The view the run shows, while one runs.
+    /// The Command Bar while a local run goes on: `source` runs in the
+    /// DataModel this window shows, the server's or a player's client (a
+    /// Server & Clients tab's own peer), as Studio's bar does during Play.
+    /// Whether it went there; a replay and a collaborator's view keep the
+    /// edit one.
+    pub(super) fn local_run_command(&mut self, source: &str, cx: &mut Context<Self>) -> bool {
+        let action = Action::Command(source.to_owned());
+        if let Some(link) = &self.play.live.local.peer {
+            if link.remote {
+                return false;
+            }
+            let peer = link.view;
+            return link
+                .host
+                .update(cx, |host, _| host.local_run_act(peer, action))
+                .unwrap_or(false);
+        }
+        // Server & Clients leaves the edit place in this window, as Studio
+        // does: its bar stays the editor's.
+        let running = self.play.live.local.running.as_ref();
+        let Some(view) = running.filter(|run| !run.windowed).map(|run| run.view) else {
+            return false;
+        };
+        self.local_run_act(view, action)
+    }
+
+    fn local_run_act(&mut self, peer: rbx_sim::Peer, action: Action) -> bool {
+        match self.play.live.local.running.as_mut() {
+            Some(run) if run.replay.is_none() => {
+                run.session.act(peer, action);
+                true
+            }
+            _ => false,
+        }
+    }
+
     pub(crate) fn local_run_view(&self) -> Option<(rbx_sim::Peer, String)> {
         let run = self.play.live.local.running.as_ref()?;
         (!run.windowed && (run.playing || run.replay.is_some()))
@@ -1702,7 +1762,26 @@ mod tests {
     use rbx_dom::{CFrameData, Ref, Variant, Vector3Data, WeakDom};
 
     // Not `super::*`: gpui_kit's glob brings its own `test` attribute.
-    use super::{changes_between, dedupe, mirror, queue_players, restore_edited, stash_edited};
+    use super::{
+        changes_between, dedupe, mirror, queue_players, restore_edited, stash_edited,
+        test_players_note,
+    };
+
+    #[test]
+    fn server_and_clients_names_the_test_players() {
+        assert_eq!(
+            test_players_note(2, "Cheeteau", "Playing as Cheeteau"),
+            "Playing as Player1 to Player2, wearing Cheeteau\u{2019}s avatar"
+        );
+        assert_eq!(
+            test_players_note(
+                1,
+                "Noob",
+                "Offline with no cached avatar: playing as the noob"
+            ),
+            "Playing as Player1. Offline with no cached avatar: playing as the noob"
+        );
+    }
 
     /// Every item name in `menus`, submenus included.
     fn menu_names(items: &[gpui_kit::OwnedMenuItem], out: &mut Vec<String>) {

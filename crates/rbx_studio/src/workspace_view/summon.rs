@@ -40,7 +40,12 @@ use crate::transform::Tool;
 use super::gizmo::Drag;
 use super::WorkspaceView;
 
-gpui_kit::actions!(rbx_viewport, [SummonHandles]);
+gpui_kit::actions!(rbx_viewport, [SummonHandles, PlayTab]);
+
+/// The key context the 3D view carries while a game plays in it instead
+/// of [`CONTEXT`]: `Tab` is the game's (the player list), never the
+/// window's focus cycling nor the handles.
+pub(crate) const PLAY_CONTEXT: &str = "RbxPlay";
 
 /// The key context the 3D view carries, so its `Tab` out-ranks the window's
 /// own focus-cycling binding (see `shell::roving`), and hands the key back
@@ -53,7 +58,11 @@ pub(crate) const CONTEXT: &str = "RbxViewport";
 ///
 /// The key itself is the user's to rebind, so this only hands the action to
 /// `shortcuts`, which puts it in the keymap with whatever key is current.
-pub(crate) fn install(_cx: &mut gpui_kit::App) {
+pub(crate) fn install(cx: &mut gpui_kit::App) {
+    cx.bind_keys([
+        gpui_kit::KeyBinding::new("tab", PlayTab, Some(PLAY_CONTEXT)),
+        gpui_kit::KeyBinding::new("shift-tab", PlayTab, Some(PLAY_CONTEXT)),
+    ]);
     crate::shortcuts::register_keymap_action(
         crate::shortcuts::Command::SummonHandles,
         SummonHandles,
@@ -90,6 +99,15 @@ pub(super) struct Summon {
 impl WorkspaceView {
     /// `Tab` pressed over the view (and again, repeated, for as long as it
     /// is held, only the first press places the handles).
+    /// `Tab` in a game: the core GUI's, as a key typed in it.
+    pub(super) fn play_tab(&mut self, _: &PlayTab, _: &mut Window, cx: &mut Context<Self>) {
+        if let Ok(tab) = gpui_kit::Keystroke::parse("tab") {
+            if self.play.is_some() && self.core_gui.key(&tab, true) {
+                cx.notify();
+            }
+        }
+    }
+
     pub(super) fn summon_handles(
         &mut self,
         _: &SummonHandles,

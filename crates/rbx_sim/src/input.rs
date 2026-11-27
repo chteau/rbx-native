@@ -42,6 +42,9 @@ pub enum Input {
     /// A motion sensor's reading: gravity and acceleration in g, rotation
     /// as X, Y, Z Euler angles in radians.
     Motion { sensor: Sensor, vector: [f32; 3] },
+    /// Characters typed (or pasted), as the keyboard's layout made them,
+    /// for a focused TextBox; sent ahead of the `Key` that typed them.
+    Text { text: String },
 }
 
 /// Where a finger is in its touch.
@@ -226,7 +229,7 @@ impl Inputs {
                         Some(*vector),
                     )
                 }
-                Input::Gamepad { .. } => return None,
+                Input::Gamepad { .. } | Input::Text { .. } => return None,
                 _ => return self.write_desktop(dom, db, input),
             };
         let object = self.object(dom, &slot);
