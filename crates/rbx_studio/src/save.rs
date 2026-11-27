@@ -79,10 +79,12 @@ impl Format {
     }
 }
 
-/// What Ctrl+S does, the only window-level shortcut this module owns.
+/// What Ctrl+S and Ctrl+Shift+S do, the window-level shortcuts this module
+/// owns.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Action {
     Save,
+    SaveAs,
 }
 
 /// Maps one keystroke to the save action. Mirrors `shell::keys::action_for`'s
@@ -94,7 +96,12 @@ pub(crate) fn action_for(key: &str, modifiers: Modifiers) -> Option<Action> {
         modifiers,
         key_char: None,
     };
-    crate::shortcuts::pressed(crate::shortcuts::Command::Save, &keystroke).then_some(Action::Save)
+    use crate::shortcuts::{pressed, Command};
+    if pressed(Command::SaveAs, &keystroke) {
+        Some(Action::SaveAs)
+    } else {
+        pressed(Command::Save, &keystroke).then_some(Action::Save)
+    }
 }
 
 /// Serializes `dom` in `format` and writes it atomically to `path`.
@@ -400,6 +407,15 @@ mod tests {
     fn ctrl_s_saves() {
         let modifiers = Modifiers::secondary_key();
         assert_eq!(action_for("s", modifiers), Some(Action::Save));
+    }
+
+    #[test]
+    fn ctrl_shift_s_saves_as() {
+        let modifiers = Modifiers {
+            shift: true,
+            ..Modifiers::secondary_key()
+        };
+        assert_eq!(action_for("s", modifiers), Some(Action::SaveAs));
     }
 
     #[test]
