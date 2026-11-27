@@ -566,6 +566,7 @@ impl Session {
                     Action::MenuOpen(open) => sim.set_menu_open(open),
                     Action::Chat(text) => sim.chat_say(&text),
                     Action::Reset => sim.reset_character(),
+                    Action::Command(source) => sim.run_command(&source),
                     _ => {}
                 }
             }
@@ -1102,15 +1103,15 @@ impl Session {
         self.server.remove_player(client.player);
     }
 
-    /// Stop: everyone leaves (`PlayerRemoving` on the server), then the
-    /// server closes (`BindToClose`), so what a game saves on the way out
-    /// is saved, as when a Studio test stops.
+    /// Stop, in the order Studio's Stop ends a test (see
+    /// [`Simulation::close_with`]), so what a game saves on the way out
+    /// is saved and nothing is destroyed under a script still running.
     pub fn shutdown(&mut self) {
-        while !self.clients.is_empty() {
-            self.leave_now(self.clients.len() - 1);
+        let players: Vec<Ref> = self.clients.iter().map(|c| c.player).collect();
+        for (i, mut client) in std::mem::take(&mut self.clients).into_iter().enumerate() {
+            self.left.push((Peer::Client(i), client.sim.take_output()));
         }
-        self.server.step();
-        self.server.close();
+        self.server.close_with(&players);
     }
 
     /// Runs frames until `seconds` of game time have passed.

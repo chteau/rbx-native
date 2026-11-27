@@ -75,6 +75,9 @@ pub enum Action {
         remote: Ref,
         args: Vec<rbx_lua::server::Wire>,
     },
+    /// The editor's Command Bar runs `source` in this peer's DataModel, as
+    /// Studio's does in the server's or the focused client's during Play.
+    Command(String),
 }
 
 /// An action as it was recorded: before frame `frame` stepped.

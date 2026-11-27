@@ -1360,13 +1360,15 @@ impl Shell {
     }
 
     /// Test › Data: whether Local Run keeps this place's DataStores between
-    /// runs, starts them empty, or has API access off; a click cycles.
+    /// runs, starts them empty, uses the experience's real ones, or has API
+    /// access off; a click cycles.
     fn data_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
         use super::local_run::data;
         let mode = data::mode(&self.path);
         let tip = match mode {
             data::DataMode::Kept => "DataStores are kept from one local run of this place to the next. Click to change.",
             data::DataMode::Fresh => "Every local run of this place starts with empty DataStores. Click to change.",
+            data::DataMode::Live => "Studio access to API services is on: local runs of this published place read and write its experience\u{2019}s real DataStores, the first one asks before it starts. Click to change.",
             data::DataMode::Off => "Studio access to API services is off: DataStore calls fail as they do in Studio. Click to change.",
         };
         tile(
