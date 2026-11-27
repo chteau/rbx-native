@@ -245,8 +245,8 @@ fn an_inserted_part_rests_where_the_view_points_on_the_grid() {
         .unwrap();
     dom.set_property(part, "CFrame", Variant::CFrame(cframe(0., 0., 0.)))
         .unwrap();
-    let origin = Vec3::new(-19.6960945, 14.0916243, -19.3038864);
-    let direction = Vec3::new(0.635139704, -0.442004412, 0.633426905).normalize();
+    let origin = Vec3::new(-19.696_094, 14.091_624, -19.303_886);
+    let direction = Vec3::new(0.635_139_7, -0.442_004_4, 0.633_426_9).normalize();
     // Where that line meets the SpawnLocation's top, y = 1.
     let distance = (origin.y - 1.) / -direction.y;
     let aim = Aim {

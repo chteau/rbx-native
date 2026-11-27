@@ -279,7 +279,7 @@ impl Shell {
     ) {
         // Past the selection, which after an insert is the part just put
         // there: the next one lands where the view points and stacks on it.
-        let aim = self.aim_past(&self.selected_all().to_vec(), cx);
+        let aim = self.aim_past(self.selected_all(), cx);
         let snap = self.transform.translate;
         let step = snap.enabled.then_some(snap.increment);
         let workspace = explorer::find_by_name(&self.dom, "Workspace");
