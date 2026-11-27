@@ -131,6 +131,9 @@ impl RibbonCommand {
         match self {
             RibbonCommand::Insert(item) => match item.shape {
                 Some(shape) => shell.insert_part(item.class, shape, cx),
+                None if shell.database.is_subclass_of(item.class, "BasePart") => {
+                    shell.insert_part_in_view(item.class, None, cx)
+                }
                 None => shell.insert_instance(item.class, cx),
             },
             RibbonCommand::Local => shell.transform_action(Action::ToggleLocal, cx),
