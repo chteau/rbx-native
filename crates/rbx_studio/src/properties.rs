@@ -336,16 +336,17 @@ impl Properties {
         }
     }
 
-    /// The panel's header: `Part "Baseplate"` for one instance; for several,
-    /// the nearest class they all are and how many, `BasePart (2)` for a
-    /// `Part` and a `MeshPart`, since those are the properties listed.
-    /// Studio's own wording for a multi-selection is not documented.
+    /// The panel's header, worded as Studio's (measured in Studio 0.748):
+    /// `Properties - Part "Baseplate"` for one instance; for several, the
+    /// nearest class they all are and how many, `Properties - BasePart - 2
+    /// items` for a `Part` and a `MeshPart`, since those are the properties
+    /// listed. `None` with nothing selected, where it reads `Properties`.
     pub(crate) fn title(&self, dom: &WeakDom, selection: &[Ref]) -> Option<String> {
         let mut instances = selection.iter().filter_map(|&reference| dom.get(reference));
         let anchor = instances.next()?;
         let others: Vec<&str> = instances.map(|instance| instance.class()).collect();
         if others.is_empty() {
-            return Some(format!("{} {:?}", anchor.class(), anchor.name()));
+            return Some(format!("Properties - {} {:?}", anchor.class(), anchor.name()));
         }
         let shared = std::iter::successors(Some(anchor.class()), |class| {
             self.db.class(class)?.superclass.as_deref()
@@ -356,7 +357,7 @@ impl Properties {
                 .all(|other| other == class || self.db.is_subclass_of(other, class))
         })
         .unwrap_or("Instance");
-        Some(format!("{shared} ({})", others.len() + 1))
+        Some(format!("Properties - {shared} - {} items", others.len() + 1))
     }
 
     /// [`Self::rows`] narrowed to the names the filter box matches.

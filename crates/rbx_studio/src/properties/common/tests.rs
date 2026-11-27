@@ -208,10 +208,10 @@ fn the_title_names_the_nearest_shared_class_and_the_count() {
     ]);
 
     let title = |selection: &[Ref]| properties.title(&dom, selection);
-    assert_eq!(title(&refs[..1]).as_deref(), Some("Part \"A\""));
-    assert_eq!(title(&[refs[0], refs[2]]).as_deref(), Some("Part (2)"));
-    assert_eq!(title(&refs[..3]).as_deref(), Some("BasePart (3)"));
-    assert_eq!(title(&refs).as_deref(), Some("Instance (4)"));
+    assert_eq!(title(&refs[..1]).as_deref(), Some("Properties - Part \"A\""));
+    assert_eq!(title(&[refs[0], refs[2]]).as_deref(), Some("Properties - Part - 2 items"));
+    assert_eq!(title(&refs[..3]).as_deref(), Some("Properties - BasePart - 3 items"));
+    assert_eq!(title(&refs).as_deref(), Some("Properties - Instance - 4 items"));
     assert_eq!(title(&[]), None);
 }
 
