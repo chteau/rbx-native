@@ -359,6 +359,10 @@ pub(crate) fn action(w: &mut Out, a: &Action) {
             w.u(u64::from(remote.value()));
             wires(w, args);
         }
+        Action::Command(source) => {
+            w.u(12);
+            w.s(source);
+        }
     }
 }
 
@@ -520,6 +524,7 @@ pub(crate) fn read_action(r: &mut In) -> R<Action> {
             remote: Ref::new(r.u()? as u32),
             args: read_wires(r)?,
         },
+        12 => Action::Command(r.s()?),
         n => return Err(format!("unknown action {n} in the recording")),
     })
 }
@@ -580,6 +585,10 @@ fn input(w: &mut Out, input: &Input) {
             w.u(*sensor as u64);
             vector.iter().for_each(|x| w.f32(*x));
         }
+        Input::Text { text } => {
+            w.u(9);
+            w.s(text);
+        }
     }
 }
 
@@ -630,6 +639,7 @@ fn read_input(r: &mut In) -> R<Input> {
             },
             vector: [r.f32()?, r.f32()?, r.f32()?],
         },
+        9 => Input::Text { text: r.s()? },
         n => return Err(format!("unknown input {n} in the recording")),
     })
 }

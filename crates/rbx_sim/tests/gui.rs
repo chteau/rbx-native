@@ -142,6 +142,49 @@ fn a_click_on_a_button_is_the_gui_s_and_typing_goes_into_a_box() {
     );
 }
 
+/// The editor sends what an AZERTY key typed (`a` on the key at Q, `é`),
+/// ahead of the key itself, and pasted text: the box gets those, not the
+/// US character of the key.
+#[test]
+fn a_box_takes_the_layout_s_characters_and_a_paste() {
+    let mut session = playing(WATCH);
+    output(&mut session);
+    click(&mut session, 200.0, 275.0);
+    for (code, text) in [("Q", "a"), ("Two", "\u{e9}")] {
+        session.input(0, Input::Text { text: text.into() });
+        session.input(
+            0,
+            Input::Key {
+                code: code.into(),
+                down: true,
+            },
+        );
+        session.input(
+            0,
+            Input::Key {
+                code: code.into(),
+                down: false,
+            },
+        );
+        session.step();
+    }
+    session.input(
+        0,
+        Input::Text {
+            text: " coll\u{e9}\n".into(),
+        },
+    );
+    session.step();
+    key(&mut session, "Return");
+    let lines = output(&mut session);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.ends_with("lost true Return a\u{e9} coll\u{e9}")),
+        "{lines:?}"
+    );
+}
+
 const PAINT: &str = r#"
 local image = game:GetService("AssetService"):CreateEditableImage({ Size = Vector2.new(4, 4) })
 local label = Instance.new("ImageLabel")

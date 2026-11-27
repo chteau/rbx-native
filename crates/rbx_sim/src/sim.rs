@@ -313,6 +313,17 @@ impl Simulation {
                 self.apply(changes);
                 continue;
             }
+            if let Input::Text { .. } = input {
+                // Only a focused TextBox reads it, and Roblox has no
+                // `InputObject` for it.
+                let handled = {
+                    let dom = self.dom.borrow();
+                    let mut shared = self.shared.borrow_mut();
+                    shared.gui.input(&dom, self.db, &input, uis, uis)
+                };
+                self.gui_steps(handled.after);
+                continue;
+            }
             let written = inputs.write(&mut self.dom.borrow_mut(), self.db, &input);
             let Some(written) = written else {
                 continue;
@@ -437,18 +448,39 @@ impl Simulation {
     /// A player leaves the server: `PlayerRemoving`, then their character
     /// and the player go.
     pub(crate) fn remove_player(&mut self, player: Ref) {
-        let players = self.dom.borrow().parent(player);
-        if let Some(players) = players {
-            self.fire_signal(
-                players,
-                "PlayerRemoving",
-                vec![rbx_lua::server::Arg::Instance(player)],
-            );
-        }
+        self.player_removing(player);
         let character = crate::humanoid::reference(&self.dom.borrow(), player, "Character");
         if let Some(character) = character {
             self.destroy(character);
         }
+        self.drop_player(player);
+    }
+
+    /// The server's half of Studio's Stop, as measured there:
+    /// `PlayerRemoving` for each of `players` with their characters still
+    /// in Workspace, then `BindToClose` starting with them still in
+    /// `Players`; then the clients go, each character taken out of the
+    /// world (parented to nil, not destroyed: a script still holding it
+    /// finds its parts), while the callbacks run on to the end.
+    pub fn close_with(&mut self, players: &[Ref]) {
+        for &player in players {
+            self.player_removing(player);
+        }
+        let changes = self.vm.close();
+        self.apply(changes);
+        for &player in players {
+            let character = crate::humanoid::reference(&self.dom.borrow(), player, "Character");
+            if let Some(character) = character {
+                let changes = self.vm.unparent(character);
+                self.apply(changes);
+            }
+            self.drop_player(player);
+        }
+        self.finish_close();
+    }
+
+    /// The player's chat sources and the `Player` itself, gone.
+    fn drop_player(&mut self, player: Ref) {
         let user_id = match self
             .dom
             .borrow()
@@ -471,6 +503,19 @@ impl Simulation {
             .players
             .members
             .retain(|m| m.player != player);
+    }
+
+    /// `Players.PlayerRemoving` for `player`, who stays, character and all,
+    /// until removed.
+    pub(crate) fn player_removing(&mut self, player: Ref) {
+        let players = self.dom.borrow().parent(player);
+        if let Some(players) = players {
+            self.fire_signal(
+                players,
+                "PlayerRemoving",
+                vec![rbx_lua::server::Arg::Instance(player)],
+            );
+        }
     }
 
     /// A client's tool moves and activations since the last call, for the
@@ -1032,9 +1077,18 @@ impl Simulation {
     pub fn close(&mut self) {
         let changes = self.vm.close();
         self.apply(changes);
+        self.finish_close();
+    }
+
+    /// At least one frame, so deferred handlers (`PlayerRemoving`) run and
+    /// what a callback that never yielded printed is collected.
+    fn finish_close(&mut self) {
         let deadline = self.frame + (30.0 * FRAME_HZ) as u64;
-        while !self.vm.closed() && self.frame < deadline {
+        loop {
             self.step();
+            if self.vm.closed() || self.frame >= deadline {
+                break;
+            }
         }
     }
 
@@ -1672,6 +1726,12 @@ impl Simulation {
             user_id: 0,
         }));
         lines
+    }
+
+    /// The editor's Command Bar line, run here on the next frame (see
+    /// [`ServerVm::run_command`]).
+    pub fn run_command(&mut self, source: &str) {
+        self.vm.run_command(source);
     }
 
     /// The local player says `text` in the general channel (the editor's
