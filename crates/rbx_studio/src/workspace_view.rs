@@ -1333,6 +1333,12 @@ impl WorkspaceView {
 
     /// Draws Edit mode with flat, shadowless light (the Fullbright view), or
     /// with the place's own `Lighting` again; renderer-only, never saved.
+    /// Back online: what failed to download while offline is asked for
+    /// again, without reopening the place.
+    pub(crate) fn refetch_assets(&self) {
+        self.pump.refetch();
+    }
+
     pub(crate) fn set_fullbright(&mut self, fullbright: bool, cx: &mut Context<Self>) {
         self.pump.fullbright(fullbright);
         cx.notify();

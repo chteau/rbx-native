@@ -90,7 +90,7 @@ pub(super) fn install_app(cx: &mut App) {
             .update(cx, |shell, cx| shell.open_settings(cx))
             .is_err()
         {
-            crate::open_settings_from_home(cx);
+            crate::open_settings_from_home(None, cx);
         }
     });
     cx.on_action(|_: &MenuQuit, cx| {
@@ -348,9 +348,7 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     });
     cx.on_action({
         move |_: &MenuInsertPart, cx| {
-            let _ = shell.update(cx, |shell, cx| {
-                shell.insert_part_in_view("Part", None, cx)
-            });
+            let _ = shell.update(cx, |shell, cx| shell.insert_part_in_view("Part", None, cx));
         }
     });
     cx.on_action({

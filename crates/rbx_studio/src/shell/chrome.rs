@@ -257,9 +257,20 @@ impl Shell {
     }
 }
 
-/// The "Offline" pill in the title bar while nothing reaches Roblox: why, on
-/// hover, and the switch, on click.
+/// The editor's [`offline_pill`]: a click opens Settings › Account, where
+/// the switch is.
 fn offline_indicator(cx: &mut Context<Shell>) -> Option<AnyElement> {
+    let shell = cx.entity().downgrade();
+    offline_pill(move |_, cx| {
+        let _ = shell.update(cx, |shell, cx| shell.open_settings_on("account", cx));
+    })
+}
+
+/// The "Offline" pill in a title bar while nothing reaches Roblox: why, on
+/// hover, and `on_click` to get to the switch.
+pub(crate) fn offline_pill(
+    on_click: impl Fn(&mut Window, &mut App) + 'static,
+) -> Option<AnyElement> {
     let status = rbx_net::status();
     if !status.offline() {
         return None;
@@ -281,7 +292,7 @@ fn offline_indicator(cx: &mut Context<Shell>) -> Option<AnyElement> {
             .cursor_pointer()
             .hover(|this| this.bg(tokens::hover()))
             .tooltip(move |window, cx| crate::shell::tooltip::text(reason.clone(), window, cx))
-            .on_click(cx.listener(|shell, _, _, cx| shell.open_settings_on("account", cx)))
+            .on_click(move |_, window, cx| on_click(window, cx))
             .child(crate::launcher::ui::icon("wifi-off", 12.))
             .child("Offline")
             .into_any_element(),
@@ -622,12 +633,33 @@ pub(crate) fn window_topbar(
     resizable: bool,
     on_close: impl Fn(&mut Window, &mut App) + 'static,
 ) -> impl IntoElement {
+    window_topbar_with(title, resizable, None, on_close)
+}
+
+/// [`window_topbar`] with `status` just left of the buttons, where the
+/// editor's Offline pill sits.
+pub(crate) fn window_topbar_with(
+    title: SharedString,
+    resizable: bool,
+    status: Option<AnyElement>,
+    on_close: impl Fn(&mut Window, &mut App) + 'static,
+) -> impl IntoElement {
     topbar_frame(title).child(
         h_flex()
+            .relative()
             .flex_none()
             .w(WINDOW_ACTIONS_WIDTH)
             .h_full()
             .justify_end()
+            .children(status.map(|status| {
+                h_flex()
+                    .absolute()
+                    .top_0()
+                    .bottom_0()
+                    .right(WINDOW_ACTIONS_WIDTH + px(8.))
+                    .items_center()
+                    .child(status)
+            }))
             .child(titlebar_button(
                 None,
                 "window-minimize",

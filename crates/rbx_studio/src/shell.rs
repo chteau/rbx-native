@@ -666,7 +666,7 @@ pub(crate) struct Shell {
     /// `shell::credential_watch`.
     credential_watch: credential_watch::CredentialWatch,
     /// The page the next Settings window opens on; see `open_settings_on`.
-    settings_open_on: Option<&'static str>,
+    pub(crate) settings_open_on: Option<&'static str>,
     drag: Option<Drag>,
     /// The dock currently being dragged by its tab, which is what puts the
     /// drop strips on screen (see `shell::dock_drag`). `None` the rest of

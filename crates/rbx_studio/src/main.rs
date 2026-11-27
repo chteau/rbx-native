@@ -678,16 +678,25 @@ enum SettingsHost {
 
 impl Global for SettingsHost {}
 
+/// The page Home asked its Settings to open on while the host loaded.
+struct HomeSettingsPage(&'static str);
+
+impl Global for HomeSettingsPage {}
+
 /// Studio Settings with no place open. The Settings window is built around
 /// an editor (it applies every change to one live), so Home gets a hidden
 /// one over an empty place that starts no plugins, presence or MCP, never
 /// takes the menus, and goes when Settings closes. The window opens first
 /// and its pages fill in once that place has loaded off the UI thread.
-pub(crate) fn open_settings_from_home(cx: &mut App) {
+/// `page` names the page to show (as `Page::from_key` reads it).
+pub(crate) fn open_settings_from_home(page: Option<&'static str>, cx: &mut App) {
     match cx.try_global::<SettingsHost>() {
         Some(SettingsHost::Ready { shell, .. }) => {
             if let Some(shell) = shell.upgrade() {
-                shell.update(cx, |shell, cx| shell.open_settings(cx));
+                shell.update(cx, |shell, cx| match page {
+                    Some(page) => shell.open_settings_on(page, cx),
+                    None => shell.open_settings(cx),
+                });
                 return;
             }
         }
@@ -696,9 +705,19 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
             let Some(window) = *window else {
                 return;
             };
+            if let Some(page) = page {
+                cx.set_global(HomeSettingsPage(page));
+            }
             if shell::bring_settings_forward(window.into(), cx) {
                 return;
             }
+        }
+        None => {}
+    }
+    match page {
+        Some(page) => cx.set_global(HomeSettingsPage(page)),
+        None if cx.has_global::<HomeSettingsPage>() => {
+            cx.remove_global::<HomeSettingsPage>();
         }
         None => {}
     }
@@ -772,7 +791,14 @@ fn host_settings(
     options.focus = false;
     let mut host = None;
     let opened = cx.open_window(options, |window, cx| {
-        let shell = cx.new(|cx| Shell::new("Settings", place, settings, launch, user, window, cx));
+        let page = cx
+            .has_global::<HomeSettingsPage>()
+            .then(|| cx.remove_global::<HomeSettingsPage>().0);
+        let shell = cx.new(|cx| {
+            let mut shell = Shell::new("Settings", place, settings, launch, user, window, cx);
+            shell.settings_open_on = page;
+            shell
+        });
         host = Some(shell.downgrade());
         cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     });
