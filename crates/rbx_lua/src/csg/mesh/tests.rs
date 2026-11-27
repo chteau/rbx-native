@@ -258,3 +258,48 @@ fn studios_saved_mesh_union_counts_as_its_box() {
     let saved = add(&mut dom, workspace, "MeshPart", [6.0, 4.0, 4.0], 0.0);
     assert!((world_solid(&dom, &db, saved).unwrap().volume() - 96.0).abs() < 1e-6);
 }
+
+/// An `EditableMesh` as a script's VM publishes it: unshared triangles.
+struct Editable(rbx_dom::editable::Triangles);
+
+impl rbx_dom::editable::MeshSource for Editable {
+    fn version(&self) -> u64 {
+        1
+    }
+    fn triangles(&self) -> rbx_dom::editable::Triangles {
+        self.0.clone()
+    }
+    fn into_any(self: std::sync::Arc<Self>) -> std::sync::Arc<dyn std::any::Any + Send + Sync> {
+        self
+    }
+}
+
+#[test]
+fn a_mesh_part_drawing_an_editable_mesh_carves_as_that_mesh() {
+    let db = rbx_reflection::ReflectionDatabase::embedded();
+    let _meshes = with_meshes();
+    let (corners, triangles) = octahedron();
+    let positions = triangles
+        .iter()
+        .flatten()
+        .map(|&i| corners[i as usize])
+        .collect();
+    let editable = rbx_dom::editable::publish(rbx_dom::editable::Editable::Mesh(
+        std::sync::Arc::new(Editable(rbx_dom::editable::Triangles {
+            positions,
+            ..Default::default()
+        })),
+    ));
+    let (mut dom, workspace) = place();
+    // `CreateMeshPartAsync(Content.fromObject(mesh))`: no `MeshId`, the
+    // mesh's bounds as its size.
+    let gem = add(&mut dom, workspace, "MeshPart", [4.0; 3], 0.0);
+    dom.get_mut(gem).unwrap().properties_mut().insert(
+        "MeshContent".into(),
+        Variant::Content(rbx_dom::Content::Object(editable)),
+    );
+    let solid = world_solid(&dom, &db, gem).unwrap();
+    rbx_dom::editable::withdraw(editable);
+    // The octahedron's 4/3 × 2³, not the box's 64.
+    assert!((solid.volume() - 32.0 / 3.0).abs() < 1e-6, "{}", solid.volume());
+}
