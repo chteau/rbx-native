@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-27
+
+- **Fonts and Neon like Studio again.** A few Enum.Font values (Arial, Builder Sans and friends) fell back to a system font on Macs, and anywhere without a Roblox install or Sober to borrow from. The Studio version I asked the CDN for had stopped moving months ago, and that old fonts package has no Arimo or Builder Sans in it. I ask the same endpoint Vinegar uses now, once per run, and offline the last package I downloaded still answers. Legacy fell back too: it uses the same file as Arimo now and only the first family to load got it. `Font` also writes the same `FontFace` Studio does for every member (Arial stays `Arial.json`, Gotham stays `GothamSSm.json`, both still drawn in Arimo and Montserrat). Neon squares its colour like Studio: a dark grey Neon part was light grey and the glow was way too strong. I measured a grey ramp and five colours in Studio and the middles and the glow land within a few steps now. Orange Neon really is near yellow in the middle in Studio too, only its glow is orange. Also fixed a speckle of brighter pixels on opaque Neon seen at an angle. (@chteau)
+
 ## 2026-11-26
 
 - **EditableMesh follow-ups.** `CreateEditableMeshAsync` and `CreateEditableImageAsync` check who owns the asset now, like Studio: you, a group your key can manage, or the experience's owner, in Edit and in Play (local). I keep the answer on disk so offline still knows it, and offline with nothing kept the load fails like Studio's does with no network. MeshParts and SpecialMeshes inside a ViewportFrame draw as their real meshes with textures instead of grey boxes, so OpenArena's bot heads and menu banner show up. A textured Neon MeshPart doesn't glow anymore and a see-through one keeps its texture's alpha, I checked both in real Studio, that was OpenArena's white muzzle flash. And the "Maximum event re-entrancy depth exceeded" spam is gone, the cap only counts a handler firing its own event now. (@chteau)
