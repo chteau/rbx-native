@@ -203,7 +203,9 @@ fn a_toolbox_mesh_part_keeps_the_size_its_asset_gives_it() {
     let initial = v3(1_260.000_1, 1_336.565_1, 2_589.723);
     let mut asset = WeakDom::new();
     let part = asset.new_instance("MeshPart", "MeshPart", None);
-    asset.set_property(part, "size", Variant::Vector3(size)).unwrap();
+    asset
+        .set_property(part, "size", Variant::Vector3(size))
+        .unwrap();
     asset
         .set_property(part, "InitialSize", Variant::Vector3(initial))
         .unwrap();
