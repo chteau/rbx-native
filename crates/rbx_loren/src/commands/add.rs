@@ -29,7 +29,7 @@ impl Fetch for GithubFetch {
         let url = format!("https://codeload.github.com/{repo}/zip/{git_ref}");
         let bytes = rbx_net::agent()
             .get(&url)
-            .header("User-Agent", "rbx-native")
+            .header("User-Agent", rbx_net::USER_AGENT)
             .call()
             .map_err(|err| err.to_string())?
             .into_body()

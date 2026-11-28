@@ -54,7 +54,10 @@ curl -fsSL "$URL" | jq -r --arg rev "$RBX_DOM_REV" '
   # Old spellings Studio still loads that rbx-dom records as properties of
   # their own: a MeshPart saved around 2016 holds its mesh as `MeshID`
   # (the "Tree" by SheriffTaco on the Creator Store does), and Studio shows it.
-  def legacy_aliases: {MeshPart: {MeshID: "MeshId"}};
+  # `MeshSize` is what scripts and the Properties panel read of the size a
+  # MeshPart saves as `InitialSize` (Studio 0.748 reads them equal on every
+  # Creator Store mesh); rbx-dom keeps the two apart, so `MeshSize` read 0.
+  def legacy_aliases: {MeshPart: {MeshID: "MeshId", MeshSize: "InitialSize"}};
   # Classes the pinned rbx-dom predates, with the defaults a fresh
   # `Instance.new` reads back in Studio 0.748 (version-8d7a1009c17e4ff8).
   # A newer pin that has the class wins over these.

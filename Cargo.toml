@@ -6,6 +6,9 @@ members = ["crates/*"]
 # through rbx_wasm) asks for 1.96, so cargo says so up front instead of
 # failing deep in a dependency.
 [workspace.package]
+# The app's release version: the editor and rbx_net (whose User-Agent every
+# HTTP request sends) both take it from here.
+version = "0.2.3"
 edition = "2021"
 rust-version = "1.96"
 license = "MIT"

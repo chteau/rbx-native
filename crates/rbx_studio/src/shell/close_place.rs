@@ -76,6 +76,12 @@ impl Shell {
     /// Restarts the editor on this place, asking first when there are
     /// unsaved changes.
     pub(crate) fn request_restart(&mut self, cx: &mut Context<Self>) {
+        // Asked from the Settings window: the question shows in this one,
+        // so it comes to the front instead of opening behind Settings.
+        let handle = self.window_handle;
+        cx.defer(move |cx| {
+            let _ = handle.update(cx, |_, window, _| window.activate_window());
+        });
         if self.leave_game(AfterClose::Restart, cx) {
             return;
         }
@@ -84,6 +90,7 @@ impl Shell {
             self.close_prompt = true;
             cx.notify();
         } else {
+            crate::home::untitled::keep(&self.path);
             crate::relaunch(&self.path);
             cx.quit();
         }
@@ -143,7 +150,15 @@ impl Shell {
             return;
         }
         let handle = self.window_handle;
-        match std::mem::take(&mut self.after_close) {
+        let after = std::mem::take(&mut self.after_close);
+        // An untitled place nobody saved goes with its window; a restart
+        // reopens it, so that one stays for the next process.
+        if after == AfterClose::Restart {
+            crate::home::untitled::keep(&self.path);
+        } else {
+            crate::home::untitled::discard(&self.path);
+        }
+        match after {
             AfterClose::Restart => {
                 crate::relaunch(&self.path);
                 cx.quit();

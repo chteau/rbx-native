@@ -230,19 +230,14 @@ fn with_remembered(mut list: Vec<RecentPlace>, mut place: RecentPlace) -> Vec<Re
 
 mod game;
 mod template;
+pub(crate) mod untitled;
 pub(crate) use game::open_whole_game;
 pub(crate) use template::Template;
 
-/// Where Home's New place writes: `places/Baseplate.rbxl`, or the first
-/// free `Baseplate N.rbxl` beside it.
-pub(crate) fn new_place_path(template: Template) -> Option<PathBuf> {
-    let dir = places_dir()?;
-    (1..)
-        .map(|n| match n {
-            1 => dir.join(format!("{}.rbxl", template.name())),
-            n => dir.join(format!("{} {n}.rbxl", template.name())),
-        })
-        .find(|path| !path.exists())
+/// Where a new place from `template` opens from, untitled until its first
+/// save (see [`untitled`]).
+pub(crate) fn new_place_path(template: Template) -> PathBuf {
+    untitled::new_path(template.name(), "rbxl")
 }
 
 /// Where the local copies of places opened from Roblox live: the config

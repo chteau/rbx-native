@@ -116,8 +116,9 @@ pub(crate) fn remove(template: &PlaceTemplate) -> Result<(), String> {
     Ok(())
 }
 
-/// Copies the template into `places` under the first free name, `Name.rbxl`
-/// then `Name 2.rbxl`, and so on.
+/// Copies the template into `places` (the untitled places' folder, see
+/// `home::untitled`) under the first free name, `Name.rbxl` then
+/// `Name 2.rbxl`, and so on.
 pub(crate) fn instantiate(template: &PlaceTemplate, places: &Path) -> Result<PathBuf, String> {
     std::fs::create_dir_all(places).map_err(|err| format!("{}: {err}", places.display()))?;
     let ext = template
@@ -125,13 +126,7 @@ pub(crate) fn instantiate(template: &PlaceTemplate, places: &Path) -> Result<Pat
         .extension()
         .and_then(|ext| ext.to_str())
         .unwrap_or("rbxl");
-    let target = (1..)
-        .map(|n| match n {
-            1 => places.join(format!("{}.{ext}", template.name)),
-            n => places.join(format!("{} {n}.{ext}", template.name)),
-        })
-        .find(|path| !path.exists())
-        .expect("an unbounded range has a free name");
+    let target = crate::home::untitled::free_name(places, &template.name, ext);
     std::fs::copy(&template.path, &target).map_err(|err| format!("{}: {err}", target.display()))?;
     Ok(target)
 }

@@ -51,23 +51,31 @@ actions!(
     ]
 );
 
+/// The word-jump modifier: Option on macOS, Ctrl elsewhere, as each OS's
+/// own text fields do.
+const WORD: &str = if cfg!(target_os = "macos") {
+    "alt"
+} else {
+    "ctrl"
+};
+
 /// Puts the editing keys in GPUI's keymap, once at startup.
 pub(crate) fn install(cx: &mut App) {
     let context = Some(CONTEXT);
     cx.bind_keys([
         KeyBinding::new("backspace", Backspace, context),
         KeyBinding::new("shift-backspace", Backspace, context),
-        KeyBinding::new("ctrl-backspace", BackspaceWord, context),
+        KeyBinding::new(&format!("{WORD}-backspace"), BackspaceWord, context),
         KeyBinding::new("delete", Delete, context),
-        KeyBinding::new("ctrl-delete", DeleteWord, context),
+        KeyBinding::new(&format!("{WORD}-delete"), DeleteWord, context),
         KeyBinding::new("left", Left, context),
         KeyBinding::new("right", Right, context),
-        KeyBinding::new("ctrl-left", WordLeft, context),
-        KeyBinding::new("ctrl-right", WordRight, context),
+        KeyBinding::new(&format!("{WORD}-left"), WordLeft, context),
+        KeyBinding::new(&format!("{WORD}-right"), WordRight, context),
         KeyBinding::new("shift-left", SelectLeft, context),
         KeyBinding::new("shift-right", SelectRight, context),
-        KeyBinding::new("ctrl-shift-left", SelectWordLeft, context),
-        KeyBinding::new("ctrl-shift-right", SelectWordRight, context),
+        KeyBinding::new(&format!("{WORD}-shift-left"), SelectWordLeft, context),
+        KeyBinding::new(&format!("{WORD}-shift-right"), SelectWordRight, context),
         KeyBinding::new("up", Up, context),
         KeyBinding::new("down", Down, context),
         KeyBinding::new("shift-up", SelectUp, context),
@@ -80,13 +88,13 @@ pub(crate) fn install(cx: &mut App) {
         KeyBinding::new("ctrl-end", Bottom, context),
         KeyBinding::new("ctrl-shift-home", SelectTop, context),
         KeyBinding::new("ctrl-shift-end", SelectBottom, context),
-        KeyBinding::new("ctrl-a", SelectAll, context),
-        KeyBinding::new("ctrl-c", Copy, context),
-        KeyBinding::new("ctrl-x", Cut, context),
-        KeyBinding::new("ctrl-v", Paste, context),
-        KeyBinding::new("ctrl-z", Undo, context),
-        KeyBinding::new("ctrl-y", Redo, context),
-        KeyBinding::new("ctrl-shift-z", Redo, context),
+        KeyBinding::new("secondary-a", SelectAll, context),
+        KeyBinding::new("secondary-c", Copy, context),
+        KeyBinding::new("secondary-x", Cut, context),
+        KeyBinding::new("secondary-v", Paste, context),
+        KeyBinding::new("secondary-z", Undo, context),
+        KeyBinding::new("secondary-y", Redo, context),
+        KeyBinding::new("secondary-shift-z", Redo, context),
         KeyBinding::new("enter", Enter, context),
         KeyBinding::new("shift-enter", Enter, context),
         KeyBinding::new("escape", Escape, context),

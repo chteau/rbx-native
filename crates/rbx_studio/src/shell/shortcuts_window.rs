@@ -328,9 +328,9 @@ mod tests {
 
     #[test]
     fn matches_name_case_insensitively() {
-        let rows = filtered(&Store::default(), "save to");
+        let rows = filtered(&Store::default(), "SAVE TO FILE AS");
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].command, Command::Save);
+        assert_eq!(rows[0].command, Command::SaveAs);
     }
 
     #[test]

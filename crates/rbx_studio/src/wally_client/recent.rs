@@ -65,7 +65,7 @@ fn packages() -> Result<Vec<(String, String)>, String> {
     let commits = super::agent()
         .get(COMMITS)
         .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "rbxstudio")
+        .header("User-Agent", rbx_net::USER_AGENT)
         .call()
         .map_err(|err| err.to_string())?
         .body_mut()

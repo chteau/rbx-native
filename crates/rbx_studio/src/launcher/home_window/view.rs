@@ -107,9 +107,13 @@ impl HomeWindow {
             .font_family(tokens::font_ui())
             .text_color(tokens::text())
             .text_size(px(13.))
-            .child(crate::shell::chrome::window_topbar(
+            .child(crate::shell::chrome::window_topbar_with(
                 crumb.into(),
                 true,
+                // As the editor's: the switch is in Settings › Account.
+                crate::shell::chrome::offline_pill(|_, cx| {
+                    crate::open_settings_from_home(Some("account"), cx)
+                }),
                 // Home is the app's only window; the picker sits over the
                 // editor.
                 move |window, cx| {

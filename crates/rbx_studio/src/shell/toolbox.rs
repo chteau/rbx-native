@@ -399,7 +399,12 @@ impl Shell {
     }
 
     /// The view's centre line and what it meets first.
-    fn toolbox_aim(&self, cx: &App) -> Aim {
+    pub(super) fn toolbox_aim(&self, cx: &App) -> Aim {
+        self.aim_past(&[], cx)
+    }
+
+    /// [`Shell::toolbox_aim`] looking through `skipped`.
+    pub(super) fn aim_past(&self, skipped: &[Ref], cx: &App) -> Aim {
         let view = self.viewport.read(cx);
         let Some(pose) = view.pose() else {
             return Aim::default();
@@ -408,6 +413,7 @@ impl Shell {
         let meshes = view.meshes().clone();
         let hit = pick::parts_along(&self.dom, &self.database, &meshes, ray)
             .into_iter()
+            .filter(|part| !skipped.contains(part))
             .find_map(|part| {
                 let (distance, normal) =
                     PartSurface::read(&self.dom, &self.database, &meshes, part)?.raycast(ray)?;
@@ -436,7 +442,7 @@ impl Shell {
 
 /// Where the view's centre line runs and what part it hits, if any.
 #[derive(Default)]
-struct Aim {
+pub(super) struct Aim {
     ray: Option<Ray>,
     part: Option<Ref>,
     distance: Option<f32>,
@@ -446,7 +452,7 @@ struct Aim {
 
 /// Moves the parts under `roots` as one block onto `aim`: the block's
 /// bottom centre on the hit point, or its centre out in the open.
-fn land(dom: &mut WeakDom, roots: &[Ref], aim: &Aim) {
+pub(super) fn land(dom: &mut WeakDom, roots: &[Ref], aim: &Aim) {
     let Some(ray) = aim.ray else {
         return;
     };
@@ -474,6 +480,36 @@ fn land(dom: &mut WeakDom, roots: &[Ref], aim: &Aim) {
     // A model's stored pivot moves with its parts, or it would be left
     // behind where the asset was published.
     crate::kits::translate(dom, roots, offset);
+}
+
+/// Lifts `part` until its box overlaps no other part's under `within`,
+/// onto the top of each one it would sink into, as Studio stacks a part
+/// inserted where the last one sits.
+pub(super) fn clear_overlaps(dom: &mut WeakDom, within: Ref, part: Ref) {
+    let others: Vec<(Vec3, Vec3)> = subtree(dom, within)
+        .into_iter()
+        .filter(|&other| other != part)
+        .filter_map(|other| pick::model_of(dom, other).map(bounds))
+        .collect();
+    // Each lift clears one more part at most, so this many always settle.
+    for _ in 0..=others.len() {
+        let Some((min, max)) = pick::model_of(dom, part).map(bounds) else {
+            return;
+        };
+        const EPSILON: f32 = 1e-3;
+        let into = |(o_min, o_max): &(Vec3, Vec3)| {
+            (min + EPSILON).cmplt(*o_max).all() && (max - EPSILON).cmpgt(*o_min).all()
+        };
+        let Some(top) = others
+            .iter()
+            .filter(|o| into(o))
+            .map(|(_, o_max)| o_max.y)
+            .reduce(f32::max)
+        else {
+            return;
+        };
+        crate::kits::translate(dom, &[part], Vec3::new(0., top - min.y, 0.));
+    }
 }
 
 /// The `NormalId` of `part`'s face whose outward axis is closest to the

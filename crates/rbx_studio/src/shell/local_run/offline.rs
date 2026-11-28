@@ -55,6 +55,17 @@ fn size_label(bytes: u64) -> String {
     }
 }
 
+/// The tile's badge for a pack on disk: "Ready" with a check once every
+/// asset is in, "Partial" for a cancelled one; the size is in the tooltip
+/// and the menu, where it doesn't read as a download still going.
+fn badge(complete: bool) -> (&'static str, Option<&'static str>) {
+    if complete {
+        ("Ready", Some("check"))
+    } else {
+        ("Partial", None)
+    }
+}
+
 fn cache() -> Option<AssetCache> {
     AssetCache::new(None).ok()
 }
@@ -161,14 +172,21 @@ impl Shell {
             .into_any_element();
         };
         let size = size_label(summary.bytes);
+        let (label, glyph) = badge(summary.complete);
+        let tip = if summary.complete {
+            format!("Available offline ({size}): Local Run plays this place with no internet.")
+        } else {
+            format!("Partly available offline ({size} so far): resume the pack to finish it.")
+        };
         let trigger = tile_with_badge(
             &self.ribbon_nav,
             ID,
             IconName::CloudOff,
             "Offline",
-            ui::pill(size.clone(), None, summary.complete),
+            ui::pill(label, glyph, summary.complete),
             cx,
-        );
+        )
+        .tooltip(move |window, cx| crate::shell::tooltip::text(tip.clone(), window, cx));
         menu::dropdown_in_group(
             self,
             MenuId::OfflinePack,
@@ -316,12 +334,19 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::size_label;
+    use super::{badge, size_label};
 
     #[test]
     fn sizes_read_in_the_largest_unit_that_fits() {
         assert_eq!(size_label(512), "512 B");
         assert_eq!(size_label(1025), "2 KB");
         assert_eq!(size_label(50 * 1024 * 1024 + 300_000), "50.3 MB");
+    }
+
+    #[test]
+    fn a_finished_pack_reads_ready_not_its_size() {
+        assert_eq!(badge(true), ("Ready", Some("check")));
+        assert_eq!(badge(false), ("Partial", None));
+        assert!(crate::launcher::ui::icon_exists("check"));
     }
 }
