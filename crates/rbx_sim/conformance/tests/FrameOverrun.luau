@@ -29,7 +29,9 @@ return function(h, origin)
 	busy(2)
 	r.stall_elapsed = h.round(os.clock() - t0, 1)
 	local dt = RunService.Heartbeat:Wait()
-	r.stall_heartbeat_dt = h.round(dt, 2)
+	-- One decimal, like stall_elapsed: the stall is wall clock, so a slow
+	-- machine lands a few ms past 2 s (2.01) while Roblox read 2.0.
+	r.stall_heartbeat_dt = h.round(dt, 1)
 	r.stall_time_advance = h.round(time() - time0, 2)
 	r.stall_travel = h.round(part.Position.X - x0, 1)
 	local after = {}

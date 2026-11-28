@@ -32,20 +32,33 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Check against live Roblox
+        id: check
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: scripts/local-run-watchdog.sh watchdog.md
 
-      - name: Open or update the tracking issue
+      # One issue, open only while Local Run is behind (Luau or new/changed
+      # members it lacks). Coverage totals alone don't count as behind.
+      - name: Open, update or close the tracking issue
         env:
           GH_TOKEN: ${{ github.token }}
+          BEHIND: ${{ steps.check.outputs.behind }}
         run: |
           gh label create local-run-watchdog --color 0E8A16 \
             --description "Local Run behind live Roblox (API dump, Luau)" 2>/dev/null || true
           issue=$(gh issue list --label local-run-watchdog --state open --json number --jq '.[0].number // empty')
-          if [ -n "$issue" ]; then
+          if [ "$BEHIND" = "true" ]; then
+            if [ -z "$issue" ]; then
+              issue=$(gh issue list --label local-run-watchdog --state closed --json number --jq '.[0].number // empty')
+              [ -n "$issue" ] && gh issue reopen "$issue"
+            fi
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --body-file watchdog.md
+            else
+              gh issue create --title "Local Run watchdog: behind live Roblox" \
+                --label local-run-watchdog --body-file watchdog.md
+            fi
+          elif [ -n "$issue" ]; then
             gh issue edit "$issue" --body-file watchdog.md
-          else
-            gh issue create --title "Local Run watchdog: behind live Roblox" \
-              --label local-run-watchdog --body-file watchdog.md
+            gh issue close "$issue" --comment "Caught up with live Roblox, closing. I'll reopen this if Local Run falls behind again."
           fi
