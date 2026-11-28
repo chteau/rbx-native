@@ -43,8 +43,9 @@ use crate::{Input, LineKind, MouseBehavior, Peer, Session};
 
 /// Bumped whenever a message's layout changes. A peer on a later version
 /// is refused, not misread; an earlier one's messages still read (version
-/// 1 had no sounds and no input count in a frame).
-pub const VERSION: u8 = 2;
+/// 1 had no sounds and no input count in a frame, version 2 no TextBox
+/// focus in its core GUI).
+pub const VERSION: u8 = 3;
 
 mod codec;
 pub use codec::{decode_down, decode_up, encode_down, encode_up};

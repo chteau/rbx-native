@@ -149,6 +149,9 @@ pub struct CoreGui {
     /// The top bar's buttons (`SetCore("TopbarEnabled", false)` hides them,
     /// and every core GUI with them).
     pub topbar: bool,
+    /// A TextBox has the keyboard: every key is the game's, `/` and
+    /// Escape included, as in Roblox.
+    pub typing: bool,
 }
 
 /// One tool in the hotbar.

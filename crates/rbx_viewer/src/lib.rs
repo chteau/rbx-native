@@ -92,7 +92,7 @@ pub use scene::perf;
 pub use scene::{
     player_gui, pseudo_localize, resolved_shape_label, rich_runs, set_player_gui,
     set_variant_alpha_modes, shows_screen, GuiScrolls, PseudoLocale, RichRun, SafeInsets,
-    ScrollTarget, ThumbGrab, STAGE_REACH,
+    ScrollTarget, ThumbGrab, NO_PLAYER_GUI, STAGE_REACH,
 };
 #[cfg(not(target_arch = "wasm32"))]
 pub use serve::{serve, DEFAULT_PORT};

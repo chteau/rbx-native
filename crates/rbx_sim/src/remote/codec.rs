@@ -656,6 +656,8 @@ fn read_core(r: &mut In) -> R<CoreGui> {
         chat: r.b()?,
         chat_bar: r.b()?,
         topbar: r.b()?,
+        // Read after the frame's own fields (see `read_frame`).
+        typing: false,
     })
 }
 
@@ -703,6 +705,9 @@ fn write_frame(w: &mut Out, f: &Frame) {
         w.opt(*at, Out::f32);
     });
     w.u(f.ack.into());
+    if let Some(core) = &f.core {
+        w.b(core.typing);
+    }
 }
 
 fn read_frame(r: &mut In, version: u8) -> R<Frame> {
@@ -742,6 +747,11 @@ fn read_frame(r: &mut In, version: u8) -> R<Frame> {
     if version >= 2 {
         frame.sounds = r.list(|r| Ok((read_ref(r)?, r.opt(In::f32)?)))?;
         frame.ack = small(r)?;
+    }
+    if version >= 3 {
+        if let Some(core) = frame.core.as_mut() {
+            core.typing = r.b()?;
+        }
     }
     Ok(frame)
 }

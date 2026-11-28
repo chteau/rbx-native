@@ -13,8 +13,9 @@
 //! A tab dragged off the row (or right-click › Open in New Window) pops its
 //! peer out into a window of its own: the same editor, moved, so its
 //! camera, docks and Output come along and the session never restarts.
-//! Dragging that window's tab back onto the row, or closing the window,
-//! docks it again. GPUI's drag and drop stops at its window, so both ends
+//! Dragging that window's tab back onto the row (or right-click › Dock)
+//! docks it again; closing the window closes its tab, as closing one of
+//! Studio's test windows does. GPUI's drag and drop stops at its window, so both ends
 //! are read from where on screen the pointer was let go.
 
 use std::cell::Cell;
@@ -422,9 +423,10 @@ fn open_apart(
     let mut options = crate::window_options(&title, cx);
     options.window_bounds = Some(WindowBounds::Windowed(bounds));
     let opened = cx.open_window(options, |window, cx| {
-        let closing = view.clone();
+        let closing = shell.clone();
         window.on_window_should_close(cx, move |_, cx| {
-            with_test_window(closing.clone(), cx, move |t, w, cx| t.attach(home, w, cx));
+            closing.update(cx, |shell, cx| shell.local_run_close_apart(cx));
+            // It goes once the player has left, or with the session.
             false
         });
         let apart = cx.new(|cx| ApartWindow::new(view.clone(), home, shell.clone(), window, cx));
@@ -697,14 +699,26 @@ impl Shell {
         cx.notify();
     }
 
-    /// A popped-out peer's window closing from its own title bar: back to
-    /// its tab. False in any other window.
-    pub(in crate::shell) fn local_run_dock_back(&mut self, cx: &mut Context<Self>) -> bool {
-        let Some(link) = self.play.live.local.peer.as_ref().filter(|l| l.detached) else {
+    /// A popped-out peer's window closing (its title bar's X, or the
+    /// system's), as Studio's test windows do: a player's takes that player
+    /// out of the game, the Server's ends the test. False in any other
+    /// window.
+    pub(in crate::shell) fn local_run_close_apart(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(home) = self
+            .play
+            .live
+            .local
+            .peer
+            .as_ref()
+            .filter(|l| l.detached)
+            .map(|l| l.home)
+        else {
             return false;
         };
-        let home = link.home;
-        with_test_window(link.tabs.clone(), cx, move |t, w, cx| t.attach(home, w, cx));
+        match home {
+            Home::Player(player) => self.local_run_close_tab(player, cx),
+            Home::Server => self.local_run_stop(cx),
+        }
         true
     }
 }

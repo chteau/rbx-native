@@ -28,6 +28,11 @@ thread_local! {
     static PLAYER_GUI: Cell<u32> = const { Cell::new(NO_PLAYER) };
 }
 
+/// What [`set_player_gui`] takes for a running game seen from its server,
+/// which has no player of its own: no screen at all, `StarterGui`'s
+/// included, as Studio's Server view draws.
+pub const NO_PLAYER_GUI: Ref = Ref::new(u32::MAX - 1);
+
 /// Draws the screens of `player_gui` (a `PlayerGui`) and nothing of
 /// `StarterGui`, as a player sees a running game; `None` goes back to the
 /// edit view, on this thread. The GUI must be re-planned after.

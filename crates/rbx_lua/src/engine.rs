@@ -15,6 +15,7 @@ pub(crate) mod parallel;
 pub(crate) mod require;
 pub(crate) mod scheduler;
 pub(crate) mod signal;
+mod thread_error;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -62,7 +63,7 @@ pub(crate) trait Host {
     /// `thread` raised `error` while the scheduler resumed it outside the
     /// runner (a script's main chunk, a raw coroutine that waited).
     fn thread_failed(&self, _thread: &Thread, error: mlua::Error) {
-        self.output(LineKind::Error, error.to_string());
+        self.output(LineKind::Error, thread_error::roblox_error(&error));
     }
 
     /// The signals the host adds to a reparenting (see

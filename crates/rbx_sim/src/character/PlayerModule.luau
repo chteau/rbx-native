@@ -176,6 +176,14 @@ local function setZoom(distance)
 	zoom = distance
 end
 
+-- The wheel's and I/O's zoom. An orthographic camera's view doesn't
+-- change with distance, and Studio's Play leaves it where it is.
+local function zoomBy(notches)
+	if workspace.CurrentCamera.ProjectionType ~= Enum.ProjectionType.Orthographic then
+		setZoom(notched(zoomed(), notches))
+	end
+end
+
 local function firstPerson()
 	local low = zoomLimits()
 	return zoomed() <= low + 1e-3 and low < FIRST_PERSON
@@ -361,9 +369,9 @@ UserInputService.InputBegan:Connect(function(input, processed)
 				shiftLock = not shiftLock
 			end
 		elseif key == Enum.KeyCode.I then
-			setZoom(notched(zoomed(), 1))
+			zoomBy(1)
 		elseif key == Enum.KeyCode.O then
-			setZoom(notched(zoomed(), -1))
+			zoomBy(-1)
 		end
 	end
 end)
@@ -376,7 +384,7 @@ end)
 
 UserInputService.InputChanged:Connect(function(input, processed)
 	if input.UserInputType == Enum.UserInputType.MouseWheel and not processed and not GuiService.MenuIsOpen then
-		setZoom(notched(zoomed(), input.Position.Z))
+		zoomBy(input.Position.Z)
 	end
 end)
 

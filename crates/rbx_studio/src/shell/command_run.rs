@@ -206,11 +206,16 @@ impl Shell {
             let lines = &step.output.lines()[range.clone()];
             let feedback = stream::feedback_for(kind, lines);
             match kind {
-                rbx_lua::LineKind::Print => self.output.push_run(
-                    &source,
-                    feedback.clone(),
-                    step.output.printed()[range].to_vec(),
-                ),
+                // A row per `print`, as Studio's Output has.
+                rbx_lua::LineKind::Print => {
+                    for (line, printed) in lines.iter().zip(&step.output.printed()[range]) {
+                        self.output.push_run(
+                            &source,
+                            Feedback::Output(line.clone()),
+                            vec![printed.clone()],
+                        );
+                    }
+                }
                 // A thread the run spawned failed: its error and stack, as
                 // Studio prints one, each on rows of their own.
                 rbx_lua::LineKind::Error => {
@@ -218,7 +223,11 @@ impl Shell {
                         self.output.push(&source, row);
                     }
                 }
-                rbx_lua::LineKind::Warn => self.output.push(&source, feedback.clone()),
+                rbx_lua::LineKind::Warn => {
+                    for line in lines {
+                        self.output.push(&source, Feedback::Warning(line.clone()));
+                    }
+                }
             }
             self.command_bar.set_feedback(feedback);
             self.command_run.emitted = true;

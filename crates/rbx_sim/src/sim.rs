@@ -612,6 +612,7 @@ impl Simulation {
         let (health, backpack, list) = {
             let shared = self.shared.borrow();
             let gui = &shared.gui;
+            core.typing = gui.focus.is_some();
             core.topbar = !gui.core_flag("TopbarEnabled", false);
             core.chat =
                 core.topbar && gui.core_enabled("Chat") && !gui.core_flag("ChatActive", false);
