@@ -5,6 +5,7 @@ usage: local-run-watchdog.py <base dump> <latest dump> <missing.tsv> <coverage s
 """
 
 import json
+import os
 import sys
 from collections import defaultdict
 
@@ -119,6 +120,11 @@ def main():
         + ".",
     ]
     body = "\n".join(lines) + "\n"
+    # The workflow only keeps the tracking issue open while something is behind.
+    behind = luau_behind or any(todo.values())
+    if os.environ.get("GITHUB_OUTPUT"):
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"behind={'true' if behind else 'false'}\n")
     if len(body) > LIMIT:
         body = body[:LIMIT].rsplit("\n", 1)[0] + "\n\n(truncated)\n"
     sys.stdout.write(body)
