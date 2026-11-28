@@ -342,6 +342,9 @@ impl Scene {
         // (an asset landing, a streaming tick) builds a deleted skinned body
         // back into the view.
         self.file_mesh_plan.install(referent, None);
+        // The same for a union: the next resolve re-adds whatever is merged.
+        self.unions_resolved.forget(referent);
+        self.union_plan.forget(referent);
         if let Some(model) = self.file_mesh_plan.poses.forget_part(referent) {
             self.file_mesh_plan.rebind_models(&[model]);
         }

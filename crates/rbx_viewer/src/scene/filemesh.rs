@@ -170,6 +170,19 @@ impl Resolved {
         self.slot_of.get(&referent).copied()
     }
 
+    /// Puts `instances` in place of whatever was drawn for their referents
+    /// (the unions' own, put back after every file mesh pass), indexed like
+    /// every other instance so an edit or a delete finds them.
+    pub(crate) fn replace(&mut self, instances: &[ResolvedInstance]) {
+        let referents: HashSet<Ref> = instances.iter().map(|i| i.referent).collect();
+        self.instances.retain(|i| !referents.contains(&i.referent));
+        self.instances.extend(instances.iter().cloned());
+        self.slot_of.clear();
+        for (index, instance) in self.instances.iter().enumerate() {
+            self.slot_of.entry(instance.referent).or_insert(index);
+        }
+    }
+
     /// Appends `instance`, answering with the index it got.
     pub(crate) fn push(&mut self, instance: ResolvedInstance) -> usize {
         let index = self.instances.len();

@@ -54,7 +54,6 @@ pub const AUTHENTICATED_URL: &str = "https://users.roblox.com/v1/users/authentic
 /// none). `Unauthorized` when Roblox no longer accepts the cookie.
 pub fn authenticated_user_id(cookie: &SessionCookie) -> Result<u64, PulseError> {
     let agent: ureq::Agent = rbx_net::config()
-        .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(15)))
         .build()
@@ -241,7 +240,6 @@ impl Pulser {
         location: StudioLocation,
     ) -> (Self, mpsc::Receiver<PulserEvent>) {
         let agent: ureq::Agent = rbx_net::config()
-            .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
             .http_status_as_error(false)
             .timeout_global(Some(Duration::from_secs(15)))
             .build()

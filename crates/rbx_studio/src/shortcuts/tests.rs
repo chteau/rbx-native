@@ -2,7 +2,9 @@ use std::collections::HashSet;
 
 use gpui_kit::{Keystroke, Modifiers};
 
-use super::{bindable, display, parse, same_key, Category, Command, Scope, Store, ALL};
+use super::{
+    bindable, command_for_action, display, parse, same_key, Category, Command, Scope, Store, ALL,
+};
 
 fn key(name: &str, modifiers: Modifiers) -> Keystroke {
     Keystroke {
@@ -319,4 +321,18 @@ fn quit_and_settings_defaults_follow_the_os() {
         assert!(quit.is_empty());
         assert_eq!(settings, vec![parsed("alt-s")]);
     }
+}
+
+/// Save to File As… has its own key, Cmd+Shift+S on macOS (GPUI's
+/// `secondary`), shown beside it in the File menu.
+#[test]
+fn save_as_has_its_own_key_in_the_file_menu() {
+    use crate::menu_bar::MenuSaveToFile;
+    assert_eq!(command_for_action(&MenuSaveToFile), Some(Command::SaveAs));
+    let defaults = ALL
+        .iter()
+        .find(|spec| spec.command == Command::SaveAs)
+        .unwrap()
+        .defaults;
+    assert_eq!(defaults, &["secondary-shift-s"]);
 }

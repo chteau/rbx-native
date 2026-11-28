@@ -250,9 +250,16 @@ pub fn gate(
     result
 }
 
-/// An agent config with the gate in: what every app agent is built from.
+/// What every request names itself as: the app and its release version,
+/// which this crate shares with the editor through the workspace version.
+pub const USER_AGENT: &str = concat!("rbx-native/", env!("CARGO_PKG_VERSION"));
+
+/// An agent config with the gate and [`USER_AGENT`] in: what every app agent
+/// is built from.
 pub fn config() -> ureq::config::ConfigBuilder<AgentScope> {
-    Agent::config_builder().middleware(gate)
+    Agent::config_builder()
+        .middleware(gate)
+        .user_agent(USER_AGENT)
 }
 
 /// A default agent with the gate in, for one-off requests.

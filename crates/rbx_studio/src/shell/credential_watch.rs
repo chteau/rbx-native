@@ -56,9 +56,13 @@ impl Shell {
             // and so does everything greyed out while offline.
             let now = rbx_net::status();
             if now != net {
+                let back = net.offline() && !now.offline();
                 net = now;
                 let followed = this.update(cx, |shell, cx| {
                     crate::menu_bar::follow_network(shell.script_templates.extras(), cx);
+                    if back {
+                        shell.viewport.read(cx).refetch_assets();
+                    }
                     cx.notify();
                 });
                 if followed.is_err() {

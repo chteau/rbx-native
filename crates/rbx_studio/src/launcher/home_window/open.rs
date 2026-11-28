@@ -222,9 +222,7 @@ impl HomeWindow {
         if std::mem::replace(&mut self.opening, true) {
             return;
         }
-        let created = home::places_dir()
-            .ok_or_else(|| "no config directory to create the place in".to_string())
-            .and_then(|places| crate::place_templates::instantiate(&template, &places));
+        let created = crate::place_templates::instantiate(&template, &home::untitled::dir());
         match created {
             Ok(path) => self.open_path_later(path, cx),
             Err(reason) => {
@@ -244,9 +242,8 @@ impl HomeWindow {
         if std::mem::replace(&mut self.opening, true) {
             return;
         }
-        let created = home::new_place_path(template)
-            .ok_or_else(|| "no config directory to create the place in".to_string())
-            .and_then(|path| template.create(&path).map(|()| path));
+        let path = home::new_place_path(template);
+        let created = template.create(&path).map(|()| path);
         match created {
             Ok(path) => self.open_path_later(path, cx),
             Err(reason) => {

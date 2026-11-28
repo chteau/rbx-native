@@ -125,7 +125,6 @@ pub struct QuickLogin {
 impl QuickLogin {
     pub fn new() -> Self {
         let agent: ureq::Agent = rbx_net::config()
-            .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
             .http_status_as_error(false)
             .timeout_global(Some(std::time::Duration::from_secs(15)))
             .build()

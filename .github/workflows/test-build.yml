@@ -58,6 +58,19 @@ jobs:
       - name: cargo build --release
         run: cargo build --release -p rbx_studio --bin rbxstudio
 
+      # The crates' licence notices the About window points at, made the way
+      # release.yml makes them.
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Third-party licenses
+        shell: bash
+        run: |
+          cargo about generate --config .github/release/about.toml \
+            --manifest-path crates/rbx_studio/Cargo.toml \
+            -o THIRD-PARTY-LICENSES.html .github/release/about.hbs
+
       # The release's signed app in a disk image: a bare binary copied into
       # an installed RbxNative.app breaks the bundle's signature. Same
       # identity every build, so Keychain and Accessibility grants survive
@@ -68,7 +81,8 @@ jobs:
           MACOS_SIGN_P12: ${{ secrets.MACOS_SIGN_P12 }}
           MACOS_SIGN_PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
         run: |
-          version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/rbx_studio/Cargo.toml | head -n 1)"
+          version="$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "rbx_studio") | .version')"
           app="$RUNNER_TEMP/app/RbxNative.app"
           .github/release/macos-app.sh target/release/rbxstudio "$version" "$app"
           .github/release/macos-dmg.sh "$app" "$RUNNER_TEMP/RbxNative.dmg"
@@ -90,6 +104,8 @@ jobs:
           fi
           # The app bundle carries its own (macos-app.sh).
           if [ "${{ matrix.os }}" != macos ]; then
+            cp LICENSE dist/LICENSE.txt
+            cp THIRD-PARTY-LICENSES.html .github/release/THIRD-PARTY-EMBEDDED.txt dist/
             .github/release/notices.sh dist
           fi
           {

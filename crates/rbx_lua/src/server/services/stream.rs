@@ -69,11 +69,7 @@ fn http_stream(
     commands: &Receiver<Out>,
     push: &dyn Fn(Event),
 ) -> Result<(), String> {
-    let agent: ureq::Agent = rbx_net::config()
-        .user_agent(concat!("rbx-native/", env!("CARGO_PKG_VERSION")))
-        .http_status_as_error(false)
-        .build()
-        .into();
+    let agent: ureq::Agent = rbx_net::config().http_status_as_error(false).build().into();
     let mut builder = ureq::http::Request::builder()
         .method(request.method.as_str())
         .uri(request.url.as_str());

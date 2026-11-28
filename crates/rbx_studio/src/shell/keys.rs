@@ -262,7 +262,48 @@ impl Shell {
     /// disambiguate through their own class instead and go through
     /// [`insert_instance`](Self::insert_instance) unchanged.
     pub(crate) fn insert_part(&mut self, class: &str, shape: u32, cx: &mut Context<Self>) {
-        self.insert_instance_with_source(class, Some(shape), None, None, cx);
+        self.insert_part_in_view(class, Some(shape), cx);
+    }
+
+    /// A part from the ribbon or the Model menu, as Studio inserts one
+    /// (measured in Studio 0.748): always into Workspace, whatever is
+    /// selected, resting on whatever the view's centre line hits past the
+    /// selection, its centre on the move grid when snapping is on, lifted
+    /// clear of any part it would sink into (so a second one stacks on the
+    /// first). A block is 4 × 1 × 2 there, not `Instance.new`'s 4 × 1.2 × 2.
+    pub(crate) fn insert_part_in_view(
+        &mut self,
+        class: &str,
+        shape: Option<u32>,
+        cx: &mut Context<Self>,
+    ) {
+        // Past the selection, which after an insert is the part just put
+        // there: the next one lands where the view points and stacks on it.
+        let aim = self.aim_past(self.selected_all(), cx);
+        let snap = self.transform.translate;
+        let step = snap.enabled.then_some(snap.increment);
+        let workspace = explorer::find_by_name(&self.dom, "Workspace");
+        let block = class == "Part" && shape.is_none_or(|shape| shape == PART_TYPE_BLOCK);
+        self.insert_instance_placed(class, shape, workspace, cx, |dom, part| {
+            if block {
+                let _ = dom.set_property(
+                    part,
+                    "size",
+                    Variant::Vector3(Vector3Data {
+                        x: 4.0,
+                        y: 1.0,
+                        z: 2.0,
+                    }),
+                );
+            }
+            super::toolbox::land(dom, &[part], &aim);
+            if let Some(step) = step {
+                snap_footprint(dom, part, step);
+            }
+            if let Some(workspace) = workspace {
+                super::toolbox::clear_overlaps(dom, workspace, part);
+            }
+        });
     }
 
     /// "Insert ModuleScript (Class)" (see `menu_bar`): the one script insert
@@ -297,6 +338,24 @@ impl Shell {
         under: Option<Ref>,
         cx: &mut Context<Self>,
     ) {
+        self.insert_instance_placed(class, shape, under, cx, |dom, reference| {
+            if let Some(text) = source {
+                crate::script_editor::source::write(dom, reference, text);
+            }
+        });
+    }
+
+    /// [`insert_instance_with_source`](Self::insert_instance_with_source)
+    /// with `finish` run on the new instance before the insert is recorded,
+    /// so whatever it writes is one undo step with it.
+    fn insert_instance_placed(
+        &mut self,
+        class: &str,
+        shape: Option<u32>,
+        under: Option<Ref>,
+        cx: &mut Context<Self>,
+        finish: impl FnOnce(&mut WeakDom, Ref),
+    ) {
         let parent = under
             .or_else(|| self.selected())
             .or_else(|| explorer::find_by_name(&self.dom, "Workspace"));
@@ -322,9 +381,7 @@ impl Shell {
             let _ =
                 crate::properties::edit::commit(&mut dom, &self.database, reference, name, text);
         }
-        if let Some(text) = source {
-            crate::script_editor::source::write(&mut dom, reference, text);
-        }
+        finish(&mut dom, reference);
         self.dom = dom;
         // An insert logs a `Change::Added` plus, for a `Part`, a dozen
         // `Property` writes for its defaults (or, for a script, one `Source`
@@ -358,6 +415,24 @@ impl Shell {
             self.delete_selected(cx);
         }
     }
+}
+
+/// Puts `part`'s centre on the move grid across the ground (X and Z), as
+/// Studio's inserted parts land; the height it rests at stays.
+pub(super) fn snap_footprint(dom: &mut WeakDom, part: Ref, step: f32) {
+    if step <= 0.0 {
+        return;
+    }
+    let Some(Variant::CFrame(mut cframe)) = dom
+        .get(part)
+        .and_then(|i| i.properties().get("CFrame"))
+        .cloned()
+    else {
+        return;
+    };
+    cframe.position.x = (cframe.position.x / step).round() * step;
+    cframe.position.z = (cframe.position.z / step).round() * step;
+    let _ = dom.set_property(part, "CFrame", Variant::CFrame(cframe));
 }
 
 /// `Enum.PartType`, for the classes the Part insert menu can create through a

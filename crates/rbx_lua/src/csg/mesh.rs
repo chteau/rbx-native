@@ -42,10 +42,28 @@ fn mesh_uri(instance: &Instance) -> Option<&str> {
     })
 }
 
+/// The `EditableMesh` a `MeshPart` draws from memory (one made by
+/// `AssetService:CreateMeshPartAsync(Content.fromObject(mesh))`, with no
+/// `MeshId`): its triangles, three corners each.
+fn editable_triangles(instance: &Instance) -> Option<(Vec<[f32; 3]>, Vec<u32>)> {
+    let Some(Variant::Content(Content::Object(referent))) =
+        instance.properties().get("MeshContent")
+    else {
+        return None;
+    };
+    let rbx_dom::editable::Editable::Mesh(mesh) = rbx_dom::editable::get(*referent)? else {
+        return None;
+    };
+    let positions = mesh.triangles().positions;
+    let indices = (0..positions.len() as u32).collect();
+    Some((positions, indices))
+}
+
 /// `instance`'s mesh in world space, placed at `at` and fitted to `size`
 /// like the renderer fits it (its `InitialSize`, else its own bounds, scaled
-/// to `size`). `None` when it is not a `MeshPart`, names no mesh, or no
-/// source is set: the caller falls back to the box.
+/// to `size`): the asset it names, or the `EditableMesh` it draws. `None`
+/// when it is not a `MeshPart`, has no mesh, or no source is set (the beta
+/// is off): the caller falls back to the box.
 pub(super) fn world_solid(
     db: &ReflectionDatabase,
     instance: &Instance,
@@ -55,24 +73,29 @@ pub(super) fn world_solid(
     if !db.is_subclass_of(instance.class(), "MeshPart") {
         return None;
     }
-    let uri = mesh_uri(instance)?;
     let guard = SOURCE.read().unwrap_or_else(|e| e.into_inner());
     let source = guard.as_ref()?;
-    let mesh =
-        match source(uri).and_then(|bytes| rbx_mesh::parse(&bytes).map_err(|e| e.to_string())) {
-            Ok(mesh) => mesh,
-            Err(err) => return Some(Err(format!("{}: {err}", instance.name()))),
-        };
-    let positions: Vec<[f32; 3]> = mesh.vertices.iter().map(|v| v.position).collect();
-    if !closed(&positions, &mesh.indices) {
+    let (positions, indices) = match mesh_uri(instance) {
+        Some(uri) => {
+            match source(uri).and_then(|bytes| rbx_mesh::parse(&bytes).map_err(|e| e.to_string())) {
+                Ok(mesh) => (
+                    mesh.vertices.iter().map(|v| v.position).collect(),
+                    mesh.indices,
+                ),
+                Err(err) => return Some(Err(format!("{}: {err}", instance.name()))),
+            }
+        }
+        None => editable_triangles(instance)?,
+    };
+    if !closed(&positions, &indices) {
         return Some(Err(NON_MANIFOLD.to_owned()));
     }
     let native = match read(db, instance, "InitialSize") {
         Some(Variant::Vector3(v)) if v.x.min(v.y).min(v.z) > f32::EPSILON => vec3(*v),
-        _ => used_extent(&positions, &mesh.indices),
+        _ => used_extent(&positions, &indices),
     };
     let model = at * DMat4::from_scale(size / native.max(DVec3::splat(1e-6)));
-    Some(Ok(Solid::from_triangles(&positions, &mesh.indices, model)))
+    Some(Ok(Solid::from_triangles(&positions, &indices, model)))
 }
 
 /// The extent of the vertices `indices` uses: a file's coarser LODs keep

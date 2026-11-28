@@ -52,8 +52,10 @@ impl Shell {
         if crate::shortcuts::pressed(crate::shortcuts::Command::Fullbright, keystroke) {
             self.set_fullbright(!self.fullbright, cx);
         }
-        if let Some(Action::Save) = save::action_for(&keystroke.key, keystroke.modifiers) {
-            self.save(cx);
+        match save::action_for(&keystroke.key, keystroke.modifiers) {
+            Some(Action::Save) => self.save(cx),
+            Some(Action::SaveAs) => self.export_place(super::Export::Place, cx),
+            None => {}
         }
         if let Some(scale) = crate::scale::action_for_keystroke(keystroke) {
             self.set_font_scale(scale.apply(crate::tokens::font_scale()), cx);
@@ -64,6 +66,7 @@ impl Shell {
         if keystroke.key == "escape"
             && (self.close_roblox_dialog()
                 | self.cancel_close_place()
+                | self.cancel_live_prompt()
                 | self.cancel_rig_dialog()
                 | self.close_publish_result()
                 | self.close_animation_publish()
@@ -126,6 +129,16 @@ impl Shell {
             return Err(message.to_owned());
         }
         let path = self.path.clone();
+        // A new place's first save gives it a home in the places folder.
+        if crate::home::untitled::is_untitled(&path) {
+            let places = crate::home::places_dir()
+                .ok_or_else(|| "no config directory to save the place in".to_string())?;
+            std::fs::create_dir_all(&places)
+                .map_err(|err| format!("{}: {err}", places.display()))?;
+            self.save_as(&crate::home::untitled::save_target(&path, &places), cx)?;
+            crate::home::untitled::discard(&path);
+            return Ok(());
+        }
         self.write_to(&path, cx)?;
         self.saved();
         let linked = crate::home::link_of(&path).is_some();

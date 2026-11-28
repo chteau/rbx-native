@@ -2,6 +2,11 @@
 //! bought, kept between runs in `<config>/local-run/<place>/`, and how the
 //! next run treats them (Test › Data), and the place files a teleport may
 //! reload into.
+//!
+//! A run keeps its DataStores on this machine unless the place opts into
+//! its experience's real ones (Test › Data: Live), the way Studio's Play
+//! only reaches them with "Enable Studio Access to API Services" on, which
+//! is off by default.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -18,6 +23,9 @@ pub(crate) enum DataMode {
     Kept,
     /// Every run starts with empty DataStores, forgotten when it stops.
     Fresh,
+    /// "Enable Studio Access to API Services" on: a published place's run
+    /// reads and writes its experience's real DataStores.
+    Live,
     /// "Enable Studio Access to API Services" off: DataStore calls fail as
     /// Studio's do.
     Off,
@@ -27,7 +35,8 @@ impl DataMode {
     pub(crate) fn next(self) -> DataMode {
         match self {
             DataMode::Kept => DataMode::Fresh,
-            DataMode::Fresh => DataMode::Off,
+            DataMode::Fresh => DataMode::Live,
+            DataMode::Live => DataMode::Off,
             DataMode::Off => DataMode::Kept,
         }
     }
@@ -36,6 +45,7 @@ impl DataMode {
         match self {
             DataMode::Kept => "Data: Kept",
             DataMode::Fresh => "Data: Fresh",
+            DataMode::Live => "Data: Live",
             DataMode::Off => "Data: Off",
         }
     }
@@ -45,6 +55,9 @@ impl DataMode {
 struct Settings {
     #[serde(default)]
     data: DataMode,
+    /// Play's question before the first live run was answered yes.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    live_confirmed: bool,
     /// Place files a teleport to their place id reloads into, besides the
     /// place itself (TeleportService in Local Run). Edited in the place's
     /// `settings.json`.
@@ -92,12 +105,39 @@ pub(crate) fn mode(path: &Path) -> DataMode {
 }
 
 pub(crate) fn set_mode(path: &Path, data: DataMode) {
+    save(
+        path,
+        Settings {
+            data,
+            ..settings(path)
+        },
+    );
+}
+
+/// Whether starting a run must ask first: the place is set to Live, would
+/// reach its real DataStores (published, online) and was never confirmed.
+pub(crate) fn live_unconfirmed(path: &Path) -> bool {
+    let settings = settings(path);
+    settings.data == DataMode::Live
+        && !settings.live_confirmed
+        && crate::home::link_of(path).is_some()
+        && !rbx_net::is_offline()
+}
+
+/// Play's question was answered yes: later runs don't ask again.
+pub(crate) fn confirm_live(path: &Path) {
+    save(
+        path,
+        Settings {
+            live_confirmed: true,
+            ..settings(path)
+        },
+    );
+}
+
+fn save(path: &Path, settings: Settings) {
     let Some(dir) = folder(path) else { return };
     let _ = std::fs::create_dir_all(&dir);
-    let settings = Settings {
-        data,
-        ..settings(path)
-    };
     if let Ok(text) = serde_json::to_vec_pretty(&settings) {
         let _ = std::fs::write(dir.join("settings.json"), text);
     }
@@ -138,9 +178,9 @@ fn secrets(file: &Path) -> std::collections::HashMap<String, (String, String)> {
 }
 
 /// Connects the run to the experience's real DataStores, as Studio's Play
-/// has them, when the place is published, API access is on and the editor
-/// is online with an Open Cloud key; else they stay in the local store.
-/// The one line Output shows either way. `RBXNATIVE_LOCAL_RUN_READONLY=1`
+/// has them, when the place opted in (Test › Data: Live), is published and
+/// the editor is online with an Open Cloud key; else they stay in the local
+/// store. The one line Output shows either way. `RBXNATIVE_LOCAL_RUN_READONLY=1`
 /// keeps every live write in the run, never sent (for testing against games that must not
 /// change).
 pub(crate) fn go_live(
@@ -149,8 +189,10 @@ pub(crate) fn go_live(
     services: &mut rbx_lua::server::Services,
 ) -> String {
     let local = |why: &str| format!("DataStores: local ({why})");
-    if mode == DataMode::Off {
-        return local("Studio access to API services is off");
+    match mode {
+        DataMode::Off => return local("Studio access to API services is off"),
+        DataMode::Kept | DataMode::Fresh => return local("Test \u{203a} Data isn\u{2019}t Live"),
+        DataMode::Live => {}
     }
     let Some(link) = crate::home::link_of(path) else {
         return local("the place isn\u{2019}t published");
@@ -175,13 +217,34 @@ mod tests {
 
     #[test]
     fn the_modes_cycle_and_off_turns_api_access_off() {
-        assert_eq!(DataMode::Kept.next().next().next(), DataMode::Kept);
+        assert_eq!(DataMode::Kept.next().next().next().next(), DataMode::Kept);
         let path = Path::new("/nowhere/place.rbxl");
         assert!(!services(path, DataMode::Off).api_access);
         assert!(services(path, DataMode::Fresh).data_file.is_none());
-        let mut config = services(path, DataMode::Kept);
-        assert!(go_live(path, DataMode::Kept, &mut config).contains("isn\u{2019}t published"));
+        let mut config = services(path, DataMode::Live);
+        assert!(go_live(path, DataMode::Live, &mut config).contains("isn\u{2019}t published"));
         assert!(config.live.is_none());
+    }
+
+    #[test]
+    fn a_place_stays_local_unless_it_opts_into_live_data() {
+        assert_eq!(DataMode::default(), DataMode::Kept);
+        let path = Path::new("/nowhere/place.rbxl");
+        for mode in [DataMode::Kept, DataMode::Fresh] {
+            let mut config = services(path, mode);
+            assert_eq!(
+                go_live(path, mode, &mut config),
+                "DataStores: local (Test \u{203a} Data isn\u{2019}t Live)"
+            );
+            assert!(config.live.is_none());
+        }
+        // An old settings file, written before Live existed, reads as Kept
+        // and was never confirmed.
+        let old: Settings = serde_json::from_str(r#"{"data": "kept"}"#).unwrap();
+        assert_eq!(old.data, DataMode::Kept);
+        assert!(!old.live_confirmed);
+        // Nothing to ask about for a place that isn't published.
+        assert!(!live_unconfirmed(path));
     }
 
     #[test]

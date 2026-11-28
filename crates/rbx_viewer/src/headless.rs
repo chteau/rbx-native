@@ -471,9 +471,16 @@ impl Headless {
     /// Opens the view standing at `eye` and looking toward `look_at`, both in
     /// studs, at `fov_degrees`, and flies on from there, what a host opening a
     /// place at its own `Camera` uses. Nothing orbits afterwards.
+    ///
+    /// An orthographic view keeps its zoom: a game camera moved every frame
+    /// in Play stays at its `OrthographicSize`, whatever the distance
+    /// between `eye` and `look_at`.
     pub fn open_at(&mut self, eye: [f32; 3], look_at: [f32; 3], fov_degrees: f32) {
         let mut pose = camera::look_at_pose(Vec3::from(eye), Vec3::from(look_at));
         pose.fov_degrees = fov_degrees;
+        if let (true, Viewpoint::Free(current)) = (self.view.orthographic, self.from) {
+            pose.ortho_scale = current.ortho_scale;
+        }
         let mut controller =
             Controller::new(Start::Pose(pose), &self.bounds, None, DEFAULT_SENSITIVITY);
         controller.set_feel(self.feel);
@@ -1171,6 +1178,13 @@ impl Headless {
         if self.ooms != gpu::ooms() {
             self.recover();
         }
+        self.apply_ortho_span(width, height);
+        self.size = (width, height);
+        self.offscreen.set_elapsed(self.start.elapsed());
+        self.offscreen.queue_frame((width, height), self.from)
+    }
+
+    fn apply_ortho_span(&mut self, width: u32, height: u32) {
         if let Some((size, axis)) = self.ortho_span.take() {
             let half_height = axis.half_height(size, width as f32 / height.max(1) as f32);
             self.controller.set_ortho_scale(half_height);
@@ -1178,9 +1192,6 @@ impl Headless {
                 pose.ortho_scale = half_height;
             }
         }
-        self.size = (width, height);
-        self.offscreen.set_elapsed(self.start.elapsed());
-        self.offscreen.queue_frame((width, height), self.from)
     }
 
     /// The frame already drawn but not yet handed back, without drawing another:
