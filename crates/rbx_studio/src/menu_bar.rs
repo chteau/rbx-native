@@ -82,6 +82,7 @@ actions!(
         MenuStudioSettings,
         /// Help › About RbxNative, and macOS's app menu item of that name.
         MenuAbout,
+        MenuOpenLogs,
         /// Cmd+Q on macOS: the close button's question, then the whole app.
         MenuQuit,
         MenuCustomizeShortcuts,

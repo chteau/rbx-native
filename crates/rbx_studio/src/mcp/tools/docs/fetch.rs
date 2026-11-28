@@ -85,7 +85,7 @@ pub(crate) fn get(url: &Url) -> Result<Fetched, String> {
     for _ in 0..=MAX_REDIRECTS {
         let mut response = agent
             .get(current.as_str())
-            .header("User-Agent", "rbx-native")
+            .header("User-Agent", rbx_net::USER_AGENT)
             .header("Accept", "text/markdown, text/plain, text/html;q=0.8")
             .call()
             .map_err(|err| format!("could not fetch {current}: {err}"))?;

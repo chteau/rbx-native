@@ -3,8 +3,8 @@ use gpui_kit::{Action, OwnedMenuItem};
 use super::menus::{menus_with, Betas};
 use super::{
     menus, MenuAbout, MenuClosePlace, MenuExportFbx, MenuExportGltf, MenuInsertTemplate,
-    MenuLinkRobloxPlace, MenuMergePlace, MenuOpenAutoSaves, MenuPlaceholder, MenuPublishToRoblox,
-    MenuSave, MenuSaveToFile, MenuSaveToRoblox, MenuVersionHistory,
+    MenuLinkRobloxPlace, MenuMergePlace, MenuOpenAutoSaves, MenuOpenLogs, MenuPlaceholder,
+    MenuPublishToRoblox, MenuSave, MenuSaveToFile, MenuSaveToRoblox, MenuVersionHistory,
 };
 use crate::script_templates::Template;
 
@@ -51,19 +51,29 @@ fn the_bar_holds_studios_seven_titles_in_order() {
     );
 }
 
-/// Help holds Studio's Documentation and Developer Forum, then About
-/// RbxNative, the way to the version and the credits.
+/// Help holds Studio's Documentation and Developer Forum, then the logs
+/// folder and About RbxNative, the way to the version and the credits.
 #[test]
-fn help_opens_the_docs_the_forum_and_about() {
+fn help_opens_the_docs_the_forum_the_logs_and_about() {
     let help = menu("Help");
     assert_eq!(
         action_names(&help),
-        ["Documentation", "Developer Forum", "About RbxNative"]
+        [
+            "Documentation",
+            "Developer Forum",
+            "Open Logs Folder",
+            "About RbxNative"
+        ]
     );
     assert!(help.items.iter().any(|item| matches!(
         item,
         OwnedMenuItem::Action { name, action, .. }
             if name == "About RbxNative" && action.partial_eq(&MenuAbout)
+    )));
+    assert!(help.items.iter().any(|item| matches!(
+        item,
+        OwnedMenuItem::Action { name, action, .. }
+            if name == "Open Logs Folder" && action.partial_eq(&MenuOpenLogs)
     )));
 }
 
@@ -446,4 +456,19 @@ fn the_old_model_menu_items_all_have_a_new_home() {
     ] {
         assert!(all.iter().any(|n| n == name), "{name} was dropped");
     }
+}
+
+/// A window taller than its screen (1456×819 here) still keeps a dropdown
+/// on the screen; one that fits is capped by its own bottom.
+#[test]
+fn a_dropdown_stops_at_the_screen_bottom() {
+    use super::popup::menu_room;
+    use gpui_kit::px;
+    assert_eq!(
+        menu_room(px(1000.), px(25.), Some(px(819.))),
+        px(819. - 25. - 80.)
+    );
+    assert_eq!(menu_room(px(600.), px(25.), Some(px(819.))), px(600. - 80.));
+    assert_eq!(menu_room(px(600.), px(0.), None), px(520.));
+    assert!(menu_room(px(50.), px(0.), None) > px(0.));
 }

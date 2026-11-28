@@ -14,7 +14,13 @@ use crate::local_install::LocalInstall;
 use crate::sober::Sober;
 
 const SETUP_CDN: &str = "https://setup.rbxcdn.com";
-const VERSION_ENDPOINT: &str = "https://setup.rbxcdn.com/versionQTStudio";
+/// The Studio build Roblox currently ships, the same endpoint Vinegar asks.
+/// `setup.rbxcdn.com/versionQTStudio` was used before and stopped moving: it
+/// still named a build from months back whose fonts package has no
+/// `Arimo.json` or `BuilderSans.json`, so `Enum.Font.Arial` and the Builder
+/// fonts fell back to a system face wherever no local install filled in.
+const VERSION_ENDPOINT: &str =
+    "https://clientsettings.roblox.com/v2/client-version/WindowsStudio64";
 /// Packages have been observed in the tens of MiB; anything past this is
 /// almost certainly a manifest pointing at the wrong URL, not a real package.
 #[cfg(not(target_arch = "wasm32"))]
@@ -102,18 +108,42 @@ impl NativeContent {
         let candidates = package_candidates_for_path(path)
             .ok_or_else(|| AssetError::UnknownNativePackage("<none>", path.to_string()))?;
 
-        let version = fetch_studio_version()?;
+        let version = fetch_studio_version();
         let mut last_not_found = None;
         for package in candidates {
-            match self.fetch_from_package(&version, package, path) {
+            let found = match &version {
+                Ok(version) => self.fetch_from_package(version, package, path),
+                // Offline, or Roblox unreachable: a package downloaded on an
+                // earlier run still holds every file it held then.
+                Err(_) => match self.newest_cached_package(package) {
+                    Some(zip_bytes) => extract_file_from_zip(&zip_bytes, path),
+                    None => continue,
+                },
+            };
+            match found {
                 Ok(bytes) => return Ok(bytes),
                 Err(AssetError::NativeFileNotFound(p)) => last_not_found = Some(p),
                 Err(other) => return Err(other),
             }
         }
-        Err(AssetError::NativeFileNotFound(
-            last_not_found.unwrap_or_else(|| path.to_string()),
-        ))
+        match (version, last_not_found) {
+            (Err(err), None) => Err(err),
+            (_, last_not_found) => Err(AssetError::NativeFileNotFound(
+                last_not_found.unwrap_or_else(|| path.to_string()),
+            )),
+        }
+    }
+
+    /// The most recently written copy of `package` in the cache, whatever
+    /// Studio version it came from.
+    fn newest_cached_package(&self, package: &str) -> Option<Vec<u8>> {
+        let suffix = format!("-{package}");
+        let newest = std::fs::read_dir(&self.packages_dir)
+            .ok()?
+            .flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(&suffix))
+            .max_by_key(|entry| entry.metadata().and_then(|meta| meta.modified()).ok())?;
+        std::fs::read(newest.path()).ok()
     }
 
     /// Best-effort extra fallback through a local Sober (Flatpak) install,
@@ -222,9 +252,31 @@ fn extract_file_from_zip(zip_bytes: &[u8], path: &str) -> Result<Vec<u8>, AssetE
     Err(AssetError::NativeFileNotFound(path.to_string()))
 }
 
+/// Asked once per run: the answer moves weekly at most, and every native
+/// file a place names would otherwise cost a round trip of its own. A
+/// failure is not kept, so a run that starts offline picks the version up
+/// once Roblox is reachable again.
 fn fetch_studio_version() -> Result<String, AssetError> {
+    static VERSION: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+    let mut known = VERSION.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(version) = known.as_ref() {
+        return Ok(version.clone());
+    }
     let body = http_get_text(VERSION_ENDPOINT)?;
-    Ok(body.trim().to_string())
+    let version = client_version_upload(&body).ok_or_else(|| {
+        AssetError::Network(format!("{VERSION_ENDPOINT} named no clientVersionUpload"))
+    })?;
+    *known = Some(version.clone());
+    Ok(version)
+}
+
+/// `clientVersionUpload` out of the client-settings answer,
+/// `{"version": "0.748.0.7481526", "clientVersionUpload": "version-8d7a1009c17e4ff8", ...}`.
+fn client_version_upload(body: &str) -> Option<String> {
+    let (_, rest) = body.split_once("\"clientVersionUpload\"")?;
+    let (_, rest) = rest.split_once('"')?;
+    let (value, _) = rest.split_once('"')?;
+    value.starts_with("version-").then(|| value.to_string())
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -486,5 +538,54 @@ mod tests {
     fn no_local_install_means_no_local_fallback() {
         let native = NativeContent::with_local_install(std::env::temp_dir(), None);
         assert!(native.fetch_from_local_install("textures/x.png").is_none());
+    }
+
+    #[test]
+    fn the_studio_version_is_read_off_client_settings() {
+        let body = r#"{
+ "version": "0.748.0.7481526",
+ "clientVersionUpload": "version-8d7a1009c17e4ff8",
+ "bootstrapperVersion": ""
+}"#;
+        assert_eq!(
+            client_version_upload(body).as_deref(),
+            Some("version-8d7a1009c17e4ff8")
+        );
+        assert_eq!(client_version_upload(r#"{"version": "0.748"}"#), None);
+        assert_eq!(
+            client_version_upload(r#"{"clientVersionUpload": ""}"#),
+            None
+        );
+    }
+
+    // Offline the version can't be asked, and the package from the last run
+    // that could still answers, whichever build it came from.
+    #[test]
+    fn the_newest_cached_copy_of_a_package_answers_without_a_version() {
+        let dir =
+            std::env::temp_dir().join(format!("rbx_assets_native_packages_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |name: &str, bytes: &[u8], age: u64| {
+            let path = dir.join(name);
+            std::fs::write(&path, bytes).unwrap();
+            let when = std::time::SystemTime::now() - std::time::Duration::from_secs(age);
+            std::fs::File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_modified(when)
+                .unwrap();
+        };
+        write("version-old-content-fonts.zip", b"old", 600);
+        write("version-new-content-fonts.zip", b"new", 60);
+        write("version-newer-content-sky.zip", b"sky", 0);
+        let native = NativeContent::with_local_install(dir.clone(), None);
+
+        assert_eq!(
+            native.newest_cached_package("content-fonts.zip").as_deref(),
+            Some(&b"new"[..])
+        );
+        assert_eq!(native.newest_cached_package("content-models.zip"), None);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

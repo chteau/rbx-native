@@ -83,6 +83,7 @@ commands! {
     NewPlace, "new_place", "New", File, ["secondary-n"];
     OpenPlace, "open_place", "Open…", File, ["secondary-o"];
     Save, "save", "Save to File", File, ["secondary-s"];
+    SaveAs, "save_as", "Save to File As…", File, ["secondary-shift-s"];
     // macOS's own Settings key first, so its menus show it.
     StudioSettings, "studio_settings", "Studio Settings", File, ["alt-s"] mac ["secondary-,", "alt-s"];
     // The window manager closes the window elsewhere; Cmd+Q is macOS's.
@@ -605,15 +606,20 @@ pub(crate) fn command_for_action(action: &dyn Action) -> Option<Command> {
         MenuCommandPalette, MenuCopyInstance, MenuCutInstance, MenuDeleteInstance,
         MenuDuplicateInstance, MenuFullbright, MenuGroup, MenuInsertFolder, MenuInsertObject,
         MenuInsertPart, MenuNewPlace, MenuOpenPlace, MenuPasteInstance, MenuPasteIntoInstance,
-        MenuQuickOpen, MenuRedo, MenuSave, MenuStudioSettings, MenuToggleMicroProfiler, MenuUndo,
-        MenuUngroup, MenuZoomIn, MenuZoomOut,
+        MenuQuickOpen, MenuRedo, MenuSave, MenuSaveToFile, MenuStudioSettings,
+        MenuToggleMicroProfiler, MenuUndo, MenuUngroup, MenuZoomIn, MenuZoomOut,
     };
     let id = action.as_any().type_id();
-    let table: [(TypeId, Command); 23] = [
+    let table: [(TypeId, Command); 24] = [
         (TypeId::of::<MenuNewPlace>(), Command::NewPlace),
         (TypeId::of::<MenuOpenPlace>(), Command::OpenPlace),
         (TypeId::of::<MenuInsertObject>(), Command::InsertObject),
         (TypeId::of::<MenuSave>(), Command::Save),
+        (TypeId::of::<MenuSaveToFile>(), Command::SaveAs),
+        (
+            TypeId::of::<MenuToggleMicroProfiler>(),
+            Command::MicroProfiler,
+        ),
         (TypeId::of::<MenuUndo>(), Command::Undo),
         (TypeId::of::<MenuRedo>(), Command::Redo),
         (TypeId::of::<MenuCutInstance>(), Command::Cut),
@@ -632,10 +638,6 @@ pub(crate) fn command_for_action(action: &dyn Action) -> Option<Command> {
         (TypeId::of::<MenuZoomIn>(), Command::UiScaleIn),
         (TypeId::of::<MenuZoomOut>(), Command::UiScaleOut),
         (TypeId::of::<MenuFullbright>(), Command::Fullbright),
-        (
-            TypeId::of::<MenuToggleMicroProfiler>(),
-            Command::MicroProfiler,
-        ),
     ];
     table
         .into_iter()

@@ -51,6 +51,11 @@ pub(crate) struct KeyCheck {
 }
 
 impl KeyCheck {
+    /// The last check never reached Roblox.
+    pub(crate) fn unreached(&self) -> bool {
+        matches!(self.status, Status::Network)
+    }
+
     pub(super) fn new(cx: &mut Context<Self>) -> Self {
         KeyCheck {
             secret: String::new(),

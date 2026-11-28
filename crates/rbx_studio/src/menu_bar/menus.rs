@@ -68,6 +68,8 @@ pub(super) fn menus_with(templates: &[Template], betas: Betas) -> Vec<OwnedMenu>
                 MenuItem::action("Documentation", MenuDocumentation),
                 MenuItem::action("Developer Forum", MenuDeveloperForum),
                 MenuItem::separator(),
+                // Where the session and crash logs are, for a bug report.
+                MenuItem::action("Open Logs Folder", MenuOpenLogs),
                 MenuItem::action("About RbxNative", MenuAbout),
             ])
             .owned(),

@@ -2,7 +2,9 @@ use glam::Vec3;
 use rbx_dom::{Ref, Variant, WeakDom};
 use rbx_viewer::pick::Ray;
 
-use super::{bounds, count_scripts, face_of, land, subtree, Aim, OPEN_AIR_DISTANCE};
+use super::{
+    bounds, clear_overlaps, count_scripts, face_of, land, subtree, Aim, OPEN_AIR_DISTANCE,
+};
 
 fn vec3(x: f32, y: f32, z: f32) -> rbx_dom::Vector3Data {
     rbx_dom::Vector3Data { x, y, z }
@@ -229,4 +231,62 @@ fn clearing_an_unfocused_search_field_leaves_it_idle(cx: &mut gpui_kit::TestAppC
         cx.run_until_parked();
     }
     assert!(notified.get() >= 3, "a focused field blinks");
+}
+
+/// Studio 0.748's Part button, measured: camera at (-19.70, 14.09, -19.30)
+/// looking along (0.635, -0.442, 0.633) onto the 12 × 1 × 12 SpawnLocation
+/// at the origin put the new 4 × 1 × 2 block at (-1, 1.5, -1): resting on the
+/// SpawnLocation's top, its centre on the 1-stud grid.
+#[test]
+fn an_inserted_part_rests_where_the_view_points_on_the_grid() {
+    let mut dom = WeakDom::new();
+    let part = dom.new_instance("Part", "Part", None);
+    dom.set_property(part, "size", Variant::Vector3(vec3(4., 1., 2.)))
+        .unwrap();
+    dom.set_property(part, "CFrame", Variant::CFrame(cframe(0., 0., 0.)))
+        .unwrap();
+    let origin = Vec3::new(-19.696_094, 14.091_624, -19.303_886);
+    let direction = Vec3::new(0.635_139_7, -0.442_004_4, 0.633_426_9).normalize();
+    // Where that line meets the SpawnLocation's top, y = 1.
+    let distance = (origin.y - 1.) / -direction.y;
+    let aim = Aim {
+        ray: Some(Ray::new(origin, direction)),
+        part: None,
+        distance: Some(distance),
+        normal: Some(Vec3::Y),
+    };
+    land(&mut dom, &[part], &aim);
+    crate::shell::keys::snap_footprint(&mut dom, part, 1.);
+    let [x, y, z] = position(&dom, part);
+    assert!(near(x, -1.) && near(y, 1.5) && near(z, -1.), "{x} {y} {z}");
+}
+
+/// Studio 0.748 put a second block inserted on the same view at
+/// (-1, 2.5, -1), on top of the first at (-1, 1.5, -1), and a third at 3.5.
+#[test]
+fn a_part_inserted_where_one_sits_stacks_on_it() {
+    let mut dom = WeakDom::new();
+    let workspace = dom.new_instance("Workspace", "Workspace", None);
+    let block = |dom: &mut WeakDom, y: f32| {
+        let part = dom.new_instance("Part", "Part", Some(workspace));
+        dom.set_property(part, "size", Variant::Vector3(vec3(4., 1., 2.)))
+            .unwrap();
+        dom.set_property(part, "CFrame", Variant::CFrame(cframe(-1., y, -1.)))
+            .unwrap();
+        part
+    };
+    let spawn = dom.new_instance("SpawnLocation", "SpawnLocation", Some(workspace));
+    dom.set_property(spawn, "size", Variant::Vector3(vec3(12., 1., 12.)))
+        .unwrap();
+    dom.set_property(spawn, "CFrame", Variant::CFrame(cframe(0., 0.5, 0.)))
+        .unwrap();
+    let first = block(&mut dom, 1.5);
+    clear_overlaps(&mut dom, workspace, first);
+    assert!(near(position(&dom, first)[1], 1.5));
+    let second = block(&mut dom, 1.5);
+    clear_overlaps(&mut dom, workspace, second);
+    assert!(near(position(&dom, second)[1], 2.5));
+    let third = block(&mut dom, 1.5);
+    clear_overlaps(&mut dom, workspace, third);
+    assert_eq!(position(&dom, third), [-1., 3.5, -1.]);
 }

@@ -119,17 +119,35 @@ fn box_sample(uv: vec2<f32>) -> vec3<f32> {
     return sum * 0.25;
 }
 
+/// How far past the Threshold opaque Neon's glow reaches, whatever its
+/// radiance. Roblox writes a Neon part's glow into its own buffer, and it
+/// barely depends on the colour's brightness once it is on: in Studio 0.748
+/// (ShadowMap, quality 21, the template's Bloom Intensity 1, Size 24 and
+/// Threshold 2) Neon at grey 192 glows as wide as white does, grey 160 not at
+/// all, and the glow 30, 36 and 44 pixels from a white part's centre reads
+/// 227, 150 and 55. Here the glow shares the HDR target with the colour, so
+/// the surface marks itself with alpha 0 and the cut below caps it.
+const NEON_GLOW: f32 = 1.4;
+
 /// What glows: the part of a pixel that clears the Threshold, with its hue kept.
 ///
 /// The cut is on the brightest channel rather than on luma, which is what makes
-/// a saturated neon glow as readily as a white one.
+/// a saturated neon glow as readily as a white one. Each tap is cut on its own,
+/// opaque Neon (alpha 0) at most [`NEON_GLOW`] past it.
 @fragment
 fn fs_threshold(in: VertexOutput) -> @location(0) vec4<f32> {
-    let color = box_sample(in.uv);
-    let brightest = max(color.r, max(color.g, color.b));
-    let excess = max(brightest - post.bloom.y, 0.0);
-
-    return vec4<f32>(color * (excess / max(brightest, 1e-4)), 1.0);
+    let offset = source_texel();
+    var sum = vec3<f32>(0.0);
+    for (var y = -1; y <= 1; y += 2) {
+        for (var x = -1; x <= 1; x += 2) {
+            let tap = textureSample(source, source_sampler, in.uv + vec2<f32>(f32(x), f32(y)) * offset);
+            let brightest = max(tap.r, max(tap.g, tap.b));
+            let excess = max(brightest - post.bloom.y, 0.0);
+            let glow = mix(min(excess, NEON_GLOW), excess, tap.a);
+            sum += tap.rgb * (glow / max(brightest, 1e-4));
+        }
+    }
+    return vec4<f32>(sum * 0.25, 1.0);
 }
 
 @fragment

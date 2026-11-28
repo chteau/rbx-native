@@ -52,7 +52,9 @@ pub(in super::super) fn build(
     )?;
     if kind == Kind::Mesh {
         let size = mesh_size(bytes).map_err(|err| format!("asset {asset_id}: {err}"))?;
-        for property in ["Size", "InitialSize"] {
+        // `size` is the name a part's size is saved and drawn under; a
+        // `Size` key would sit beside it unread, leaving the part 4x1.2x2.
+        for property in ["size", "InitialSize"] {
             let _ = dom.set_property(made, property, Variant::Vector3(size));
         }
         let _ = dom.set_property(made, "Anchored", Variant::Bool(true));
@@ -111,23 +113,20 @@ fn settle_brick_colors(dom: &mut WeakDom) {
     }
 }
 
-/// A `MeshPart`'s natural size is its mesh's extent.
+/// Studio's limit on a mesh's extent along any axis, in studs.
+const MAX_EXTENT: f32 = 2048.0;
+
+/// A `MeshPart`'s natural size is its mesh's extent, as Studio sizes one made
+/// from a mesh: unscaled, and refused past [`MAX_EXTENT`] on any axis rather
+/// than clamped.
 fn mesh_size(bytes: &[u8]) -> Result<Vector3Data, String> {
     let mesh = rbx_mesh::parse(bytes).map_err(|err| err.to_string())?;
     if mesh.vertices.is_empty() {
         return Err("the mesh has no vertices".to_owned());
     }
-    let mut min = [f32::INFINITY; 3];
-    let mut max = [f32::NEG_INFINITY; 3];
-    for vertex in &mesh.vertices {
-        for axis in 0..3 {
-            min[axis] = min[axis].min(vertex.position[axis]);
-            max[axis] = max[axis].max(vertex.position[axis]);
-        }
+    let [x, y, z] = mesh.bounds.size();
+    if [x, y, z].iter().any(|&extent| extent > MAX_EXTENT) {
+        return Err("Mesh extents size too large. Maximum is (2048, 2048, 2048).".to_owned());
     }
-    Ok(Vector3Data {
-        x: max[0] - min[0],
-        y: max[1] - min[1],
-        z: max[2] - min[2],
-    })
+    Ok(Vector3Data { x, y, z })
 }

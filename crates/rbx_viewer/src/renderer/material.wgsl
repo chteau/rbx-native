@@ -46,20 +46,26 @@ const VARIANT_ALPHA_TINT_MASK: u32 = 3u;
 // half (both measured in Studio 0.748).
 const VARIANT_ALPHA_CUTOFF: f32 = 0.5;
 
-// Neon is unlit and over-bright. Roblox writes the part's own colour into the
-// frame and a far brighter value into the glow it blooms from, two outputs one
-// render target cannot carry, so this is the glow, and the frame gets whatever
-// is left after the tone map clamps it.
-//
-// Calibrated to clear a bloom threshold and lift adjacent surfaces by ~18 sRGB
-// steps. Trades off neon brightness (255) against surface clipping at threshold.
-const NEON_HDR: f32 = 6.0;
+// Neon is unlit and over-bright, and it squares its colour: its radiance is
+// this times the linear colour squared. Fitted on a grey ramp of opaque Neon
+// parts in Studio 0.748 (ShadowMap, quality 21) over the fitted tone curve:
+// Color3 64, 96, 128 and 160 land on sRGB 45, 135, 214 and 246, which a
+// radiance linear in the colour (64 on 176) cannot follow. A saturated
+// channel clears white whatever the others do, which is why Studio's own
+// (255, 140, 0) part reads (255, 251, 33) in the middle and only its glow is
+// orange. Its glow is capped, see `post.wgsl`'s `NEON_GLOW`.
+const NEON_EMISSIVE: f32 = 12.5;
 // A see-through Neon part is another thing in Studio: no glow at all (see
 // `Post::seed_bloom`), and over black it comes out as its gamma-encoded colour
 // times this, times its opacity squared. Fitted on a (255, 170, 0) part at
 // Transparency 0.4 and 0.7 in Studio 0.748 (Future, quality 21): (238, 222, 0)
 // and (164, 133, 1) over a black wall.
 const NEON_SEE_THROUGH: f32 = 2.9;
+// Below this a Neon fragment is drawn see-through. Not 1: an opaque part's
+// alpha of 1, interpolated across a triangle, lands a hair under it on some
+// fragments, which then took the see-through branch and speckled the face
+// with its brighter, gamma-encoded colour at grazing angles.
+const NEON_OPAQUE: f32 = 0.999;
 // A ForceField is a tinted shell rather than a surface; the tint is the part's
 // colour and the reflection is what sells the "energy" look.
 const FORCE_FIELD_REFLECTANCE: f32 = 0.2;
@@ -281,7 +287,7 @@ fn mapped_shade(mapped: Mapped) -> vec3<f32> {
         // Exposed like every other surface in the frame: the bloom threshold is
         // compared against exposed radiance, so an unexposed neon would glow by
         // a different rule than everything around it.
-        return mapped.base_albedo * NEON_HDR * lighting.tuning.x;
+        return mapped.base_albedo * mapped.base_albedo * NEON_EMISSIVE * lighting.tuning.x;
     }
 
     if mapped.kind == KIND_PLASTIC || mapped.kind == KIND_FORCE_FIELD {
@@ -576,7 +582,7 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
         let rim = max(force_field_rim(input.world_normal, to_eye), surface.edge);
         alpha = force_field_alpha(alpha, rim, input.pattern);
     }
-    if input.kind == KIND_NEON && alpha < 1.0 {
+    if input.kind == KIND_NEON && alpha < NEON_OPAQUE {
         // Straight alpha like everything else here, so the second factor of
         // the opacity is the blend's own.
         let neon = srgb_encode(input.albedo) * NEON_SEE_THROUGH * lighting.tuning.x * alpha;
@@ -586,6 +592,9 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
     // `ViewportFrame`'s own, a place with no glass in it at all): there is
     // nothing to bend, so the pane blends the ordinary way instead.
     let source = vec2<i32>(textureDimensions(refraction_source));
+    if input.kind == KIND_NEON {
+        return vec4<f32>(shaded.color, uniforms.glow.x);
+    }
     if input.kind != KIND_GLASS || alpha >= 1.0 || source.x <= 1 {
         return vec4<f32>(shaded.color, alpha);
     }

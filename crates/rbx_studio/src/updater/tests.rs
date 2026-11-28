@@ -392,3 +392,11 @@ fn only_this_repos_release_pages_are_opened() {
         assert_eq!(release::notes_page(bad), list);
     }
 }
+
+#[test]
+fn every_request_names_the_release_version() {
+    assert_eq!(
+        rbx_net::USER_AGENT,
+        concat!("rbx-native/", env!("CARGO_PKG_VERSION"))
+    );
+}

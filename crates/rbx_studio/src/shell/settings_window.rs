@@ -87,6 +87,9 @@ pub(crate) struct SettingsWindow {
     pending_picker: Option<Rgba>,
     /// Account's key check, started the first time that page is shown.
     key: Option<Entity<crate::launcher::KeyCheck>>,
+    /// Whether the app was offline when last looked, to notice it coming
+    /// back.
+    offline: bool,
     /// Viewport › Advanced's disclosure.
     advanced_open: bool,
     page_scroll: ScrollHandle,
@@ -221,6 +224,18 @@ impl SettingsWindow {
             if let Some(page) = requested.and_then(Page::from_key) {
                 this.page = page;
             }
+            // Back online: a key check that couldn't reach Roblox runs
+            // again, instead of saying so until the window is reopened.
+            let offline = rbx_net::is_offline();
+            let back = std::mem::replace(&mut this.offline, offline) && !offline;
+            if back
+                && this
+                    .key
+                    .as_ref()
+                    .is_some_and(|key| key.read(cx).unreached())
+            {
+                this.key = None;
+            }
             cx.notify();
         }));
         subscriptions.push(cx.subscribe(&search, |_, _, event: &InputEvent, cx| {
@@ -254,6 +269,7 @@ impl SettingsWindow {
                 .ok()
                 .and_then(|hex| crate::accent::parse_hex(&hex)),
             key: None,
+            offline: rbx_net::is_offline(),
             advanced_open: std::env::var(ADVANCED_VARIABLE).is_ok(),
             page_scroll: ScrollHandle::new(),
             focus: {
