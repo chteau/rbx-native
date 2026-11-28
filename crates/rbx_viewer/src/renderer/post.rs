@@ -19,7 +19,7 @@ use glam::Vec2;
 
 use crate::camera::DepthRange;
 use crate::lighting::Effects;
-use crate::quality::QualityProfile;
+use crate::quality::{NeonGlow, QualityProfile};
 use pipelines::{attachment, blur_layout, fullscreen, sample_layout};
 use samples::supported;
 use targets::Sources;
@@ -89,6 +89,7 @@ pub(super) struct Post {
     /// resolve in place (it is the only pass that writes the final image) and
     /// simply stops the chain from being built or added in.
     bloom: bool,
+    neon_glow: NeonGlow,
     color_correction: bool,
     /// Samples every scene pass is drawn at, which is [`QualityProfile::msaa_samples`]
     /// clamped to what the adapter will multisample and resolve.
@@ -222,6 +223,7 @@ impl Post {
             uniform_bind,
             effects,
             bloom: quality.bloom,
+            neon_glow: quality.neon_glow,
             color_correction: quality.color_correction,
             samples: supported(device, quality.msaa_samples),
             targets: None,
@@ -257,6 +259,7 @@ impl Post {
     /// Answers the sample count the surface pipelines now have to match.
     pub(super) fn set_quality(&mut self, device: &wgpu::Device, quality: &QualityProfile) -> u32 {
         self.bloom = quality.bloom;
+        self.neon_glow = quality.neon_glow;
         self.color_correction = quality.color_correction;
         self.samples = supported(device, quality.msaa_samples);
         self.samples
@@ -307,7 +310,7 @@ impl Post {
             return None;
         }
 
-        let bloom_blur = bloom::blur(self.effects.bloom.size, size.1);
+        let bloom_blur = bloom::glow(self.effects.bloom.size, self.neon_glow, size.1);
         let blur_levels = self.blur_levels(size.1);
         if self
             .targets
@@ -327,7 +330,7 @@ impl Post {
         queue.write_buffer(
             &self.uniform,
             0,
-            bytemuck::bytes_of(&self.raw(bloom_blur.tent, sun_screen, orthographic)),
+            bytemuck::bytes_of(&self.raw(bloom_blur, sun_screen, orthographic)),
         );
 
         self.targets.as_ref()

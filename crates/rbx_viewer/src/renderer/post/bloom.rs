@@ -6,6 +6,8 @@
 //! "how wide is the blur" is answered by how many times it was halved, and the
 //! remainder by the tent.
 
+use crate::quality::NeonGlow;
+
 /// Frame height `BloomEffect.Size` is quoted in pixels at.
 ///
 /// Roblox's bloom is a screen-space effect whose Size is in pixels, so the same
@@ -44,7 +46,53 @@ pub(super) fn radius_pixels(size: f32, height: u32) -> f32 {
 /// The first level is already half the frame, so a chain of `n` levels spreads
 /// about `2^n * tent` pixels of the full-resolution frame.
 pub(super) fn blur(size: f32, height: u32) -> Blur {
-    let radius = radius_pixels(size, height).max(1.0);
+    chain(radius_pixels(size, height))
+}
+
+/// `BloomEffect.Size` as a radius in pixels of the frame being rendered.
+///
+/// Not [`radius_pixels`]: Roblox's glow does not follow the frame. In
+/// Studio 0.748 the same Neon parts in a 397 and a 591 pixel tall viewport
+/// glow with about the same strength in pixels, and fade over 3.6 and 4.2
+/// pixels: the reach grows as the 0.39 power of the height, and reads as
+/// a radius of about 13.5 at 591 pixels.
+pub(super) fn glow_radius_pixels(size: f32, height: u32) -> f32 {
+    size.max(0.0) * GLOW_REACH * (height.max(1) as f32 / REFERENCE_HEIGHT).powf(GLOW_HEIGHT_POWER)
+}
+
+const GLOW_REACH: f32 = 0.71;
+const GLOW_HEIGHT_POWER: f32 = 0.39;
+
+/// How much wider Studio's reduced glow (levels 6 to 11) spreads than its
+/// full one: Neon fading over 6.3 pixels rather than 4.4 in the same 591
+/// pixel tall viewport.
+const REDUCED_GLOW_REACH: f32 = 2.2;
+
+/// [`blur`] for the bloom at a level drawing `neon` glow, whose radius is
+/// [`glow_radius_pixels`].
+pub(super) fn glow(size: f32, neon: NeonGlow, height: u32) -> Blur {
+    let reach = if neon == NeonGlow::Reduced {
+        REDUCED_GLOW_REACH
+    } else {
+        1.0
+    };
+    chain(glow_radius_pixels(size, height) * reach)
+}
+
+/// The depth the bloom's strength was fitted at: every level of the chain
+/// adds the whole of what glows once more, so a deeper chain (a wider Size,
+/// a taller frame, the reduced Neon glow) would glow brighter as well as
+/// wider. Scaled back to this many, which is what the fitted frames (397 to
+/// 720 pixels tall at Size 24) build.
+const FITTED_LEVELS: f32 = 3.0;
+
+/// What the bloom is multiplied by on a chain of `levels`.
+pub(super) fn strength(levels: u32) -> f32 {
+    FITTED_LEVELS / levels.max(1) as f32
+}
+
+fn chain(radius: f32) -> Blur {
+    let radius = radius.max(1.0);
     // log2 of the radius in level-0 texels, which is what one halving buys.
     let halvings = (radius / 2.0).log2().round().clamp(1.0, MAX_LEVELS as f32);
     let levels = halvings as u32;
@@ -115,6 +163,28 @@ mod tests {
             );
             assert!((MIN_TENT..=MAX_TENT).contains(&blur.tent), "{blur:?}");
         }
+    }
+
+    // The glow's reach grows as the 0.39 power of the frame height, measured
+    // in Studio at 397 and 591 pixels, and a radius of about 13.5 at 591.
+    #[test]
+    fn the_glow_follows_the_frame_far_less_than_the_frame_grows() {
+        let at = |height| glow_radius_pixels(24.0, height);
+        assert!((at(591) - 13.5).abs() < 0.2, "{}", at(591));
+        assert!((at(397) / at(591) - (397.0f32 / 591.0).powf(0.39)).abs() < 1e-4);
+        // Every frame Studio is used at builds the depth the strength was fitted on.
+        for height in [397, 591, 720, 1080, 1440] {
+            assert_eq!(glow(24.0, NeonGlow::Full, height).levels, 3, "{height}");
+        }
+        assert!(glow(24.0, NeonGlow::Reduced, 591).levels > 3);
+    }
+
+    // Each level adds what glows once more, so the strength comes back down
+    // by the depth: a deeper chain only spreads the same glow wider.
+    #[test]
+    fn a_deeper_chain_glows_wider_not_brighter() {
+        assert_eq!(strength(3), 1.0);
+        assert!((strength(4) * 4.0 - strength(2) * 2.0).abs() < 1e-6);
     }
 
     // A 1080p frame at Studio's default Size: four halvings puts level 0 at

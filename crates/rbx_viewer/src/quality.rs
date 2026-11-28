@@ -125,8 +125,8 @@ pub(crate) struct QualityProfile {
     /// How far from the eye the sun's shadow map still reaches, in studs. One
     /// map, no cascades, so this trades directly against its sharpness.
     pub(crate) shadow_distance: f32,
-    /// False keeps the post chain but skips the bloom passes, which is what
-    /// takes the glow off a Neon part.
+    /// False keeps the post chain but skips the bloom passes, and with them
+    /// any Neon glow whatever `neon_glow` says.
     pub(crate) bloom: bool,
     /// False ignores the place's `ColorCorrectionEffect`.
     pub(crate) color_correction: bool,
@@ -194,6 +194,19 @@ pub(crate) struct QualityProfile {
     /// `renderer/water.wgsl`) rather than only the sky, which is itself the
     /// flat sky colour where `env_reflections` is off.
     pub(crate) water_reflections: bool,
+    /// How much of Studio's Neon glow is drawn, which steps at levels of its
+    /// own rather than with `bloom` (see `table::neon_glow`).
+    pub(crate) neon_glow: NeonGlow,
+}
+
+/// Studio's three looks for an opaque Neon part's glow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NeonGlow {
+    /// None at all, and none of it on the face either.
+    Off,
+    /// Fainter near the part, with more of the weaker channels in it.
+    Reduced,
+    Full,
 }
 
 #[cfg(test)]

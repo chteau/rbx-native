@@ -119,35 +119,80 @@ fn box_sample(uv: vec2<f32>) -> vec3<f32> {
     return sum * 0.25;
 }
 
-/// How far past the Threshold opaque Neon's glow reaches, whatever its
-/// radiance. Roblox writes a Neon part's glow into its own buffer, and it
-/// barely depends on the colour's brightness once it is on: in Studio 0.748
-/// (ShadowMap, quality 21, the template's Bloom Intensity 1, Size 24 and
-/// Threshold 2) Neon at grey 192 glows as wide as white does, grey 160 not at
-/// all, and the glow 30, 36 and 44 pixels from a white part's centre reads
-/// 227, 150 and 55. Here the glow shares the HDR target with the colour, so
-/// the surface marks itself with alpha 0 and the cut below caps it.
-const NEON_GLOW: f32 = 1.4;
+/// The brightest an opaque Neon part's colour goes into its glow, per
+/// channel. Roblox writes a Neon part's glow into its own buffer with its
+/// colour clamped, which is why the glow keeps the weaker channels the face
+/// itself all but loses: (255, 140, 0) glows orange, not red, and
+/// (0, 85, 255) glows a lighter blue than its own radiance would. Fitted in
+/// Studio 0.748 (Future, `EditQualityLevel` 12 to 21, the template's Bloom
+/// Intensity 1, Size 24, Threshold 2) on those two and a grey ramp: the
+/// green of the orange glow sits at 0.28 of its red (radiance alone gives
+/// 0.07), grey 192 glows as white does, grey 160 not at all, and Threshold
+/// 0.95 doubles the glow. Here the glow shares the HDR target with the
+/// colour, so the surface marks itself with alpha 0.
+const NEON_CAP: f32 = 3.0;
+/// The same in Studio's reduced glow (levels 6 to 11), where the glow is
+/// all or nothing past the Threshold: grey 176 glows as brightly as white,
+/// and orange's green sits at 0.56 of its red.
+const NEON_CAP_REDUCED: f32 = 1.53;
+/// How far past the Threshold the reduced glow reaches its full strength.
+const NEON_RAMP_REDUCED: f32 = 0.3;
+/// Overall strength of each tier against an ordinary bloom's.
+const NEON_GAIN: f32 = 0.8;
+const NEON_GAIN_REDUCED: f32 = 0.3;
 
-/// What glows: the part of a pixel that clears the Threshold, with its hue kept.
-///
-/// The cut is on the brightest channel rather than on luma, which is what makes
-/// a saturated neon glow as readily as a white one. Each tap is cut on its own,
-/// opaque Neon (alpha 0) at most [`NEON_GLOW`] past it.
+/// How much of each channel of the full Neon glow there is against its
+/// brightest one, a little more of the weaker ones than the clamped colour
+/// has (the reduced glow keeps the clamped colour's own mix): in
+/// Studio the glow lifts the green in the middle of a (0, 85, 255) part from
+/// 99 to 156 and of a (255, 140, 0) one from 231 to 250, 0.16 as much light
+/// where the clamped colours have 0.12.
+const NEON_HUE_POWER: f32 = 0.85;
+
+fn hue(clamped: vec3<f32>, top: f32) -> vec3<f32> {
+    return pow(clamped / max(top, 1e-4), vec3<f32>(NEON_HUE_POWER));
+}
+
+/// What of one texel glows: the part of it past the Threshold, its hue kept,
+/// the cut on its brightest channel rather than on luma so a saturated neon
+/// glows as readily as a white one. Opaque Neon (alpha 0) glows by Studio's
+/// own rule instead, by `post.bloom.w`: 0 none (levels up to 5), 1 the
+/// reduced glow, 2 the full one.
+fn glows(texel: vec4<f32>) -> vec3<f32> {
+    let brightest = max(texel.r, max(texel.g, texel.b));
+    let excess = max(brightest - post.bloom.y, 0.0);
+    let plain = texel.rgb * (excess / max(brightest, 1e-4));
+    var neon = vec3<f32>(0.0);
+    if post.bloom.w > 1.5 {
+        let clamped = min(texel.rgb, vec3<f32>(NEON_CAP));
+        let top = max(clamped.r, max(clamped.g, clamped.b));
+        neon = hue(clamped, top) * max(top - post.bloom.y, 0.0) * NEON_GAIN;
+    } else if post.bloom.w > 0.5 {
+        let clamped = min(texel.rgb, vec3<f32>(NEON_CAP_REDUCED));
+        let top = max(clamped.r, max(clamped.g, clamped.b));
+        neon = clamped / max(top, 1e-4) * min(excess / NEON_RAMP_REDUCED, 1.0) * NEON_GAIN_REDUCED;
+    }
+    return mix(neon, plain, texel.a);
+}
+
+/// The first bloom level, half the frame: each texel of the 4x4 block round
+/// the destination texel cut on its own (a filtered tap would blend a Neon
+/// face's unclamped radiance with what is beside it and glow past its rule
+/// at every silhouette), weighted as the four bilinear taps of a box
+/// downsample would have.
 @fragment
 fn fs_threshold(in: VertexOutput) -> @location(0) vec4<f32> {
-    let offset = source_texel();
+    let size = vec2<i32>(textureDimensions(source));
+    let corner = vec2<i32>(floor(in.uv * vec2<f32>(size) - 2.0));
+    var weights = array<f32, 4>(1.0, 3.0, 3.0, 1.0);
     var sum = vec3<f32>(0.0);
-    for (var y = -1; y <= 1; y += 2) {
-        for (var x = -1; x <= 1; x += 2) {
-            let tap = textureSample(source, source_sampler, in.uv + vec2<f32>(f32(x), f32(y)) * offset);
-            let brightest = max(tap.r, max(tap.g, tap.b));
-            let excess = max(brightest - post.bloom.y, 0.0);
-            let glow = mix(min(excess, NEON_GLOW), excess, tap.a);
-            sum += tap.rgb * (glow / max(brightest, 1e-4));
+    for (var y = 0; y < 4; y++) {
+        for (var x = 0; x < 4; x++) {
+            let at = clamp(corner + vec2<i32>(x, y), vec2<i32>(0), size - vec2<i32>(1));
+            sum += glows(textureLoad(source, at, 0)) * weights[x] * weights[y];
         }
     }
-    return vec4<f32>(sum * 0.25, 1.0);
+    return vec4<f32>(sum / 64.0, 1.0);
 }
 
 @fragment

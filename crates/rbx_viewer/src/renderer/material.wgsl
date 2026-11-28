@@ -53,7 +53,7 @@ const VARIANT_ALPHA_CUTOFF: f32 = 0.5;
 // radiance linear in the colour (64 on 176) cannot follow. A saturated
 // channel clears white whatever the others do, which is why Studio's own
 // (255, 140, 0) part reads (255, 251, 33) in the middle and only its glow is
-// orange. Its glow is capped, see `post.wgsl`'s `NEON_GLOW`.
+// orange. Its glow is capped, see `post.wgsl`'s `NEON_CAP`.
 const NEON_EMISSIVE: f32 = 12.5;
 // A see-through Neon part is another thing in Studio: no glow at all (see
 // `Post::seed_bloom`), and it blends over the scene in the square root of
