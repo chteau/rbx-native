@@ -9,9 +9,11 @@
 use bytemuck::{Pod, Zeroable};
 use glam::Vec2;
 
+use super::bloom::{self, Blur};
 use super::Post;
 use crate::camera::{DepthRange, NEAR_PLANE};
 use crate::lighting::Tonemap;
+use crate::quality::NeonGlow;
 
 /// The seven `vec4`s `PostUniform` declares, in order.
 #[repr(C)]
@@ -48,7 +50,7 @@ impl Post {
     /// [`Post::prepare`]), which zeroes the whole `sun_rays` block.
     pub(super) fn raw(
         &self,
-        tent: f32,
+        glow: Blur,
         sun_screen: Option<Vec2>,
         orthographic: Option<DepthRange>,
     ) -> PostRaw {
@@ -62,7 +64,16 @@ impl Post {
         let depth_of_field = self.effects.depth_of_field;
 
         PostRaw {
-            bloom: [self.intensity(), self.effects.bloom.threshold, tent, 0.0],
+            bloom: [
+                self.intensity() * bloom::strength(glow.levels),
+                self.effects.bloom.threshold,
+                glow.tent,
+                match self.neon_glow {
+                    NeonGlow::Off => 0.0,
+                    NeonGlow::Reduced => 1.0,
+                    NeonGlow::Full => 2.0,
+                },
+            ],
             correction: [
                 correction.map_or(0.0, |grade| grade.brightness),
                 correction.map_or(0.0, |grade| grade.contrast),

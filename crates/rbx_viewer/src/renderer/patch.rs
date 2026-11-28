@@ -101,6 +101,7 @@ impl Renderer {
                     self.cues.remove_mesh(referent);
                     return true;
                 }
+                self.refracting |= crate::scene::reads_behind(&instance.material, instance.alpha);
                 self.filemesh.sync(device, queue, resolved, instance)
                     && self.shadows.sync_mesh_caster(device, resolved, instance)
                     && self.highlights.sync_mesh(device, resolved, instance)
@@ -180,6 +181,7 @@ impl Renderer {
     /// One box, an instance's own or one piece of it, rewritten, moved,
     /// added or dropped across the three passes that draw boxes.
     fn sync_box(&mut self, device: &wgpu::Device, part: &Part) {
+        self.refracting |= crate::scene::reads_behind(&part.material, part.alpha);
         self.meshes.ensure(device, part.kind);
         self.shaped.sync(device, part);
         self.translucent.sync(device, part);

@@ -33,7 +33,35 @@ impl Draggers {
         target: Target,
         frame_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let pipeline = pipeline::surface(
+        Draggers {
+            pipeline: Self::pipeline(device, target, frame_layout),
+            vertices: device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("rbxview gizmo"),
+                size: (CAPACITY * std::mem::size_of::<Vertex>()) as wgpu::BufferAddress,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            }),
+            count: 0,
+        }
+    }
+
+    /// Rebuilds the pipeline for a new HDR target, whose sample count follows
+    /// the quality level and has to match the pass the handles draw in.
+    pub(super) fn set_target(
+        &mut self,
+        device: &wgpu::Device,
+        target: Target,
+        frame_layout: &wgpu::BindGroupLayout,
+    ) {
+        self.pipeline = Self::pipeline(device, target, frame_layout);
+    }
+
+    fn pipeline(
+        device: &wgpu::Device,
+        target: Target,
+        frame_layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::RenderPipeline {
+        pipeline::surface(
             device,
             target,
             &Surface {
@@ -52,18 +80,7 @@ impl Draggers {
                     &[Some(Vertex::layout())],
                 )
             },
-        );
-
-        Draggers {
-            pipeline,
-            vertices: device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("rbxview gizmo"),
-                size: (CAPACITY * std::mem::size_of::<Vertex>()) as wgpu::BufferAddress,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            }),
-            count: 0,
-        }
+        )
     }
 
     /// Rebuilds this frame's handles, or draws none at all when nothing is

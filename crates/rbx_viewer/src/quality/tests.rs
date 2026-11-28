@@ -147,14 +147,38 @@ fn the_shadow_distance_steps_at_nine_and_at_sixteen() {
     assert_eq!(distance(16), table::FAR_SHADOWS_STUDS);
 }
 
-// Neon's glow is the tell for the bloom, and the community's reading puts it at
-// level 5, the same level shadows arrive at.
+// The community's reading puts the bloom at level 5, the same level shadows
+// arrive at. Neon's own glow steps by its own levels, see below.
 #[test]
 fn the_bloom_arrives_at_five_and_the_grade_at_three() {
     assert!(!QualityLevel::Level(4).profile().bloom);
     assert!(QualityLevel::Level(5).profile().bloom);
     assert!(!QualityLevel::Level(2).profile().color_correction);
     assert!(QualityLevel::Level(3).profile().color_correction);
+}
+
+// Measured in Studio 0.748 by stepping `EditQualityLevel` over the same Neon
+// parts. The steps go by the level, whatever the band ends are set to.
+#[test]
+fn neon_glows_reduced_from_six_and_in_full_from_twelve() {
+    let glow = |level| QualityLevel::Level(level).profile().neon_glow;
+    let moved = |level| {
+        QualityLevel::Level(level)
+            .profile_in(&[3, 5, 7, 9, 10, 11, 13])
+            .neon_glow
+    };
+
+    for level in [1, 5] {
+        assert_eq!(glow(level), NeonGlow::Off);
+    }
+    for level in [6, 11] {
+        assert_eq!(glow(level), NeonGlow::Reduced);
+        assert_eq!(moved(level), NeonGlow::Reduced);
+    }
+    for level in [12, 15, 16, 21] {
+        assert_eq!(glow(level), NeonGlow::Full);
+    }
+    assert_eq!(moved(5), NeonGlow::Off);
 }
 
 #[test]

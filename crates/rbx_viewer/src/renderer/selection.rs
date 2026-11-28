@@ -237,6 +237,14 @@ impl Selection {
             Self::pipelines(device, self.target, &self.frame_layout, self.color);
     }
 
+    /// Rebuilds both pipelines for a new HDR target, whose sample count
+    /// follows the quality level and has to match the pass they draw in.
+    pub(super) fn set_target(&mut self, device: &wgpu::Device, target: Target) {
+        self.target = target;
+        (self.on_top, self.occluded_by_scene) =
+            Self::pipelines(device, target, &self.frame_layout, self.color);
+    }
+
     /// Replaces every placement with a rebuilt scene's, keeping the pipeline
     /// and the selection itself, redrawn straight away around wherever its
     /// parts stand in the new scene, or around nothing if they are gone.

@@ -78,7 +78,7 @@ pub(super) const SKYBOX_SHADER: &str = concat!(
 // `intersection_depth`) so the outline shaders can expand their edges to a
 // constant pixel width, then a `vec4` whose `x` is the alpha opaque Neon
 // writes (0 where the bloom is seeded from the frame, see `post.wgsl`'s
-// `NEON_GLOW`). Every other surface shader declares only the matrix and
+// `NEON_CAP`). Every other surface shader declares only the matrix and
 // reads just the first 64 bytes, which stay first.
 const FRAME_SIZE: wgpu::BufferAddress = 64 + 16 + 16;
 

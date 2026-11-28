@@ -53,14 +53,19 @@ const VARIANT_ALPHA_CUTOFF: f32 = 0.5;
 // radiance linear in the colour (64 on 176) cannot follow. A saturated
 // channel clears white whatever the others do, which is why Studio's own
 // (255, 140, 0) part reads (255, 251, 33) in the middle and only its glow is
-// orange. Its glow is capped, see `post.wgsl`'s `NEON_GLOW`.
+// orange. Its glow is capped, see `post.wgsl`'s `NEON_CAP`.
 const NEON_EMISSIVE: f32 = 12.5;
 // A see-through Neon part is another thing in Studio: no glow at all (see
-// `Post::seed_bloom`), and over black it comes out as its gamma-encoded colour
-// times this, times its opacity squared. Fitted on a (255, 170, 0) part at
-// Transparency 0.4 and 0.7 in Studio 0.748 (Future, quality 21): (238, 222, 0)
-// and (164, 133, 1) over a black wall.
-const NEON_SEE_THROUGH: f32 = 2.9;
+// `Post::seed_bloom`), and it blends over the scene in the square root of
+// radiance rather than in radiance, `(alpha * root + (1 - alpha) *
+// sqrt(behind))^2`, where `root` is the square root of the radiance opaque
+// Neon would have, capped at this. Fitted in Studio 0.748 (Future, quality 21)
+// on Neon grey 60 and 128, (255, 140, 0) and (0, 85, 255) at Transparency 0.4
+// over a black wall and a lit grey one, and (255, 170, 0) at 0.4 and 0.7 over
+// black: every channel of every middle lands within 6 levels, most within 2.
+// That is why a dark see-through Neon stays dark over a light background
+// rather than adding its colour on top of it.
+const NEON_SEE_THROUGH_CAP: f32 = 1.7;
 // Below this a Neon fragment is drawn see-through. Not 1: an opaque part's
 // alpha of 1, interpolated across a triangle, lands a hair under it on some
 // fragments, which then took the see-through branch and speckled the face
@@ -583,10 +588,7 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
         alpha = force_field_alpha(alpha, rim, input.pattern);
     }
     if input.kind == KIND_NEON && alpha < NEON_OPAQUE {
-        // Straight alpha like everything else here, so the second factor of
-        // the opacity is the blend's own.
-        let neon = srgb_encode(input.albedo) * NEON_SEE_THROUGH * lighting.tuning.x * alpha;
-        return vec4<f32>(neon, alpha);
+        return neon_see_through(input.albedo, alpha, frag);
     }
     // A pass with no copy behind it binds one unread texel (a
     // `ViewportFrame`'s own, a place with no glass in it at all): there is
@@ -613,6 +615,26 @@ fn material_output(input: MaterialInput, in_alpha: f32, frag: vec4<f32>) -> vec4
     // src * alpha` — with the bent copy standing in for `dst`, which is what
     // makes this refraction rather than a second layer of haze.
     return vec4<f32>(behind * (1.0 - alpha) + shaded.color * alpha, 1.0);
+}
+
+/// See-through Neon over the opaque scene behind it, see
+/// [`NEON_SEE_THROUGH_CAP`]. The exposure is applied to both terms, as the copy
+/// behind already carries it.
+fn neon_see_through(albedo: vec3<f32>, alpha: f32, frag: vec4<f32>) -> vec4<f32> {
+    let root = min(albedo * sqrt(NEON_EMISSIVE), vec3<f32>(NEON_SEE_THROUGH_CAP))
+        * sqrt(lighting.tuning.x);
+    let source = vec2<i32>(textureDimensions(refraction_source));
+    if source.x <= 1 {
+        // No copy behind (a `ViewportFrame`'s own pass): exact over black, and
+        // the background kept at Studio's `(1 - alpha)^2`, losing only the
+        // cross term between the two.
+        let kept = alpha * (2.0 - alpha);
+        return vec4<f32>(alpha * alpha * root * root / kept, kept);
+    }
+    let texel = clamp(vec2<i32>(frag.xy), vec2<i32>(0), source - vec2<i32>(1));
+    let behind = sqrt(max(textureLoad(refraction_source, texel, 0).rgb, vec3<f32>(0.0)));
+    let mixed = alpha * root + (1.0 - alpha) * behind;
+    return vec4<f32>(mixed * mixed, 1.0);
 }
 
 /// What a shaded fragment is, where the caller needs the surface as well as

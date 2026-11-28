@@ -108,6 +108,13 @@ impl Hover {
         self.pipeline = Self::pipeline(device, self.target, &self.frame_layout, self.color);
     }
 
+    /// Rebuilds the pipeline for a new HDR target, whose sample count follows
+    /// the quality level and has to match the pass the outline is drawn in.
+    pub(super) fn set_target(&mut self, device: &wgpu::Device, target: Target) {
+        self.target = target;
+        self.pipeline = Self::pipeline(device, target, &self.frame_layout, self.color);
+    }
+
     /// Rebuilds the outline around `selected`, replacing whatever was hovered
     /// before. An empty list clears it.
     pub(super) fn set(&mut self, device: &wgpu::Device, selected: Vec<Selected>) {

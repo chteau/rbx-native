@@ -85,6 +85,9 @@ impl Renderer {
             .set_target(device, target, &self.frame_layout);
         self.cues.set_target(device, target, &self.frame_layout);
         self.preview = super::preview::Preview::new(device, target, &self.frame_layout);
+        self.selection.set_target(device, target);
+        self.hover.set_target(device, target);
+        self.draggers.set_target(device, target, &self.frame_layout);
         self.particles.set_target(device, target);
         self.beams.set_target(device, target);
         self.trails.set_target(device, target);

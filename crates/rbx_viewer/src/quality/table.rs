@@ -10,7 +10,7 @@
 //! and the scene reflections (level 10 up) start is this renderer's own
 //! choice, putting both well clear of the lowest bands.
 
-use super::{QualityLevel, QualityProfile};
+use super::{NeonGlow, QualityLevel, QualityProfile};
 
 /// Bands, each paired with the highest level it covers, in ascending order.
 ///
@@ -49,6 +49,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             force_field_intersections: false,
             water_waves: false,
             water_reflections: false,
+            neon_glow: NeonGlow::Off,
         },
     ),
     // 3-4: the grade comes back, and a handful of local lights with it.
@@ -78,6 +79,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             force_field_intersections: false,
             water_waves: false,
             water_reflections: false,
+            neon_glow: NeonGlow::Off,
         },
     ),
     // 5-6: shadows and Neon's glow appear, the level users notice.
@@ -107,6 +109,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             force_field_intersections: false,
             water_waves: false,
             water_reflections: false,
+            neon_glow: NeonGlow::Off,
         },
     ),
     (
@@ -135,6 +138,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             force_field_intersections: false,
             water_waves: true,
             water_reflections: false,
+            neon_glow: NeonGlow::Off,
         },
     ),
     (
@@ -163,6 +167,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             force_field_intersections: false,
             water_waves: true,
             water_reflections: false,
+            neon_glow: NeonGlow::Off,
         },
     ),
     (
@@ -191,6 +196,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             force_field_intersections: false,
             water_waves: true,
             water_reflections: false,
+            neon_glow: NeonGlow::Off,
         },
     ),
     // 10-15: nothing is capped any more; only the distances still grow.
@@ -220,6 +226,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             force_field_intersections: false,
             water_waves: true,
             water_reflections: true,
+            neon_glow: NeonGlow::Off,
         },
     ),
     // 16-21: the levels a desktop client actually runs at, and where
@@ -253,6 +260,7 @@ const BANDS: [(u8, QualityProfile); 8] = [
             force_field_intersections: true,
             water_waves: true,
             water_reflections: true,
+            neon_glow: NeonGlow::Off,
         },
     ),
 ];
@@ -308,7 +316,29 @@ pub const TUNED_BAND_ENDS: [u8; 7] = [2, 4, 6, 7, 8, 9, 15];
 /// without a catch-all row.
 pub(super) fn profile(level: u8, ends: &[u8; 7]) -> QualityProfile {
     let band = ends.iter().position(|end| level <= *end).unwrap_or(7);
-    BANDS[band].1
+    QualityProfile {
+        neon_glow: neon_glow(level),
+        ..BANDS[band].1
+    }
+}
+
+/// The first levels Neon glows at, reduced and then in full. Measured in
+/// Studio 0.748 (Future, `EditQualityLevel` stepped 1 to 21 over the same
+/// Neon parts): no glow at all up to 5, a fainter, softer one from 6 to 11,
+/// the full one from 12. Both steps fall inside bands, so they go by the
+/// level itself and stay put whatever the band ends are set to; the
+/// `neon_glow` the bands carry is never read.
+pub(super) const NEON_GLOW_REDUCED_FROM: u8 = 6;
+pub(super) const NEON_GLOW_FULL_FROM: u8 = 12;
+
+fn neon_glow(level: u8) -> NeonGlow {
+    if level >= NEON_GLOW_FULL_FROM {
+        NeonGlow::Full
+    } else if level >= NEON_GLOW_REDUCED_FROM {
+        NeonGlow::Reduced
+    } else {
+        NeonGlow::Off
+    }
 }
 
 #[cfg(test)]

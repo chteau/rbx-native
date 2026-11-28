@@ -104,6 +104,17 @@ pub(crate) const EXCLUDED_CLASS: &str = "Terrain";
 /// How solid a `ForceField` part is drawn, whatever its `Transparency`.
 const FORCE_FIELD_ALPHA: f32 = 0.5;
 
+/// Whether a surface reads the opaque scene behind it: `Glass` bends it,
+/// and see-through `Neon` blends over it the way Studio does, which no
+/// fixed-function blend can (see `material.wgsl`'s `NEON_SEE_THROUGH_CAP`).
+pub(crate) fn reads_behind(material: &Slot, alpha: f32) -> bool {
+    match material.kind {
+        Kind::Glass => true,
+        Kind::Neon => alpha < 1.0,
+        _ => false,
+    }
+}
+
 /// One BasePart reduced to a unit mesh instance.
 ///
 /// Everything starts out as one of these, a `UnionOperation`, a `MeshPart` and
@@ -428,20 +439,21 @@ impl Scene {
         &self.highlights
     }
 
-    /// Whether anything here is drawn as `Glass`: the one material that
-    /// reads the scene behind itself, and so the one that makes a frame pay
-    /// for the copy it reads (see `renderer::post::Targets`).
-    pub(crate) fn has_glass(&self) -> bool {
-        let glass = |slot: &Slot| slot.kind == Kind::Glass;
+    /// Whether anything here reads the scene behind itself (see
+    /// [`reads_behind`]), and so makes a frame pay for the copy it reads (see
+    /// `renderer::post::Targets`).
+    pub(crate) fn reads_behind(&self) -> bool {
         // Terrain water bends what is under it too, but the renderer knows
         // that from its own water meshes (see `Renderer::draw`), without a
         // walk of every voxel here on each edit.
-        self.parts.iter().any(|part| glass(&part.material))
+        self.parts
+            .iter()
+            .any(|part| reads_behind(&part.material, part.alpha))
             || self
                 .resolved_file_meshes
                 .instances
                 .iter()
-                .any(|instance| glass(&instance.material))
+                .any(|instance| reads_behind(&instance.material, instance.alpha))
     }
 
     /// Every 3D adornment this scene draws, the `Handles`/`*Adornment`/
