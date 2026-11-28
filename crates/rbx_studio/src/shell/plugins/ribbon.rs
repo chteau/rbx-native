@@ -18,11 +18,11 @@ use crate::tokens;
 static REQUESTED: Mutex<Option<HashSet<u64>>> = Mutex::new(None);
 
 impl Shell {
-    /// The tab's groups, as `ribbon` lays them out. A button is a tile with
+    /// The plugins' own groups, as `ribbon` lays them out. A button is a tile with
     /// its icon (resolved by `icon_path`, a generic plug icon otherwise),
     /// its text, its tooltip, the selected look while `active`, disabled
     /// while not `enabled`; clicking it sends `Input::ButtonClicked`.
-    pub(in crate::shell) fn plugin_ribbon_groups(
+    pub(in crate::shell) fn plugin_toolbar_groups(
         &self,
         cx: &mut Context<Self>,
     ) -> Vec<Vec<AnyElement>> {
@@ -88,6 +88,11 @@ impl Shell {
             }
         }
 
+        groups
+    }
+
+    /// Popular, Manage, Folder and Reload, after the plugins' own groups.
+    pub(in crate::shell) fn plugin_tools(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let popular = self
             .ribbon_nav
             .claim(
@@ -114,12 +119,7 @@ impl Shell {
                 ),
                 cx,
             )
-            .on_click(cx.listener(|_, _, _, cx| {
-                if let Some(dir) = super::discover::own_dir() {
-                    let _ = std::fs::create_dir_all(&dir);
-                    cx.open_url(&format!("file://{}", dir.display()));
-                }
-            }));
+            .on_click(cx.listener(|_, _, _, cx| open_plugins_folder(cx)));
         let reload = self
             .ribbon_nav
             .claim(
@@ -129,14 +129,48 @@ impl Shell {
                 cx,
             )
             .on_click(cx.listener(|shell, _, _, cx| shell.plugins_reload(cx)));
-        groups.push(vec![
+        vec![
             popular.into_any_element(),
             manage.into_any_element(),
             folder.into_any_element(),
             reload.into_any_element(),
-        ]);
+        ]
+    }
+}
 
-        groups
+impl Shell {
+    /// Plugins › Manage Plugins.
+    pub(crate) fn menu_manage_plugins(&self, cx: &mut Context<Self>) {
+        self.with_window(cx, |shell, window, cx| {
+            shell.open_plugin_manager(window, cx)
+        });
+    }
+
+    /// Plugins › Popular Plugins.
+    pub(crate) fn menu_popular_plugins(&self, cx: &mut Context<Self>) {
+        self.with_window(cx, |shell, window, cx| {
+            shell.open_plugin_catalog(window, cx)
+        });
+    }
+
+    /// Plugins › Plugins Folder.
+    pub(crate) fn menu_plugins_folder(&self, cx: &mut Context<Self>) {
+        open_plugins_folder(cx);
+    }
+
+    /// Plugins › Reload Plugins.
+    pub(crate) fn menu_reload_plugins(&mut self, cx: &mut Context<Self>) {
+        self.plugins_reload(cx);
+    }
+}
+
+/// The folder this editor loads local plugins from, created if missing, in
+/// the desktop's file manager: the Plugins tab's Folder and Plugins ›
+/// Plugins Folder.
+fn open_plugins_folder(cx: &mut App) {
+    if let Some(dir) = super::discover::own_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        cx.open_url(&format!("file://{}", dir.display()));
     }
 }
 

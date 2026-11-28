@@ -14,7 +14,7 @@
 //! (`<asset id>.<ext>`) and of the model Roblox made of it
 //! (`<asset id>.rbxm`) there, to check what the importer did.
 //!
-//! Open Cloud refuses a new `Mesh` upload, so Model › Insert Mesh… uploads
+//! Open Cloud refuses a new `Mesh` upload, so Edit › Insert Mesh… uploads
 //! the file as a model like the rest and then places only the `MeshPart`s
 //! Roblox made of it, with no `Model` around a lone one.
 //!

@@ -296,18 +296,18 @@ impl Shell {
 }
 
 impl Shell {
-    /// Avatar's Rig Builder tile.
+    /// Avatar's Character tile, Studio's name for the Rig Builder.
     pub(in crate::shell) fn rig_tiles(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         vec![crate::shell::ribbon::tile(
             &self.ribbon_nav,
             "ribbon-rig-builder",
             gpui_kit::assets::IconName::Users,
-            "Rig Builder",
+            "Character",
             cx,
         )
         .tooltip(|window, cx| {
             crate::shell::tooltip::text(
-                "Rig Builder \u{2014} insert an R6 or R15 character",
+                "Character \u{2014} the Rig Builder: insert an R6 or R15 character",
                 window,
                 cx,
             )
@@ -318,18 +318,19 @@ impl Shell {
         .into_any_element()]
     }
 
-    /// Avatar's Animation tile: the Animation Editor document.
+    /// Avatar's Clip Editor tile, Studio's name for the Animation Editor
+    /// document.
     pub(in crate::shell) fn animation_tile(&self, cx: &mut Context<Self>) -> AnyElement {
         crate::shell::ribbon::tile(
             &self.ribbon_nav,
             "ribbon-animation",
             gpui_kit::assets::IconName::Film,
-            "Animation",
+            "Clip Editor",
             cx,
         )
         .tooltip(|window, cx| {
             crate::shell::tooltip::text(
-                "Animation Editor \u{2014} key a rig, import from Blender, build animation graphs",
+                "Clip Editor \u{2014} the Animation Editor: key a rig, import from Blender, build animation graphs",
                 window,
                 cx,
             )

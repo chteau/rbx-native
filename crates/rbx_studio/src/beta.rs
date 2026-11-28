@@ -116,7 +116,7 @@ pub(crate) const FEATURES: &[Feature] = &[
     Feature {
         id: crate::shell::REQUIRE_GRAPH_BETA_ID,
         name: "Module require graph",
-        description: "View › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",
+        description: "Window › Require Graph draws every script and ModuleScript with an edge for each require it can resolve statically, and lists cycles, client scripts requiring server-only modules, requires it can't follow, and modules nothing requires.",
     },
     Feature {
         id: crate::shell::LOCAL_RUN_BETA_ID,

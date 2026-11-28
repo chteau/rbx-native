@@ -1,5 +1,6 @@
 use gpui_kit::{Action, OwnedMenuItem};
 
+use super::menus::{menus_with, Betas};
 use super::{
     menus, MenuAbout, MenuClosePlace, MenuExportFbx, MenuExportGltf, MenuInsertTemplate,
     MenuLinkRobloxPlace, MenuMergePlace, MenuOpenAutoSaves, MenuOpenLogs, MenuPlaceholder,
@@ -39,31 +40,41 @@ fn a_placeholder_item_is_exactly_the_set_of_disabled_items() {
 /// order Studio itself puts them, Help last as every app does; a reordering
 /// here changes what F10 lands on, so it is worth being deliberate about.
 #[test]
-fn the_bar_holds_the_five_titles_in_order() {
+fn the_bar_holds_studios_seven_titles_in_order() {
     let names: Vec<String> = menus(&[])
         .iter()
         .map(|menu| menu.name.to_string())
         .collect();
-    assert_eq!(names, ["File", "Edit", "Model", "View", "Help"]);
+    assert_eq!(
+        names,
+        ["File", "Edit", "View", "Plugins", "Test", "Window", "Help"]
+    );
 }
 
-/// Help holds About RbxNative, the way to the version and the credits.
+/// Help holds Studio's Documentation and Developer Forum, then the logs
+/// folder and About RbxNative, the way to the version and the credits.
 #[test]
-fn help_opens_about_and_the_logs_folder() {
-    let menus = menus(&[]);
-    let help = menus
-        .iter()
-        .find(|menu| menu.name == "Help")
-        .expect("a Help menu");
-    assert!(matches!(
-        help.items.as_slice(),
+fn help_opens_the_docs_the_forum_the_logs_and_about() {
+    let help = menu("Help");
+    assert_eq!(
+        action_names(&help),
         [
-            OwnedMenuItem::Action { name, action, .. },
-            OwnedMenuItem::Action { name: logs, action: open, .. },
+            "Documentation",
+            "Developer Forum",
+            "Open Logs Folder",
+            "About RbxNative"
         ]
+    );
+    assert!(help.items.iter().any(|item| matches!(
+        item,
+        OwnedMenuItem::Action { name, action, .. }
             if name == "About RbxNative" && action.partial_eq(&MenuAbout)
-                && logs == "Open Logs Folder" && open.partial_eq(&MenuOpenLogs)
-    ));
+    )));
+    assert!(help.items.iter().any(|item| matches!(
+        item,
+        OwnedMenuItem::Action { name, action, .. }
+            if name == "Open Logs Folder" && action.partial_eq(&MenuOpenLogs)
+    )));
 }
 
 /// A menu whose first entry is a separator draws a stray rule at the top,
@@ -105,7 +116,7 @@ fn file_opens_the_auto_saves_folder() {
     assert!(found);
 }
 
-/// Close Place is live and sits right under Open…, where Studio files it.
+/// Close Place is live and sits under the opens, where Studio files it.
 #[test]
 fn file_closes_the_place_under_open() {
     let file = menus(&[])
@@ -121,8 +132,10 @@ fn file_closes_the_place_under_open() {
         })
         .collect();
     let close = names.iter().position(|name| *name == "Close Place");
-    let open = names.iter().position(|name| *name == "Open\u{2026}");
-    assert_eq!(close, open.map(|at| at + 1));
+    let open = names
+        .iter()
+        .position(|name| *name == "Open from File\u{2026}");
+    assert_eq!(close, open.map(|at| at + 2));
     assert!(file.items.iter().any(|item| matches!(
         item,
         OwnedMenuItem::Action { name, action, disabled: false, .. }
@@ -148,7 +161,7 @@ fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
         })
     };
     assert!(live("Save to Roblox", &MenuSaveToRoblox));
-    assert!(live("Publish to Roblox", &MenuPublishToRoblox));
+    assert!(live("Publish", &MenuPublishToRoblox));
     assert!(live("Link to Roblox Place\u{2026}", &MenuLinkRobloxPlace));
     assert!(live("Version History\u{2026}", &MenuVersionHistory));
     assert!(live("Merge Place\u{2026}", &MenuMergePlace));
@@ -161,9 +174,9 @@ fn file_saves_and_publishes_to_roblox_as_two_live_commands() {
 }
 
 /// The settings windows and the templates window open from File's tail,
-/// in that order, with Script Templates last.
+/// Studio's three in Studio's order, then Open Auto Saves last.
 #[test]
-fn file_ends_with_script_templates_under_studio_settings() {
+fn file_ends_with_the_settings_then_auto_saves() {
     let file = menus(&[])
         .into_iter()
         .find(|menu| menu.name == "File")
@@ -177,22 +190,23 @@ fn file_ends_with_script_templates_under_studio_settings() {
         })
         .collect();
     assert_eq!(
-        names[names.len() - 5..],
+        names[names.len() - 6..],
         [
             "Studio Settings\u{2026}",
-            "Customize Shortcuts\u{2026}",
             "Beta Features\u{2026}",
+            "Customize Shortcuts\u{2026}",
             "Connect an AI Assistant\u{2026}",
-            "Script Templates\u{2026}"
+            "Script Templates\u{2026}",
+            "Open Auto Saves"
         ]
     );
 }
 
-/// The user's templates close Model after a separator (a long list must
-/// not push Group/Ungroup off the screen), labelled the way the ribbon's
-/// Script menu labels them, each running the template at its own index.
+/// The user's templates close Edit after a separator (a long list must not
+/// push the inserts off the screen), labelled the way the ribbon's Script
+/// menu labels them, each running the template at its own index.
 #[test]
-fn the_users_templates_close_the_model_menu() {
+fn the_users_templates_close_the_edit_menu() {
     let templates = [
         Template {
             class: "Script",
@@ -207,8 +221,8 @@ fn the_users_templates_close_the_model_menu() {
     ];
     let model = menus(&templates)
         .into_iter()
-        .find(|menu| menu.name == "Model")
-        .expect("a Model menu");
+        .find(|menu| menu.name == "Edit")
+        .expect("an Edit menu");
     let names: Vec<String> = model
         .items
         .iter()
@@ -220,7 +234,7 @@ fn the_users_templates_close_the_model_menu() {
     assert_eq!(
         names[names.len() - 3..],
         [
-            "Ungroup",
+            "Unmark Shared",
             "Insert Enemy AI (Script)",
             "Insert Signal (ModuleScript)"
         ]
@@ -285,7 +299,7 @@ fn file_new_and_open_show_their_registry_shortcut(cx: &mut gpui_kit::TestAppCont
         .into_iter()
         .find(|menu| menu.name == "File")
         .unwrap();
-    for name in ["New", "Open…"] {
+    for name in ["New", "Open from File…"] {
         let action = file
             .items
             .iter()
@@ -305,11 +319,143 @@ fn file_new_and_open_show_their_registry_shortcut(cx: &mut gpui_kit::TestAppCont
     let items = file.items.clone();
     let found = crate::probe::bounds_of(
         cx,
-        &["menu-row-New", "menu-row-Open…"],
+        &["menu-row-New", "menu-row-Open from File…"],
         900.,
         move |window, cx| gpui_kit::div().child(super::popup::dropdown(&items, None, window, cx)),
     );
     assert_eq!(found.len(), 2);
+}
+
+fn menu(name: &str) -> gpui_kit::OwnedMenu {
+    menus_with(&[], ALL_BETAS)
+        .into_iter()
+        .find(|menu| menu.name == name)
+        .unwrap_or_else(|| panic!("no {name} menu"))
+}
+
+fn action_names(menu: &gpui_kit::OwnedMenu) -> Vec<String> {
+    menu.items
+        .iter()
+        .filter_map(|item| match item {
+            OwnedMenuItem::Action { name, .. } => Some(name.to_string()),
+            _ => None,
+        })
+        .collect()
+}
+
+const ALL_BETAS: Betas = Betas {
+    update_planning: true,
+    local_run: true,
+    pseudo_loc: true,
+    require_graph: true,
+};
+
+/// Studio's Window menu opens on its five, in its order, and every dock
+/// this editor has is in it: a dock closed from its own tab comes back
+/// from here.
+#[test]
+fn window_holds_studios_docks_first_and_every_dock() {
+    let window = action_names(&menu("Window"));
+    assert_eq!(
+        window[..5],
+        [
+            "Toolbox",
+            "Properties",
+            "Explorer",
+            "Output",
+            "Insert Object\u{2026}"
+        ]
+    );
+    for dock in [
+        "Terrain Editor",
+        "Collaborators",
+        "Call Stack",
+        "Watch",
+        "Input Actions",
+        "Localization",
+        "MicroProfiler",
+        "Command Bar",
+        "Find in Place",
+        "Script Analysis",
+        "Viewport",
+        "Style Editor",
+        "Layers",
+        "Loren",
+        "Security Audit",
+        "Pre-publish Check",
+        "Require Graph",
+        "Playtests",
+        "Remote Inspector",
+        "Leak Finder",
+        "Load Test",
+    ] {
+        assert!(window.iter().any(|name| name == dock), "no {dock}");
+    }
+    assert_eq!(window.last().map(String::as_str), Some("Reset Layout"));
+}
+
+/// No command is listed twice across the bar: one place for each, so the
+/// palette, which lists the bar, has no duplicate rows either.
+#[test]
+fn no_item_is_in_two_menus() {
+    let mut seen = std::collections::HashSet::new();
+    for menu in menus_with(&[], ALL_BETAS) {
+        for name in action_names(&menu) {
+            assert!(seen.insert(name.clone()), "{name} is listed twice");
+        }
+    }
+}
+
+/// Every beta's items go with its beta.
+#[test]
+fn beta_items_stay_out_with_their_beta_off() {
+    let off: Vec<String> = menus_with(&[], Betas::default())
+        .iter()
+        .flat_map(action_names)
+        .collect();
+    for gated in [
+        "Update Planning\u{2026}",
+        "Run (local)",
+        "Localization",
+        "MicroProfiler",
+        "Require Graph",
+        "Remote Inspector",
+        "Leak Finder",
+        "Load Test",
+    ] {
+        assert!(!off.iter().any(|name| name == gated), "{gated} shows");
+    }
+    let on = action_names(&menu("Test"));
+    assert_eq!(on, ["Play", "Run (local)", "Stop", "Controller Emulator"]);
+}
+
+/// The commands that left the old Model menu are all still in the bar.
+#[test]
+fn the_old_model_menu_items_all_have_a_new_home() {
+    let all: Vec<String> = menus_with(&[], ALL_BETAS)
+        .iter()
+        .flat_map(action_names)
+        .collect();
+    for name in [
+        "Insert Part",
+        "Insert Folder",
+        "Insert Script",
+        "Insert LocalScript",
+        "Insert ModuleScript",
+        "Insert ModuleScript (Class)",
+        "Insert Object\u{2026}",
+        "Insert Mesh\u{2026}",
+        "Insert Rig\u{2026}",
+        "Import 3D Model\u{2026}",
+        "Import Image\u{2026}",
+        "Mark as Shared",
+        "Unmark Shared",
+        "Group",
+        "Ungroup",
+        "Run (local)",
+    ] {
+        assert!(all.iter().any(|n| n == name), "{name} was dropped");
+    }
 }
 
 /// A window taller than its screen (1456×819 here) still keeps a dropdown

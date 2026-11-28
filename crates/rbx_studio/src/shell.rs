@@ -45,6 +45,7 @@ mod keys;
 mod layers;
 mod layers_panel;
 mod layout;
+mod layout_switcher;
 mod light_guides;
 mod localization;
 mod loren_dupes;
@@ -52,6 +53,7 @@ mod loren_panel;
 mod luau_lsp;
 mod mcp;
 mod menu;
+mod menu_commands;
 mod open_place;
 mod output;
 mod palette;
@@ -574,6 +576,10 @@ pub(crate) struct Shell {
     /// keyboard (set when Player is picked).
     rig_user: Entity<InputState>,
     rig_user_focus: bool,
+    /// The layout switcher's "Save current as" name field, and whether its
+    /// popover is open.
+    layout_name: Entity<InputState>,
+    layout_switcher_open: bool,
     /// This editor's window, which Close Place removes from outside it.
     window_handle: AnyWindowHandle,
     /// The game this place belongs to, when its window holds several (see
@@ -690,7 +696,7 @@ pub(crate) struct Shell {
     /// at, which its window opens under.
     torn_at: Option<(layout::Panel, Point<Pixels>)>,
     /// Kept only to stay subscribed: dropping these unregisters the listeners.
-    _subscriptions: [Subscription; 19],
+    _subscriptions: [Subscription; 20],
 }
 
 impl Shell {
@@ -871,6 +877,17 @@ impl Shell {
                 shell.wally_query_changed(cx);
             }
         });
+
+        let layout_name = cx.new(|cx| InputState::new(window, cx).placeholder("New layout name"));
+        let layout_named = cx.subscribe_in(
+            &layout_name,
+            window,
+            |shell, _, event: &InputEvent, window, cx| {
+                if matches!(event, InputEvent::PressEnter { .. }) {
+                    shell.save_layout_from_switcher(window, cx);
+                }
+            },
+        );
 
         let rig_user = cx.new(|cx| InputState::new(window, cx).placeholder("UserId, e.g. 156"));
         let rig_user_entered = cx.subscribe(&rig_user, |shell, _, event: &InputEvent, cx| {
@@ -1117,6 +1134,8 @@ impl Shell {
             rig_focus: cx.focus_handle(),
             rig_user,
             rig_user_focus: false,
+            layout_name,
+            layout_switcher_open: false,
             window_handle: window.window_handle(),
             game: None,
             argon_ui: argon_dock::ArgonDock::new(&argon_address_setting, window, cx),
@@ -1198,6 +1217,7 @@ impl Shell {
                 wally_query_changed,
                 searched,
                 rig_user_entered,
+                layout_named,
                 window_activated,
                 alt_chorded,
                 editor_closed,
@@ -1903,7 +1923,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// View › Command Bar: shows or hides the strip under the docks.
+    /// Window › Command Bar and the Script tab's Command: shows or hides the
+    /// strip under the docks.
     pub(crate) fn toggle_command_bar(&mut self, cx: &mut Context<Self>) {
         let hidden = self.layout.command_bar_hidden();
         self.layout.set_command_bar_hidden(!hidden);
@@ -1941,8 +1962,8 @@ impl Shell {
         cx.notify();
     }
 
-    /// Opens (or brings forward) or shuts one, from the View menu or the
-    /// ribbon's Home tab, the only two ways back, which is why both exist.
+    /// Opens (or brings forward) or shuts one, from the Window menu or a
+    /// ribbon tile, the only two ways back, which is why both exist.
     pub(crate) fn set_panel_open(
         &mut self,
         panel: layout::Panel,
@@ -1968,7 +1989,7 @@ impl Shell {
         cx.notify();
     }
 
-    /// Whether a panel is on screen, what a View menu toggle and a ribbon
+    /// Whether a panel is on screen, what a Window menu toggle and a ribbon
     /// tile read, so one hidden behind another tab is brought forward by
     /// them rather than shut.
     pub(crate) fn is_panel_showing(&self, panel: layout::Panel) -> bool {

@@ -1,7 +1,7 @@
 //! The transform tools, as the ribbon's Tools group draws them (§2):
 //! Select/Move/Scale/Rotate/Transform as tight 32x32 icon buttons, the
-//! local-axis toggle beside them, then the chevron that opens the snap
-//! increments and the Align popover.
+//! local-axis toggle beside them, then the snap increments. Align is the
+//! Model tab's own tile, where Studio has it.
 //!
 //! `creator-docs`' own prose never names Transform as a distinct tool, it
 //! only uses "transform" as the umbrella term for Move+Scale+Rotate
@@ -186,21 +186,6 @@ impl Shell {
                 .tooltip("Snap increments"),
             )
             .content(move |_, _, cx| handle.update(cx, |shell, cx| shell.snap_fields_popover(cx)))
-    }
-
-    /// Align keeps its own popover of toggles; its trigger is one more tile.
-    pub(super) fn align_control(&self, cx: &mut Context<Self>) -> impl IntoElement + 'static {
-        self.align_popover(
-            super::chrome::Trigger::new(ribbon::cluster_icon(
-                &self.ribbon_nav,
-                "tool-align",
-                IconName::AlignStartVertical,
-                cx,
-            ))
-            .tooltip("Align selection")
-            .accent(tokens::tool_align()),
-            cx,
-        )
     }
 }
 

@@ -34,7 +34,7 @@ use crate::tokens;
 pub(super) const PRIMARY_ROWS: [(&str, &str); 4] = [
     ("Save to File", "Writes back to this file"),
     ("Save to Roblox", "A new version, not live yet"),
-    ("Publish to Roblox", "A new version, live for players"),
+    ("Publish", "A new version, live for players"),
     ("Delete", "Removes the selection"),
 ];
 

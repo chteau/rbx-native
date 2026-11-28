@@ -371,8 +371,8 @@ pub(crate) enum Home {
     Docked { edge: Edge, group: usize },
     /// Torn out into a window of its own.
     Floating,
-    /// Shut, and reachable only from the View menu or the ribbon's Home
-    /// tab. A closed panel keeps nothing, reopening puts it back on its
+    /// Shut, and reachable only from the Window menu or a ribbon
+    /// tile. A closed panel keeps nothing, reopening puts it back on its
     /// own default edge (see [`Layout::seat`]), because a layout that
     /// remembered where a panel was before it was closed would have to keep
     /// a slot open for it.
@@ -413,7 +413,7 @@ pub(crate) struct Layout {
     /// `restore` can tell "this file predates the panel", put it back,
     /// from "the user closed it", leave it shut.
     closed: Vec<Panel>,
-    /// View › Command Bar turned off. Not a [`Panel`] (it is a strip under
+    /// Window › Command Bar turned off. Not a [`Panel`] (it is a strip under
     /// the docks), so the settings file keeps it as [`COMMAND_BAR_KEY`] in
     /// `closed`, which leaves that file's shape alone.
     command_bar_hidden: bool,

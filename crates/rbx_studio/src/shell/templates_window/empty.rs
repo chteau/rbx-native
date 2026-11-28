@@ -40,7 +40,7 @@ pub(super) fn empty_state(
         .child(text(12.5, 19.).text_color(tokens::text2()).child(
             "Every new script starts from a built-in starter. Add your own to get an \
              Enemy AI module, a tweened door or a camera shake in one click, from the \
-             Model menu and the ribbon\u{2019}s Script tile.",
+             Edit menu and the ribbon\u{2019}s Script tile.",
         ))
         .child(
             h_flex()

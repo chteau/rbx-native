@@ -225,7 +225,7 @@ pub(super) fn counts(nodes: &[DiffNode]) -> (usize, usize, usize) {
 }
 
 impl Shell {
-    /// File › Mark as Shared (Model menu): gives each selected Model, Folder
+    /// Edit › Mark as Shared: gives each selected Model, Folder
     /// or ModuleScript without an id a fresh one, as one undo step.
     pub(crate) fn mark_shared(&mut self, cx: &mut Context<Self>) {
         let marked: Vec<_> = self

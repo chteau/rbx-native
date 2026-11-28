@@ -604,13 +604,13 @@ pub(crate) fn replace(store: Store, cx: &mut App) {
 pub(crate) fn command_for_action(action: &dyn Action) -> Option<Command> {
     use crate::menu_bar::{
         MenuCommandPalette, MenuCopyInstance, MenuCutInstance, MenuDeleteInstance,
-        MenuDuplicateInstance, MenuGroup, MenuInsertFolder, MenuInsertObject, MenuInsertPart,
-        MenuNewPlace, MenuOpenPlace, MenuPasteInstance, MenuPasteIntoInstance, MenuQuickOpen,
-        MenuRedo, MenuSave, MenuSaveToFile, MenuStudioSettings, MenuToggleMicroProfiler, MenuUndo,
-        MenuUngroup,
+        MenuDuplicateInstance, MenuFullbright, MenuGroup, MenuInsertFolder, MenuInsertObject,
+        MenuInsertPart, MenuNewPlace, MenuOpenPlace, MenuPasteInstance, MenuPasteIntoInstance,
+        MenuQuickOpen, MenuRedo, MenuSave, MenuSaveToFile, MenuStudioSettings,
+        MenuToggleMicroProfiler, MenuUndo, MenuUngroup, MenuZoomIn, MenuZoomOut,
     };
     let id = action.as_any().type_id();
-    let table: [(TypeId, Command); 21] = [
+    let table: [(TypeId, Command); 24] = [
         (TypeId::of::<MenuNewPlace>(), Command::NewPlace),
         (TypeId::of::<MenuOpenPlace>(), Command::OpenPlace),
         (TypeId::of::<MenuInsertObject>(), Command::InsertObject),
@@ -635,6 +635,9 @@ pub(crate) fn command_for_action(action: &dyn Action) -> Option<Command> {
         (TypeId::of::<MenuStudioSettings>(), Command::StudioSettings),
         (TypeId::of::<MenuCommandPalette>(), Command::CommandPalette),
         (TypeId::of::<MenuQuickOpen>(), Command::QuickOpen),
+        (TypeId::of::<MenuZoomIn>(), Command::UiScaleIn),
+        (TypeId::of::<MenuZoomOut>(), Command::UiScaleOut),
+        (TypeId::of::<MenuFullbright>(), Command::Fullbright),
     ];
     table
         .into_iter()

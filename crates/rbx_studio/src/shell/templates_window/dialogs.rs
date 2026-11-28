@@ -47,7 +47,7 @@ impl TemplatesWindow {
         let (title, body, path, glyph) = match row {
             Selected::Template { class, name } => (
                 format!("Delete \u{201c}{name}\u{201d}?"),
-                "It leaves the Model menu and the ribbon\u{2019}s Script menu straight away. \
+                "It leaves the Edit menu and the ribbon\u{2019}s Script menu straight away. \
                  Scripts you already made from it, in any place, are not changed.",
                 format!("{class}/{name}.luau"),
                 class_glyph(class),
