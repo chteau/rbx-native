@@ -8,8 +8,8 @@ use gpui_kit::*;
 use crate::tokens;
 
 use super::kit::{
-    destructive_button, destructive_icon, icon, secondary_button, segmented, text, toggle, Row,
-    Section,
+    destructive_button, destructive_icon, ghost_icon, icon, secondary_button, segmented, text,
+    toggle, Row, Section,
 };
 use super::nav::Page;
 use super::SettingsWindow;
@@ -173,6 +173,8 @@ impl SettingsWindow {
                 .collect();
             (shell.output_collapsed, saved)
         };
+        let renaming = self.renaming_layout.clone();
+        let rename_field = self.layout_rename.clone();
         let list = v_flex()
             .gap(px(6.))
             .when(saved.is_empty(), |this| {
@@ -210,15 +212,29 @@ impl SettingsWindow {
                             .text_color(tokens::text2())
                             .child(icon("panels-top-left", 14.)),
                     )
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .text_size(px(12.))
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(name.clone()),
-                    )
+                    .map(|this| {
+                        if renaming.as_deref() == Some(name.as_str()) {
+                            this.child(
+                                div()
+                                    .id("layout-rename-field")
+                                    .flex_1()
+                                    .min_w_0()
+                                    .text_size(px(12.))
+                                    .on_click(|_, _, cx| cx.stop_propagation())
+                                    .child(Input::new(&rename_field).appearance(false)),
+                            )
+                        } else {
+                            this.child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .truncate()
+                                    .text_size(px(12.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(name.clone()),
+                            )
+                        }
+                    })
                     .when(active, |this| {
                         this.child(
                             text(10.5, 14.)
@@ -228,6 +244,20 @@ impl SettingsWindow {
                                 .child("Active"),
                         )
                     })
+                    .child(
+                        ghost_icon(
+                            SharedString::from(format!("rename-layout-{name}")),
+                            "pencil",
+                            "Rename",
+                        )
+                        .on_click({
+                            let name = name.clone();
+                            cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.start_layout_rename(&name, window, cx);
+                            })
+                        }),
+                    )
                     .child(
                         destructive_icon(
                             SharedString::from(format!("delete-layout-{name}")),
@@ -307,6 +337,28 @@ impl SettingsWindow {
             .update(cx, |shell, cx| shell.save_named_layout(&name, cx));
         self.layout_name
             .update(cx, |state, cx| state.set_value("", window, cx));
+    }
+
+    /// Turns a saved layout's name into a field holding it, focused.
+    fn start_layout_rename(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.renaming_layout = Some(name.to_owned());
+        self.layout_rename.update(cx, |state, cx| {
+            state.set_value(name.to_owned(), window, cx);
+            state.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    /// Renames the layout to what the field holds, from Enter or a click
+    /// elsewhere.
+    pub(super) fn commit_layout_rename(&mut self, cx: &mut Context<Self>) {
+        let Some(from) = self.renaming_layout.take() else {
+            return;
+        };
+        let to = self.layout_rename.read(cx).value().to_string();
+        self.shell
+            .update(cx, |shell, cx| shell.rename_named_layout(&from, &to, cx));
+        cx.notify();
     }
 
     pub(super) fn accessibility_page(&mut self, cx: &mut Context<Self>) -> Vec<Section> {

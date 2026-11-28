@@ -32,12 +32,21 @@ pub(crate) enum DataMode {
 }
 
 impl DataMode {
-    pub(crate) fn next(self) -> DataMode {
+    /// Test › Data's menu, in order.
+    pub(crate) const ALL: [DataMode; 4] = [
+        DataMode::Kept,
+        DataMode::Fresh,
+        DataMode::Live,
+        DataMode::Off,
+    ];
+
+    /// What the mode means, as its menu row's tooltip.
+    pub(crate) fn hint(self) -> &'static str {
         match self {
-            DataMode::Kept => DataMode::Fresh,
-            DataMode::Fresh => DataMode::Live,
-            DataMode::Live => DataMode::Off,
-            DataMode::Off => DataMode::Kept,
+            DataMode::Kept => "DataStores are kept from one local run of this place to the next.",
+            DataMode::Fresh => "Every local run of this place starts with empty DataStores.",
+            DataMode::Live => "Studio access to API services is on: local runs of this published place read and write its experience\u{2019}s real DataStores. The first one asks before it starts.",
+            DataMode::Off => "Studio access to API services is off: DataStore calls fail as they do in Studio.",
         }
     }
 
@@ -216,8 +225,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_modes_cycle_and_off_turns_api_access_off() {
-        assert_eq!(DataMode::Kept.next().next().next().next(), DataMode::Kept);
+    fn every_mode_is_on_the_menu_and_off_turns_api_access_off() {
+        assert_eq!(DataMode::ALL.len(), 4);
+        assert_eq!(DataMode::ALL[0], DataMode::default());
         let path = Path::new("/nowhere/place.rbxl");
         assert!(!services(path, DataMode::Off).api_access);
         assert!(services(path, DataMode::Fresh).data_file.is_none());

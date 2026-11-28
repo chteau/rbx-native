@@ -48,6 +48,10 @@ pub(crate) fn install(cx: &mut gpui_kit::App) {
     cx.bind_keys([
         gpui_kit::KeyBinding::new("tab", FocusNext, Some(CONTEXT)),
         gpui_kit::KeyBinding::new("shift-tab", FocusPrev, Some(CONTEXT)),
+        // Space in a text field types a space: without this, a popover's own
+        // Space-to-toggle binding (the layout switcher's name field) matched
+        // first and closed the popover mid-name.
+        gpui_kit::KeyBinding::new("space", gpui_kit::NoAction, Some("Input")),
     ]);
 }
 

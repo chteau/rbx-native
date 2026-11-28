@@ -86,10 +86,6 @@ impl Client {
         } else {
             Vec::new()
         };
-        if has("user.inventory-item", "read") {
-            self.add_created_places(key_info.authorized_user_id, &mut by_universe)?;
-        }
-
         // A group's own games are not fetched here: Roblox rate-limits the
         // group listing per IP to a few requests every five seconds, so a
         // hundred groups would cost minutes. `group_experiences` fetches one
@@ -106,6 +102,17 @@ impl Client {
                 visibility: Visibility::Public,
                 owner,
             });
+        }
+        // After the public games: their start places are then already known,
+        // so only the rest of the created places need a lookup.
+        for experience in by_universe.values() {
+            crate::places::remember_universe_of_place(
+                experience.root_place_id,
+                experience.universe_id,
+            );
+        }
+        if has("user.inventory-item", "read") {
+            self.add_created_places(key_info.authorized_user_id, &mut by_universe)?;
         }
 
         let mut experiences: Vec<Experience> = by_universe.into_values().collect();

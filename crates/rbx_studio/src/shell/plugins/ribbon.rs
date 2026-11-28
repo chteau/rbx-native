@@ -198,10 +198,13 @@ fn plugin_tile(
         .id(id.into())
         .relative()
         .flex_none()
-        .w(tokens::tile_width())
+        // As wide as its label, as a built-in tile, up to two tiles' worth
+        // for a plugin's long button names.
+        .min_w(tokens::tile_width())
+        .max_w(tokens::tile_width() * 2.)
         .h_full()
         .gap(px(6.))
-        .px(px(1.))
+        .px(px(5.))
         .py(px(5.))
         .items_center()
         .justify_center()

@@ -289,6 +289,8 @@ pub(crate) struct Shell {
     document_nav: roving::Roving,
     ribbon_tabs_nav: roving::Roving,
     ribbon_nav: roving::Roving,
+    /// The ribbon strip's scroll position, for its overflow chevrons.
+    ribbon_scroll: ribbon::RibbonScroll,
     /// The Properties panel's own group. Without it every section header
     /// and every checkbox is its own Tab stop, measured at 32 presses to
     /// get from the panel back to the ribbon, which defeats the entire
@@ -642,6 +644,12 @@ pub(crate) struct Shell {
     /// The named layout most recently saved or applied, which is the one
     /// marked Active when several names hold the docks' arrangement.
     last_named_layout: Option<String>,
+    /// The last unsaved arrangement switched away from, so the layout
+    /// switcher can put it back instead of it being lost.
+    custom_layout: Option<layout::SavedLayout>,
+    /// The part the ribbon's Part insert added last, which the next one
+    /// aims past to stack on it (see `insert_part_in_view`).
+    last_part_insert: Option<Ref>,
     output_collapsed: bool,
     /// Settings › AI assistants › MCP server's listener; see `shell::mcp`.
     mcp: Option<crate::mcp::endpoint::Server>,
@@ -1029,6 +1037,7 @@ impl Shell {
             document_nav: roving::Roving::horizontal(),
             ribbon_tabs_nav: roving::Roving::horizontal(),
             ribbon_nav: roving::Roving::horizontal(),
+            ribbon_scroll: Default::default(),
             properties_nav: roving::Roving::vertical(),
             viewport_nav: roving::Roving::vertical(),
             script_view_nav: roving::Roving::horizontal(),
@@ -1172,6 +1181,8 @@ impl Shell {
             layout: layout::Layout::restore(&docks),
             named_layouts,
             last_named_layout: None,
+            custom_layout: None,
+            last_part_insert: None,
             dragging_panel: None,
             panel_windows: HashMap::new(),
             dialog_up: false,
@@ -1891,12 +1902,71 @@ impl Shell {
     /// mention lands on its own edge, and a floating one gets its window
     /// from `sync_panel_windows` on the next render.
     pub(super) fn apply_named_layout(&mut self, name: &str, cx: &mut Context<Self>) {
-        let Some(named) = self.named_layouts.iter().find(|named| named.name == name) else {
+        let Some(restored) = self
+            .named_layouts
+            .iter()
+            .find(|named| named.name == name)
+            .map(|named| layout::Layout::restore(&named.layout))
+        else {
             return;
         };
-        self.layout = layout::Layout::restore(&named.layout);
-        self.last_named_layout = Some(named.name.clone());
+        self.keep_custom_layout();
+        self.layout = restored;
+        self.last_named_layout = Some(name.to_owned());
         self.seat_plugin_docks();
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Remembers the docks before a switch when no saved layout holds them
+    /// (and they aren't the default either), see `custom_layout`.
+    fn keep_custom_layout(&mut self) {
+        if self.active_named_layout().is_none()
+            && self.layout.saved() != layout::Layout::default().saved()
+        {
+            self.custom_layout = Some(self.layout.saved());
+        }
+    }
+
+    /// The kept unsaved arrangement, when the docks aren't in it now.
+    pub(super) fn custom_layout_to_restore(&self) -> bool {
+        self.custom_layout
+            .as_ref()
+            .is_some_and(|kept| layout::Layout::restore(kept).saved() != self.layout.saved())
+    }
+
+    /// Puts back the unsaved arrangement `keep_custom_layout` remembered,
+    /// keeping the one it replaces if that is unsaved too.
+    pub(super) fn restore_custom_layout(&mut self, cx: &mut Context<Self>) {
+        let Some(kept) = self.custom_layout.take() else {
+            return;
+        };
+        self.keep_custom_layout();
+        self.layout = layout::Layout::restore(&kept);
+        self.last_named_layout = None;
+        self.seat_plugin_docks();
+        self.save_settings();
+        cx.notify();
+    }
+
+    /// Renames a saved layout. A blank name, or one another layout already
+    /// has, leaves it as it was.
+    pub(super) fn rename_named_layout(&mut self, from: &str, to: &str, cx: &mut Context<Self>) {
+        let to = to.trim();
+        if to.is_empty() || to == from || self.named_layouts.iter().any(|named| named.name == to) {
+            return;
+        }
+        let Some(named) = self
+            .named_layouts
+            .iter_mut()
+            .find(|named| named.name == from)
+        else {
+            return;
+        };
+        named.name = to.to_owned();
+        if self.last_named_layout.as_deref() == Some(from) {
+            self.last_named_layout = Some(to.to_owned());
+        }
         self.save_settings();
         cx.notify();
     }
@@ -1916,6 +1986,7 @@ impl Shell {
     /// pixels wide is saved that way, and without this the only way back is
     /// to find and delete the settings file.
     pub(crate) fn reset_layout(&mut self, cx: &mut Context<Self>) {
+        self.keep_custom_layout();
         self.layout = layout::Layout::default();
         self.seat_plugin_docks();
         self.output_collapsed = false;

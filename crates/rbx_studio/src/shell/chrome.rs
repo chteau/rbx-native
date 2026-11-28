@@ -291,6 +291,10 @@ pub(crate) fn offline_pill(
             .text_color(tokens::text2())
             .cursor_pointer()
             .hover(|this| this.bg(tokens::hover()))
+            // It sits over the title bar's drag stretch: without blocking
+            // the hit test there, Windows answers the press as the caption
+            // and moves the window instead of delivering the click.
+            .occlude()
             .tooltip(move |window, cx| crate::shell::tooltip::text(reason.clone(), window, cx))
             .on_click(move |_, window, cx| on_click(window, cx))
             .child(crate::launcher::ui::icon("wifi-off", 12.))

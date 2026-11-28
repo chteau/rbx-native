@@ -36,6 +36,7 @@ mod commands;
 mod items;
 pub(super) mod layout;
 mod model_tiles;
+mod overflow;
 mod toggles;
 
 #[cfg(test)]
@@ -43,6 +44,7 @@ pub(super) use commands::PART_INSERTS;
 pub(super) use commands::{palette_entries, RibbonCommand, GUI_INSERTS, SUN_BODIES, SUN_MODES};
 use commands::{Insert, SCRIPT_INSERTS};
 pub(super) use model_tiles::is_locked;
+pub(super) use overflow::RibbonScroll;
 
 /// The ribbon's category tabs: Studio's, in Studio's order, plus Test,
 /// which holds what Studio 0.748 keeps in its quick-access row and Test
@@ -124,16 +126,16 @@ impl Shell {
 
         self.ribbon_nav.finish();
 
-        h_flex()
+        let strip = h_flex()
             .id("ribbon")
             .w_full()
             .h(tokens::ribbon_height())
             .flex_none()
             .items_stretch()
-            // Scrolls rather than clips. At 2x the UI scale the Home page
-            // is wider than the window, and a ribbon that simply loses its
-            // last buttons is WCAG 1.4.4's "loss of content", the precise
-            // thing the scale exists to avoid.
+            // Scrolls rather than clips, with a chevron at each end that has
+            // more (see `overflow`). A narrow window or a 2x UI scale makes a
+            // page wider than the window, and a ribbon that simply loses its
+            // last buttons is WCAG 1.4.4's "loss of content".
             .overflow_x_scroll()
             .pt(px(9.))
             .px(px(16.))
@@ -152,7 +154,8 @@ impl Shell {
                     cx.notify();
                 }
             }))
-            .children(children)
+            .children(children);
+        self.ribbon_with_overflow(strip)
     }
 
     /// Studio's first Avatar button, in a group of its own: the orange
@@ -502,8 +505,8 @@ impl Shell {
                     .map(|t| primary("ribbon-stop", t).into_any_element()),
                 TestTile::Invite => invite.take().map(IntoElement::into_any_element),
                 TestTile::View => Some(self.view_tile(cx).into_any_element()),
-                TestTile::Players => Some(self.players_tile(cx).into_any_element()),
-                TestTile::Data => Some(self.data_tile(cx).into_any_element()),
+                TestTile::Players => Some(self.players_tile(cx)),
+                TestTile::Data => Some(self.data_tile(cx)),
                 TestTile::Offline => Some(self.offline_tile(cx)),
                 TestTile::Network => Some(self.network_tile(cx)),
                 TestTile::Device => Some(self.device_tile(cx)),
@@ -663,8 +666,8 @@ impl Shell {
 
 impl Shell {
     /// Test › Players: how many local players the next Play (local)
-    /// starts, 1 to 4; a click counts up and wraps.
-    fn players_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+    /// starts, picked from a menu as in Studio.
+    fn players_tile(&self, cx: &mut Context<Self>) -> AnyElement {
         use super::local_run::windows::Role;
         const LABELS: [&str; super::local_run::MAX_PLAYERS] = [
             "1 Player",
@@ -689,7 +692,8 @@ impl Shell {
                     cx,
                 )
                 .tooltip(|window, cx| super::tooltip::text("Exit client window.", window, cx))
-                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_exit_client(cx)));
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_exit_client(cx)))
+                .into_any_element();
             }
             Some(_) => {
                 return tile(
@@ -702,7 +706,8 @@ impl Shell {
                 .tooltip(|window, cx| {
                     super::tooltip::text("Add a client to the current session.", window, cx)
                 })
-                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_add_client(cx)));
+                .on_click(cx.listener(|shell, _, _, cx| shell.local_run_add_client(cx)))
+                .into_any_element();
             }
             None => {}
         }
@@ -727,7 +732,8 @@ impl Shell {
             .tooltip(|window, cx| {
                 super::tooltip::text("Click to have the last player leave the game.", window, cx)
             })
-            .on_click(cx.listener(|shell, _, _, cx| shell.local_run_remove_player(cx)));
+            .on_click(cx.listener(|shell, _, _, cx| shell.local_run_remove_player(cx)))
+            .into_any_element();
         }
         if self.local_run_active() {
             return unavailable_tile(
@@ -735,49 +741,68 @@ impl Shell {
                 IconName::Users,
                 label,
                 "takes effect on the next Play (local)",
-            );
+            )
+            .into_any_element();
         }
-        tile(
+        let trigger = tile(
             &self.ribbon_nav,
             "ribbon-players",
             IconName::Users,
             label,
             cx,
+        );
+        let items = (1..=LABELS.len())
+            .map(|players| {
+                menu::item(LABELS[players - 1])
+                    .checked(players == count)
+                    .on_click(move |shell, cx| shell.set_local_run_players(players, cx))
+            })
+            .collect();
+        menu::dropdown_in_group(
+            self,
+            MenuId::TestPlayers,
+            super::chrome::Trigger::new(trigger)
+                .tooltip("Local players for Play (local) and Server & Clients"),
+            items,
+            cx,
         )
-        .tooltip(|window, cx| {
-            super::tooltip::text(
-                "Local players for Play (local) and Server & Clients, each with a client of their own. Click to change.",
-                window,
-                cx,
-            )
-        })
-        .on_click(cx.listener(|shell, _, _, cx| shell.local_run_next_players(cx)))
+        .into_any_element()
     }
 
     /// Test › Data: whether Local Run keeps this place's DataStores between
     /// runs, starts them empty, uses the experience's real ones, or has API
-    /// access off; a click cycles.
-    fn data_tile(&self, cx: &mut Context<Self>) -> Stateful<Div> {
+    /// access off, picked from a menu as in Studio, so Live is never one
+    /// stray click away.
+    fn data_tile(&self, cx: &mut Context<Self>) -> AnyElement {
         use super::local_run::data;
         let mode = data::mode(&self.path);
-        let tip = match mode {
-            data::DataMode::Kept => "DataStores are kept from one local run of this place to the next. Click to change.",
-            data::DataMode::Fresh => "Every local run of this place starts with empty DataStores. Click to change.",
-            data::DataMode::Live => "Studio access to API services is on: local runs of this published place read and write its experience\u{2019}s real DataStores, the first one asks before it starts. Click to change.",
-            data::DataMode::Off => "Studio access to API services is off: DataStore calls fail as they do in Studio. Click to change.",
-        };
-        tile(
+        let trigger = tile(
             &self.ribbon_nav,
             "ribbon-data",
             IconName::Database,
             mode.label(),
             cx,
+        );
+        let items = data::DataMode::ALL
+            .into_iter()
+            .map(|choice| {
+                menu::item(choice.label())
+                    .checked(choice == mode)
+                    .hint(choice.hint())
+                    .on_click(move |shell, cx| {
+                        data::set_mode(&shell.path, choice);
+                        cx.notify();
+                    })
+            })
+            .collect();
+        menu::dropdown_in_group(
+            self,
+            MenuId::TestData,
+            super::chrome::Trigger::new(trigger).tooltip("Which DataStores local runs use"),
+            items,
+            cx,
         )
-        .tooltip(move |window, cx| super::tooltip::text(tip, window, cx))
-        .on_click(cx.listener(|shell, _, _, cx| {
-            data::set_mode(&shell.path, data::mode(&shell.path).next());
-            cx.notify();
-        }))
+        .into_any_element()
     }
 
     /// Test › Controller: the Controller Emulator window.
@@ -1114,10 +1139,7 @@ pub(super) fn tile_with_badge(
         .items_center()
         .child(icon_zone(icon, px(20.)))
         .child(badge);
-    let tile = tile_frame(id, row, label, true)
-        .w_auto()
-        .min_w(tokens::tile_width())
-        .px(px(6.));
+    let tile = tile_frame(id, row, label, true).px(px(6.));
     nav.claim(tile, cx)
 }
 
@@ -1132,10 +1154,10 @@ fn tile_frame(
         .id(id.into())
         .relative()
         .flex_none()
-        .w(tokens::tile_width())
+        .min_w(tokens::tile_width())
         .h_full()
         .gap(px(6.))
-        .px(px(1.))
+        .px(px(5.))
         .py(px(5.))
         .items_center()
         .justify_center()
@@ -1167,7 +1189,15 @@ fn tile_frame(
         })
         .group("ribbon-tile")
         .child(top)
-        .child(div().w_full().text_center().truncate().child(label.into()))
+        // The whole label, the tile as wide as it needs: Studio sizes its
+        // buttons to their names rather than cutting them short.
+        .child(
+            div()
+                .w_full()
+                .text_center()
+                .whitespace_nowrap()
+                .child(label.into()),
+        )
 }
 
 /// A ribbon button's icon, and its hover lift.
@@ -1200,7 +1230,7 @@ fn icon_zone(icon: IconName, size: Pixels) -> Stateful<Div> {
 pub(super) fn stack(rows: Vec<Stateful<Div>>) -> Div {
     v_flex()
         .flex_none()
-        .w(tokens::stack_width())
+        .min_w(tokens::stack_width())
         .h_full()
         .gap(px(4.))
         .children(rows)
@@ -1258,7 +1288,7 @@ fn base_row(id: &'static str, icon: IconName, label: &'static str) -> Stateful<D
         .text_size(tokens::text_xs())
         .line_height(tokens::line_xs())
         .child(Icon::new(icon).size(tokens::text_xs()))
-        .child(div().flex_1().truncate().child(label))
+        .child(div().flex_1().whitespace_nowrap().child(label))
 }
 
 /// Between two groups: the frame's hairline, inset from the ribbon's own

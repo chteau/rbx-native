@@ -306,7 +306,10 @@ impl GameWorkspace {
                 AfterClose::Quit => remove(cx),
                 AfterClose::Exit => cx.quit(),
                 AfterClose::Home => {
-                    crate::open_home_again(cx);
+                    let maximized = handle
+                        .update(cx, |_, window, _| window.is_maximized())
+                        .unwrap_or(false);
+                    crate::open_home_again(maximized, cx);
                     remove(cx);
                 }
                 AfterClose::Restart => {

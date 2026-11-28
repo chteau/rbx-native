@@ -116,13 +116,45 @@ pub(crate) fn open_wizard(
 
 /// Home (1440×900, resizable down to 1100×700).
 pub(crate) fn open_home(boot: Boot, cx: &mut App) {
-    let options = options("RbxNative", (1440., 900.), Some((1100., 700.)), cx);
+    open_home_maximized(boot, false, cx);
+}
+
+/// [`open_home`], maximized when `maximized`.
+pub(crate) fn open_home_maximized(boot: Boot, maximized: bool, cx: &mut App) {
+    let mut options = options("RbxNative", (1440., 900.), Some((1100., 700.)), cx);
+    if maximized {
+        options.window_bounds = options
+            .window_bounds
+            .map(|bounds| WindowBounds::Maximized(bounds.get_bounds()));
+    }
     let _ = cx.open_window(options, move |window, cx| {
         crate::mark_primary(window, cx);
         let view = cx.new(|cx| HomeWindow::new(boot, window, cx));
+        cx.set_global(LiveHome(view.downgrade()));
         cx.new(|cx| Root::new(crate::window_blur::wrap(view, cx), window, cx))
     });
     crate::bring_to_front(cx);
+}
+
+/// The Home window last opened, while it is still open.
+struct LiveHome(WeakEntity<HomeWindow>);
+
+impl Global for LiveHome {}
+
+/// A place file the OS asked this running app to open (Finder, `open -a`):
+/// from Home as if picked there, so Home closes behind it, else in a new
+/// editor window as File › Open does.
+pub(crate) fn open_document(path: std::path::PathBuf, cx: &mut App) {
+    let home = cx
+        .try_global::<LiveHome>()
+        .and_then(|live| live.0.upgrade());
+    if let Some(home) = home {
+        home.update(cx, |home, cx| home.open_path_later(path, cx));
+        return;
+    }
+    if let Err(message) = crate::open_place(&path, cx) {
+        eprintln!("rbxstudio: {message}");
+    }
 }
 
 /// The editor's game picker (1040×720, resizable down to 760×520): Home's

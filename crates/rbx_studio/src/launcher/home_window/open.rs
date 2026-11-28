@@ -161,7 +161,7 @@ impl HomeWindow {
     /// Opens `path` in the editor and closes Home, deferred a frame, so the
     /// dialog closing paints first and the blocking load doesn't run inside
     /// a click handler.
-    pub(super) fn open_path_later(&mut self, path: PathBuf, cx: &mut Context<Self>) {
+    pub(in crate::launcher) fn open_path_later(&mut self, path: PathBuf, cx: &mut Context<Self>) {
         self.opening = true;
         self.dialog = Some(Dialog::Opening {
             name: file_name(&path),

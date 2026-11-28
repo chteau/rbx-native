@@ -67,10 +67,11 @@ impl Shell {
     pub(super) fn dock_tile(&self, panel: Panel, cx: &mut Context<Self>) -> AnyElement {
         let (icon, label) = dock_face(panel);
         let showing = self.is_panel_showing(panel);
+        let tip: SharedString = dock_tip(panel)
+            .map(Into::into)
+            .unwrap_or_else(|| format!("{label} \u{2014} show or hide the {label} panel").into());
         Self::lit(tile(&self.ribbon_nav, label, icon, label, cx), showing)
-            .when_some(dock_tip(panel), |this, tip| {
-                this.tooltip(move |window, cx| tooltip::text(tip, window, cx))
-            })
+            .tooltip(move |window, cx| tooltip::text(tip.clone(), window, cx))
             .on_click(cx.listener(move |shell, _, _, cx| {
                 shell.set_panel_open(panel, !showing, cx);
             }))

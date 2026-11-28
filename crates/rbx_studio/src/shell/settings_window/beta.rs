@@ -8,7 +8,7 @@ use gpui_kit::*;
 use crate::beta;
 use crate::tokens;
 
-use super::kit::{card, icon, text, toggle};
+use super::kit::{card, icon, text, toggle, Row};
 use super::SettingsWindow;
 
 impl SettingsWindow {
@@ -32,7 +32,6 @@ impl SettingsWindow {
         let rows = features.iter().enumerate().map(|(i, feature)| {
             let id = feature.id;
             let on = beta::chosen(id);
-            let shell = self.shell.clone();
             h_flex()
                 .gap(px(14.))
                 .px(px(14.))
@@ -73,18 +72,41 @@ impl SettingsWindow {
                                 .child(feature.description),
                         ),
                 )
-                .child(toggle(("beta-toggle", i), on, move |_, _, cx| {
-                    shell.update(cx, |shell, cx| {
-                        if let Err(error) = beta::choose(id, !on) {
-                            shell
-                                .output
-                                .push_warning(&format!("could not save beta.json: {error}"));
-                        }
-                        cx.notify();
-                    });
-                }))
+                .child(self.beta_toggle(("beta-toggle", i), id))
         });
         card().children(rows)
+    }
+
+    /// One feature's switch, saved to `beta.json` when flipped.
+    fn beta_toggle(&self, element: impl Into<ElementId>, id: &'static str) -> Stateful<Div> {
+        let on = beta::chosen(id);
+        let shell = self.shell.clone();
+        toggle(element, on, move |_, _, cx| {
+            shell.update(cx, |shell, cx| {
+                if let Err(error) = beta::choose(id, !on) {
+                    shell
+                        .output
+                        .push_warning(&format!("could not save beta.json: {error}"));
+                }
+                cx.notify();
+            });
+        })
+    }
+
+    /// The features as rows, for the settings search to find by name and
+    /// description like any other setting.
+    pub(super) fn beta_rows(&self) -> Vec<Row> {
+        beta::features()
+            .iter()
+            .enumerate()
+            .map(|(i, feature)| {
+                Row::new(
+                    feature.name,
+                    self.beta_toggle(("beta-search-toggle", i), feature.id),
+                )
+                .describe(feature.description)
+            })
+            .collect()
     }
 
     fn restart_banner(&self, pending: usize) -> impl IntoElement {

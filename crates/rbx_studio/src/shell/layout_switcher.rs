@@ -68,8 +68,8 @@ impl Shell {
             .content(move |_, _, cx| body.update(cx, |shell, cx| shell.layout_switcher_body(cx)))
     }
 
-    /// Default, every saved layout (the one in use ticked, each with its
-    /// delete), the name field that saves the docks as they are, and the
+    /// Default, the unsaved arrangement last switched away from, every
+    /// saved layout (the one in use ticked, each with its delete), the name field that saves the docks as they are, and the
     /// way to the full Settings page.
     fn layout_switcher_body(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let active = self.active_named_layout().map(str::to_owned);
@@ -91,6 +91,18 @@ impl Shell {
             shell.layout_switcher_open = false;
             shell.reset_layout(cx);
         }));
+        let custom = self.custom_layout_to_restore().then(|| {
+            row(
+                "layout-custom".into(),
+                IconName::PanelsTopLeft,
+                "Custom (unsaved)".into(),
+                false,
+            )
+            .on_click(cx.listener(|shell, _, _, cx| {
+                shell.layout_switcher_open = false;
+                shell.restore_custom_layout(cx);
+            }))
+        });
         let saved = names.into_iter().map(|name| {
             let apply = name.clone();
             let delete = name.clone();
@@ -169,6 +181,7 @@ impl Shell {
             .min_w(px(240.))
             .child(heading("Layouts"))
             .child(default)
+            .children(custom)
             .children(saved)
             .child(rule())
             .child(heading("Save current as"))

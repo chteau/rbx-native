@@ -278,3 +278,16 @@ fn export_as_fbx_is_one_binary_file() {
     assert_eq!(files[0].0, Path::new("Wheel.fbx"));
     assert!(files[0].1.starts_with(b"Kaydara FBX Binary  \0"));
 }
+
+#[test]
+fn a_save_dialog_skips_the_apps_own_folders() {
+    let untitled = crate::home::untitled::dir().join("Baseplate.rbxl");
+    assert_eq!(start_directory(&untitled, None), documents());
+    let mine = std::env::current_dir().unwrap().join("Mine.rbxl");
+    assert_eq!(
+        start_directory(&mine, None),
+        std::env::current_dir().unwrap()
+    );
+    let last = PathBuf::from("/somewhere/else");
+    assert_eq!(start_directory(&untitled, Some(last.clone())), last);
+}

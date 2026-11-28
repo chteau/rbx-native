@@ -93,7 +93,10 @@ impl SettingsWindow {
         let mut groups = Vec::new();
         for page in Page::ALL {
             self.page = page;
-            let sections: Vec<Section> = self.sections(window, cx);
+            let mut sections: Vec<Section> = self.sections(window, cx);
+            if page == Page::Beta {
+                sections.push(Section::new("Beta features", self.beta_rows()));
+            }
             let mut group = Group {
                 page,
                 sections: Vec::new(),

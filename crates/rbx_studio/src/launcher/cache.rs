@@ -41,9 +41,15 @@ fn icon_file(universe_id: u64) -> Option<PathBuf> {
 }
 
 impl GamesCache {
+    /// Also hands the listing's start places to `rbx_cloud`, so the refresh
+    /// that follows doesn't look their universes up again.
     pub(super) fn load(user_id: u64) -> Option<GamesCache> {
         let bytes = std::fs::read(file(user_id)?).ok()?;
-        serde_json::from_slice(&bytes).ok()
+        let cache: GamesCache = serde_json::from_slice(&bytes).ok()?;
+        for experience in &cache.listing.experiences {
+            rbx_cloud::remember_universe_of_place(experience.root_place_id, experience.universe_id);
+        }
+        Some(cache)
     }
 
     /// Best effort: a cache that can't be written only costs the next
