@@ -76,10 +76,11 @@ pub(super) const SKYBOX_SHADER: &str = concat!(
 // then the viewport's pixel size in a `vec4` (`xy`, `z` the `ForceField`
 // shimmer's phase, `w` how its intersection glow reads depth, see
 // `intersection_depth`) so the outline shaders can expand their edges to a
-// constant pixel width. Every
-// other surface shader declares only the matrix and reads just the first 64
-// bytes, which stay first.
-const FRAME_SIZE: wgpu::BufferAddress = 64 + 16;
+// constant pixel width, then a `vec4` whose `x` is the alpha opaque Neon
+// writes (0 where the bloom is seeded from the frame, see `post.wgsl`'s
+// `NEON_GLOW`). Every other surface shader declares only the matrix and
+// reads just the first 64 bytes, which stay first.
+const FRAME_SIZE: wgpu::BufferAddress = 64 + 16 + 16;
 
 /// Blending for everything translucent: straight (non-premultiplied) alpha over
 /// whatever is already in the target.
@@ -359,7 +360,9 @@ impl Frame {
 
     /// `shimmer` is [`shimmer_phase`]'s: 0 for a pass with no clock.
     /// `intersections` is [`intersection_depth`]'s: 0 for a pass that draws
-    /// no `ForceField` glow.
+    /// no `ForceField` glow. `neon_alpha` is 0 for the pass the bloom is
+    /// seeded from, which is how its threshold tells opaque Neon apart, and 1
+    /// for any other.
     pub(super) fn write(
         &self,
         queue: &wgpu::Queue,
@@ -367,13 +370,15 @@ impl Frame {
         viewport: glam::Vec2,
         shimmer: f32,
         intersections: f32,
+        neon_alpha: f32,
     ) {
-        let mut data = [0.0f32; 20];
+        let mut data = [0.0f32; 24];
         data[..16].copy_from_slice(&matrix.to_cols_array());
         data[16] = viewport.x;
         data[17] = viewport.y;
         data[18] = shimmer;
         data[19] = intersections;
+        data[20] = neon_alpha;
         queue.write_buffer(&self.matrix, 0, bytemuck::cast_slice(&data));
     }
 }

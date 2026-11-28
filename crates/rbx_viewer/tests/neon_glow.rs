@@ -58,6 +58,12 @@ fn part(
 /// `Workspace { Wall, Opaque, SeeThrough }`: the two neon parts 6 studs
 /// apart, the black wall behind both.
 fn place() -> WeakDom {
+    place_of(&[([255, 170, 0], 0.0), ([255, 170, 0], 0.4)])
+}
+
+/// The black wall with a 3-stud Neon part per `(colour, transparency)`, 6
+/// studs apart and centred on the view.
+fn place_of(parts: &[([u8; 3], f32)]) -> WeakDom {
     let mut dom = WeakDom::new();
     dom.insert(Instance::new(Ref::new(1), "Workspace", "Workspace"));
     dom.set_parent(Ref::new(1), None);
@@ -70,8 +76,19 @@ fn place() -> WeakDom {
         SMOOTH_PLASTIC,
         0.0,
     );
-    part(&mut dom, 3, -3.0, [3.0, 3.0, 1.0], [255, 170, 0], NEON, 0.0);
-    part(&mut dom, 4, 3.0, [3.0, 3.0, 1.0], [255, 170, 0], NEON, 0.4);
+    let left = -3.0 * (parts.len() as f32 - 1.0);
+    for (i, (color, transparency)) in parts.iter().enumerate() {
+        let x = left + 6.0 * i as f32;
+        part(
+            &mut dom,
+            3 + i as u32,
+            x,
+            [3.0, 3.0, 1.0],
+            *color,
+            NEON,
+            *transparency,
+        );
+    }
     dom.take_changes();
     dom
 }
@@ -92,13 +109,13 @@ fn top_edge(pixels: &[u8], x: u32) -> u32 {
         .expect("an edge")
 }
 
-#[test]
-fn a_see_through_neon_part_draws_dimmer_and_does_not_glow() {
-    let mut headless = match Headless::from_dom(&place(), false) {
+/// The frame `dom` draws at full quality, `None` without a GPU.
+fn render(dom: &WeakDom) -> Option<Vec<u8>> {
+    let mut headless = match Headless::from_dom(dom, false) {
         Ok(headless) => headless,
         Err(why) => {
             println!("skipped: no GPU to render with ({why})");
-            return;
+            return None;
         }
     };
     headless.set_quality(QualityLevel::Level(QualityLevel::MAX));
@@ -108,11 +125,20 @@ fn a_see_through_neon_part_draws_dimmer_and_does_not_glow() {
     }
     headless.take_frame().expect("the last frame");
     headless.render_frame(SIZE.0, SIZE.1).expect("a frame");
-    let pixels = headless
-        .take_frame()
-        .expect("the compared frame")
-        .expect("one frame in flight")
-        .pixels;
+    Some(
+        headless
+            .take_frame()
+            .expect("the compared frame")
+            .expect("one frame in flight")
+            .pixels,
+    )
+}
+
+#[test]
+fn a_see_through_neon_part_draws_dimmer_and_does_not_glow() {
+    let Some(pixels) = render(&place()) else {
+        return;
+    };
 
     // Left of centre the opaque one, right of it the see-through one.
     let (opaque, see_through) = (SIZE.0 / 2 - 24, SIZE.0 / 2 + 24);
@@ -133,5 +159,59 @@ fn a_see_through_neon_part_draws_dimmer_and_does_not_glow() {
         halo(see_through)[0] < 12,
         "the see-through one doesn't: {:?}",
         halo(see_through)
+    );
+}
+
+/// Opaque Neon squares its colour and glows past a line, as in Studio 0.748
+/// (ShadowMap, quality 21): grey 64 reads 43 in the middle, Studio's own
+/// (255, 140, 0) reads (255, 251, 33), grey 192 glows as white does and
+/// grey 160 not at all. The camera here sits closer than Studio's did, so
+/// the halo is only checked for being there.
+#[test]
+fn opaque_neon_squares_its_colour_and_glows_past_a_line() {
+    let mut dom = place_of(&[
+        ([64, 64, 64], 0.0),
+        ([255, 140, 0], 0.0),
+        ([160, 160, 160], 0.0),
+        ([192, 192, 192], 0.0),
+    ]);
+    // The Baseplate template's bloom, which the measurements were taken under.
+    let lighting = Ref::new(20);
+    dom.insert(Instance::new(lighting, "Lighting", "Lighting"));
+    dom.set_parent(lighting, None);
+    let mut bloom = Instance::new(Ref::new(21), "BloomEffect", "Bloom");
+    let properties = bloom.properties_mut();
+    properties.insert("Intensity".to_string(), Variant::Float32(1.0));
+    properties.insert("Size".to_string(), Variant::Float32(24.0));
+    properties.insert("Threshold".to_string(), Variant::Float32(2.0));
+    dom.insert(bloom);
+    dom.set_parent(Ref::new(21), Some(lighting));
+    dom.take_changes();
+    let Some(pixels) = render(&dom) else {
+        return;
+    };
+    // 6 studs at 14 away under a 70 degree view, 160 px tall: 49 px apart.
+    let column = |i: u32| SIZE.0 / 2 - 73 + 49 * i;
+    let cy = SIZE.1 / 2;
+
+    let grey = pixel(&pixels, column(0), cy);
+    assert!(grey[0].abs_diff(43) <= 8, "grey 64 middle {grey:?}");
+    let orange = pixel(&pixels, column(1), cy);
+    assert!(
+        orange[0] == 255 && orange[1] >= 230 && orange[2] <= 40,
+        "orange middle {orange:?}"
+    );
+    // The glow is a couple of pixels wide at this size: read the first row
+    // off the face.
+    let halo = |x: u32| pixel(&pixels, x, top_edge(&pixels, x));
+    assert!(
+        halo(column(3))[0] > 60,
+        "grey 192 glows: {:?}",
+        halo(column(3))
+    );
+    assert!(
+        halo(column(2))[0] < 30,
+        "grey 160 doesn't: {:?}",
+        halo(column(2))
     );
 }

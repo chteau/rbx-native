@@ -7,8 +7,11 @@ use serde_json::{json, Value};
 
 use super::super::{ExportMesh, Finish};
 
-/// `NEON_HDR` in `renderer/material.wgsl`: how many times its own colour a
-/// Neon surface glows by before the frame is exposed and tone-mapped.
+/// How many times its own colour a Neon surface emits in a glTF viewer. The
+/// renderer's own radiance squares the colour (`NEON_EMISSIVE` in
+/// `renderer/material.wgsl`), which a glTF emissive factor times a strength
+/// cannot carry, so the export keeps the colour as it is at a strength that
+/// still blooms in a viewer.
 const NEON_STRENGTH: f32 = 6.0;
 /// `material.wgsl`'s ForceField opacity is `alpha * mix(0.4, 2.0, rim)`
 /// with `rim = (1 - |n·v|)²`: this is its face-on end, what a glTF viewer's

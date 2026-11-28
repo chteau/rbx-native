@@ -60,15 +60,16 @@ pub struct Font {
     pub cached_face_id: Option<String>,
 }
 
-/// `Enum.Font` → (family file name, weight, italic), as `Datatype.Font.fromEnum`'s
-/// table in Roblox's docs lays it out (with `Arial*` → Arimo and `Gotham*` →
-/// Montserrat from the enum page's own notes). The docs say nothing about
-/// weights: these follow the enum names, `Bold` being 700, `Light` 300 and so
-/// on. `Unknown` (100) has no row.
+/// `Enum.Font` → (family file name, weight, italic): the `FontFace` Studio
+/// 0.748 gives a `TextLabel` whose `Font` is set to each member, read back in
+/// its command bar. `Arial*` and `Gotham*` keep naming `Arial.json` and
+/// `GothamSSm.json`, families the client no longer ships and draws in Arimo
+/// and Montserrat (see `rbx_viewer`'s `REPLACED_FAMILIES`). `Unknown` (100)
+/// has no row.
 const LEGACY_FONTS: [(u32, &str, u16, bool); 52] = [
     (0, "LegacyArial", 400, false),
-    (1, "Arimo", 400, false),
-    (2, "Arimo", 700, false),
+    (1, "Arial", 400, false),
+    (2, "Arial", 700, false),
     (3, "SourceSansPro", 400, false),
     (4, "SourceSansPro", 700, false),
     (5, "SourceSansPro", 300, false),
@@ -83,10 +84,10 @@ const LEGACY_FONTS: [(u32, &str, u16, bool); 52] = [
     (14, "Balthazar", 400, false),
     (15, "RomanAntique", 400, false),
     (16, "SourceSansPro", 600, false),
-    (17, "Montserrat", 400, false),
-    (18, "Montserrat", 500, false),
-    (19, "Montserrat", 700, false),
-    (20, "Montserrat", 900, false),
+    (17, "GothamSSm", 400, false),
+    (18, "GothamSSm", 500, false),
+    (19, "GothamSSm", 700, false),
+    (20, "GothamSSm", 900, false),
     (21, "AmaticSC", 400, false),
     (22, "Bangers", 400, false),
     (23, "Creepster", 400, false),
@@ -180,8 +181,7 @@ mod tests {
         assert_eq!(bold.legacy(), 4);
         assert_eq!(Font::from_legacy(6).unwrap().style, FontStyle::Italic);
         assert_eq!(Font::from_legacy(FONT_UNKNOWN), None);
-        // Two enum members name Arimo regular; the first one wins.
-        assert_eq!(Font::from_legacy(50).unwrap().legacy(), 1);
+        assert_eq!(Font::from_legacy(50).unwrap().legacy(), 50);
 
         let cloud = Font {
             family: "rbxassetid://12187365364".to_string(),
@@ -190,5 +190,84 @@ mod tests {
             cached_face_id: None,
         };
         assert_eq!(cloud.legacy(), FONT_UNKNOWN);
+    }
+
+    /// Every member Studio 0.748 lists, with the `FontFace` it gives a
+    /// `TextLabel` set to it: `Enum.Font:GetEnumItems()` walked in the command
+    /// bar, `label.Font = item`, then `label.FontFace` read back.
+    const STUDIO: [(u32, &str, &str, u16, bool); 52] = [
+        (0, "Legacy", "LegacyArial", 400, false),
+        (1, "Arial", "Arial", 400, false),
+        (2, "ArialBold", "Arial", 700, false),
+        (3, "SourceSans", "SourceSansPro", 400, false),
+        (4, "SourceSansBold", "SourceSansPro", 700, false),
+        (5, "SourceSansLight", "SourceSansPro", 300, false),
+        (6, "SourceSansItalic", "SourceSansPro", 400, true),
+        (7, "Bodoni", "AccanthisADFStd", 400, false),
+        (8, "Garamond", "Guru", 400, false),
+        (9, "Cartoon", "ComicNeueAngular", 400, false),
+        (10, "Code", "Inconsolata", 400, false),
+        (11, "Highway", "HighwayGothic", 400, false),
+        (12, "SciFi", "Zekton", 400, false),
+        (13, "Arcade", "PressStart2P", 400, false),
+        (14, "Fantasy", "Balthazar", 400, false),
+        (15, "Antique", "RomanAntique", 400, false),
+        (16, "SourceSansSemibold", "SourceSansPro", 600, false),
+        (17, "Gotham", "GothamSSm", 400, false),
+        (18, "GothamMedium", "GothamSSm", 500, false),
+        (19, "GothamBold", "GothamSSm", 700, false),
+        (20, "GothamBlack", "GothamSSm", 900, false),
+        (21, "AmaticSC", "AmaticSC", 400, false),
+        (22, "Bangers", "Bangers", 400, false),
+        (23, "Creepster", "Creepster", 400, false),
+        (24, "DenkOne", "DenkOne", 400, false),
+        (25, "Fondamento", "Fondamento", 400, false),
+        (26, "FredokaOne", "FredokaOne", 400, false),
+        (27, "GrenzeGotisch", "GrenzeGotisch", 400, false),
+        (28, "IndieFlower", "IndieFlower", 400, false),
+        (29, "JosefinSans", "JosefinSans", 400, false),
+        (30, "Jura", "Jura", 400, false),
+        (31, "Kalam", "Kalam", 400, false),
+        (32, "LuckiestGuy", "LuckiestGuy", 400, false),
+        (33, "Merriweather", "Merriweather", 400, false),
+        (34, "Michroma", "Michroma", 400, false),
+        (35, "Nunito", "Nunito", 400, false),
+        (36, "Oswald", "Oswald", 400, false),
+        (37, "PatrickHand", "PatrickHand", 400, false),
+        (38, "PermanentMarker", "PermanentMarker", 400, false),
+        (39, "Roboto", "Roboto", 400, false),
+        (40, "RobotoCondensed", "RobotoCondensed", 400, false),
+        (41, "RobotoMono", "RobotoMono", 400, false),
+        (42, "Sarpanch", "Sarpanch", 400, false),
+        (43, "SpecialElite", "SpecialElite", 400, false),
+        (44, "TitilliumWeb", "TitilliumWeb", 400, false),
+        (45, "Ubuntu", "Ubuntu", 400, false),
+        (46, "BuilderSans", "BuilderSans", 400, false),
+        (47, "BuilderSansMedium", "BuilderSans", 500, false),
+        (48, "BuilderSansBold", "BuilderSans", 700, false),
+        (49, "BuilderSansExtraBold", "BuilderSans", 800, false),
+        (50, "Arimo", "Arimo", 400, false),
+        (51, "ArimoBold", "Arimo", 700, false),
+    ];
+
+    #[test]
+    fn every_enum_font_names_the_face_studio_gives_it() {
+        for (ordinal, name, family, weight, italic) in STUDIO {
+            let font = Font::from_legacy(ordinal).unwrap_or_else(|| panic!("{name} has no face"));
+            assert_eq!(
+                (
+                    font.family.as_str(),
+                    font.weight,
+                    font.style == FontStyle::Italic
+                ),
+                (
+                    format!("rbxasset://fonts/families/{family}.json").as_str(),
+                    weight,
+                    italic
+                ),
+                "Enum.Font.{name}"
+            );
+            assert_eq!(font.legacy(), ordinal, "Enum.Font.{name} round-trips");
+        }
     }
 }
