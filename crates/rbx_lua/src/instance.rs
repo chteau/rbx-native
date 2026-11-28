@@ -1,6 +1,7 @@
 //! `Instance` userdata: one DOM node seen from Luau.
 
 mod bounds;
+mod content_text;
 pub(crate) mod tags;
 pub(crate) mod tree;
 
@@ -594,6 +595,12 @@ impl UserData for LuaInstance {
                         }
                         None => Ok(Value::Nil),
                     };
+                }
+                "ContentText" => {
+                    let text = content_text::of(&this.ctx.dom(), this.referent);
+                    if let Some(text) = text {
+                        return text.into_lua(lua);
+                    }
                 }
                 _ => {}
             }

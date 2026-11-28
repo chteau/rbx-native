@@ -278,3 +278,42 @@ print("pos", screen.Button.AbsolutePosition, inset.Min.X, inset.Height)
         "{lines:?}"
     );
 }
+
+/// A box focused from a script (the Command Bar's `CaptureFocus`) and
+/// typed into: `FocusLost` already sees the typed `Text`, and
+/// `ContentText` with it.
+#[test]
+fn focus_lost_sees_what_was_typed() {
+    let mut session = playing(
+        r#"
+local box = script.Parent.Box
+box.ClearTextOnFocus = false
+box.Focused:Connect(function() print("focused") end)
+box.FocusLost:Connect(function(enter)
+    print("lost", enter, "[" .. box.Text .. "]", "[" .. box.ContentText .. "]")
+end)
+"#,
+    );
+    output(&mut session);
+    session.act(
+        rbx_sim::Peer::Client(0),
+        rbx_sim::replay::Action::Command(
+            "game.Players.LocalPlayer.PlayerGui.Screen.Box:CaptureFocus()".into(),
+        ),
+    );
+    session.step();
+    session.step();
+    for (code, text) in [("Two", "\u{e9}"), ("Zero", "\u{e0}")] {
+        session.input(0, Input::Text { text: text.into() });
+        key(&mut session, code);
+    }
+    key(&mut session, "Return");
+    let lines = output(&mut session);
+    assert!(lines.iter().any(|l| l.ends_with("focused")), "{lines:?}");
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.ends_with("lost true [\u{e9}\u{e0}] [\u{e9}\u{e0}]")),
+        "{lines:?}"
+    );
+}

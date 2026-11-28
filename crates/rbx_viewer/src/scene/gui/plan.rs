@@ -45,7 +45,7 @@ pub(super) use scrolling::Inset;
 pub(super) use scrolling::Scrolling;
 pub(super) use shadow::Shadow;
 pub(super) use starter::hides_contents;
-pub use starter::{player_gui, set_player_gui, shows_screen};
+pub use starter::{player_gui, set_player_gui, shows_screen, NO_PLAYER_GUI};
 pub(crate) use stroke::Join;
 pub(super) use stroke::{Stroke, StrokePosition};
 pub(crate) use text::Span as TextSpan;

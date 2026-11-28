@@ -945,10 +945,10 @@ impl Shell {
                 &mut self.output,
                 Feedback::Info("Server & Clients started".to_owned()),
             );
-            if let Some(note) = note {
-                push_row(&mut self.output, Feedback::Info(note));
-            }
             self.local_run_open_windows(output, cx);
+            if let Some(note) = note {
+                self.local_run_server_note(note, cx);
+            }
             cx.notify();
             return;
         }
@@ -956,6 +956,8 @@ impl Shell {
             self.viewport
                 .update(cx, |viewport, _| viewport.core_gui.joining = true);
         }
+        // The server has no player, so no screen of its own.
+        self.show_player_gui(Some(rbx_viewer::NO_PLAYER_GUI), cx);
         self.properties = Properties::new(self.database.clone());
         self.rebuild_explorer(cx);
         let started = if playing {
@@ -1066,9 +1068,7 @@ impl Shell {
         sim.take_view_changes();
         let shown = sim.dom().clone();
         if !client {
-            self.play.live.local.shown_gui = None;
-            self.viewport
-                .update(cx, |viewport, _| viewport.set_player_gui(None));
+            self.show_player_gui(Some(rbx_viewer::NO_PLAYER_GUI), cx);
         }
         self.deselect(cx);
         let changes = changes_between(&self.dom, &shown);
@@ -1095,7 +1095,8 @@ impl Shell {
         self.viewport
             .update(cx, |viewport, _| viewport.set_player_gui(player_gui));
         // A reparenting nobody can place re-plans every screen.
-        let Some(any) = player_gui.or_else(|| self.dom.root_refs().first().copied()) else {
+        let shown = player_gui.filter(|gui| *gui != rbx_viewer::NO_PLAYER_GUI);
+        let Some(any) = shown.or_else(|| self.dom.root_refs().first().copied()) else {
             return;
         };
         let parent = self.dom.parent(any);

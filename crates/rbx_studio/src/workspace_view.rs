@@ -15,6 +15,7 @@ mod changes;
 pub(crate) mod core_gui;
 pub(crate) mod device;
 mod frame;
+mod game_text;
 mod gizmo;
 mod guides;
 mod hover;
@@ -1081,9 +1082,21 @@ impl WorkspaceView {
         &mut self,
         button: u8,
         down: bool,
+        position: Point<Pixels>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        if self.play.is_none() {
+            return false;
+        }
+        // The game hit-tests a press where its mouse last was: a click
+        // with no motion over the view first (the window just came to the
+        // front, a tool that clicks without moving) still lands where it
+        // was made.
+        if down && !self.lock.holds() {
+            self.play_scale = window.scale_factor();
+            self.play_moved(position);
+        }
         let Some(play) = self.play.as_mut() else {
             return false;
         };
@@ -1094,9 +1107,28 @@ impl WorkspaceView {
         true
     }
 
-    fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) {
-        if self.terrain_key(&keystroke.key, pressed, cx) {
+    /// Text the platform typed into the view while a game runs (see
+    /// `game_text`): the open chat bar's, else the game's focused TextBox's.
+    fn game_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        let typed = game_text::typed(text);
+        if typed.is_empty() {
             return;
+        }
+        if self.core_gui.paste(&typed) {
+            cx.notify();
+        } else if !self.core_gui.has_keys() {
+            if let Some(play) = self.play.as_mut() {
+                play.text(&typed);
+            }
+        }
+    }
+
+    /// A key over the view. `true` when the key was the chat bar's or the
+    /// menu's to open or work, so the platform mustn't type it as well
+    /// (the `/` that opens the chat isn't in the message).
+    fn key(&mut self, keystroke: &Keystroke, pressed: bool, cx: &mut Context<Self>) -> bool {
+        if self.terrain_key(&keystroke.key, pressed, cx) {
+            return false;
         }
         let layout = Layout::of(cx.keyboard_layout().name());
         if self.play.is_some() && pressed && keystroke.key == "v" && keystroke.modifiers.secondary()
@@ -1104,10 +1136,11 @@ impl WorkspaceView {
             if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
                 if self.core_gui.paste(&text) {
                     cx.notify();
-                    return;
+                    return true;
                 }
             }
         }
+        let chatting = self.core_gui.chatting();
         if self.play.is_some() && self.core_gui.key(keystroke, pressed) {
             if self.core_gui.has_keys() {
                 if let Some(play) = self.play.as_mut() {
@@ -1115,7 +1148,8 @@ impl WorkspaceView {
                 }
             }
             cx.notify();
-            return;
+            // A key typed into an open chat bar comes as text too.
+            return !chatting;
         }
         if let Some(play) = self.play.as_mut() {
             // X reports the Shift a key was typed with on the key itself,
@@ -1123,24 +1157,15 @@ impl WorkspaceView {
             if pressed {
                 play.shift(keystroke.modifiers.shift);
             }
-            if pressed {
-                // What the key typed, in the layout's own characters, for a
-                // focused TextBox; Ctrl+V (Cmd+V) pastes, as in Roblox.
-                if keystroke.key == "v" && keystroke.modifiers.secondary() {
-                    if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
-                        play.text(&text);
-                    }
-                } else if !keystroke.modifiers.platform
-                    // AltGr comes as Ctrl+Alt on Windows and types.
-                    && keystroke.modifiers.control == keystroke.modifiers.alt
-                {
-                    if let Some(typed) = keystroke.key_char.as_deref() {
-                        play.text(typed);
-                    }
+            // Ctrl+V (Cmd+V) pastes into a focused TextBox, as in Roblox.
+            // What a key types comes as text (`game_text`).
+            if pressed && keystroke.key == "v" && keystroke.modifiers.secondary() {
+                if let Some(text) = cx.read_from_clipboard().and_then(|c| c.text()) {
+                    play.text(&text);
                 }
             }
             if play.key(&keystroke.key, pressed, layout == Layout::Azerty) {
-                return;
+                return false;
             }
         }
         // Only on the press: a tool switch is an edge, not a state the way the
@@ -1152,14 +1177,14 @@ impl WorkspaceView {
             // so that `Alt`, the drag's Hold Orientation, with `R` turns
             // the part rather than jumping to the rotate increment field.
             if self.turn_key(&keystroke.key, keystroke.modifiers, cx) {
-                return;
+                return false;
             }
             let (key, modifiers) = tool_key(&keystroke.key, keystroke.modifiers, layout);
             match transform::action_for(key, modifiers) {
                 Some(transform::Action::ToggleJoint) if !self.transform.posing => {}
                 Some(action) => {
                     cx.emit(ViewportAction::Tool(action));
-                    return;
+                    return false;
                 }
                 None => {}
             }
@@ -1177,14 +1202,15 @@ impl WorkspaceView {
             && crate::shortcuts::released(crate::shortcuts::Command::SummonHandles, keystroke)
         {
             self.release_summon();
-            return;
+            return false;
         }
         if pressed && chorded(keystroke.modifiers) {
-            return;
+            return false;
         }
         if let Some(key) = camera_key(&keystroke.key, layout) {
             self.pump.input(CameraInput::Key { key, pressed });
         }
+        false
     }
 
     /// Switches transform tool, or its world/local orientation, pushed down
@@ -1269,7 +1295,9 @@ impl WorkspaceView {
     pub(crate) fn set_play_local(&mut self, playing: bool) {
         self.core_gui.clear();
         if playing {
-            self.play = Some(PlayInput::default());
+            let mut play = PlayInput::default();
+            play.text("");
+            self.play = Some(play);
             self.play_return = self.view;
             return;
         }
@@ -1531,6 +1559,10 @@ impl Render for WorkspaceView {
             device_pixels(cap.width, scale),
             device_pixels(cap.height, scale),
         );
+        let text_input = self
+            .play
+            .is_some()
+            .then(|| (self.focus.clone(), cx.entity().downgrade()));
 
         div()
             // Only `on_hover` (used below, to clear the hover outline when
@@ -1556,7 +1588,7 @@ impl Render for WorkspaceView {
                 MouseButton::Left,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
                     view.note_input();
-                    if view.play_button(1, true, window, cx) {
+                    if view.play_button(1, true, event.position, window, cx) {
                         return;
                     }
                     window.focus(&view.focus, cx);
@@ -1575,7 +1607,7 @@ impl Render for WorkspaceView {
             .on_mouse_up(
                 MouseButton::Left,
                 cx.listener(|view, event: &MouseUpEvent, window, cx| {
-                    if view.play_button(1, false, window, cx) {
+                    if view.play_button(1, false, event.position, window, cx) {
                         return;
                     }
                     let scale = window.scale_factor();
@@ -1590,8 +1622,8 @@ impl Render for WorkspaceView {
             // keep following the cursor with nothing to let go of it.
             .on_mouse_up_out(
                 MouseButton::Left,
-                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                    if view.play_button(1, false, window, cx) {
+                cx.listener(|view, event: &MouseUpEvent, window, cx| {
+                    if view.play_button(1, false, event.position, window, cx) {
                         return;
                     }
                     if !view.plugin_release(cx) {
@@ -1603,7 +1635,7 @@ impl Render for WorkspaceView {
                 MouseButton::Middle,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
                     view.note_input();
-                    if view.play_button(3, true, window, cx) {
+                    if view.play_button(3, true, event.position, window, cx) {
                         return;
                     }
                     view.begin_pan(event.position, window.scale_factor(), window, cx);
@@ -1611,16 +1643,16 @@ impl Render for WorkspaceView {
             )
             .on_mouse_up(
                 MouseButton::Middle,
-                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                    if !view.play_button(3, false, window, cx) {
+                cx.listener(|view, event: &MouseUpEvent, window, cx| {
+                    if !view.play_button(3, false, event.position, window, cx) {
                         view.end_look();
                     }
                 }),
             )
             .on_mouse_up_out(
                 MouseButton::Middle,
-                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                    if !view.play_button(3, false, window, cx) {
+                cx.listener(|view, event: &MouseUpEvent, window, cx| {
+                    if !view.play_button(3, false, event.position, window, cx) {
                         view.end_look();
                     }
                 }),
@@ -1629,7 +1661,7 @@ impl Render for WorkspaceView {
                 MouseButton::Right,
                 cx.listener(|view, event: &MouseDownEvent, window, cx| {
                     view.note_input();
-                    if view.play_button(2, true, window, cx) {
+                    if view.play_button(2, true, event.position, window, cx) {
                         return;
                     }
                     view.plugin_mouse_press(2, event.position, window.scale_factor(), cx);
@@ -1641,7 +1673,7 @@ impl Render for WorkspaceView {
             .on_mouse_up(
                 MouseButton::Right,
                 cx.listener(|view, event: &MouseUpEvent, window, cx| {
-                    if view.play_button(2, false, window, cx) {
+                    if view.play_button(2, false, event.position, window, cx) {
                         return;
                     }
                     view.plugin_mouse_release(2, event.position, window.scale_factor(), cx);
@@ -1652,8 +1684,8 @@ impl Render for WorkspaceView {
             // button would stay logically held with nothing to release it.
             .on_mouse_up_out(
                 MouseButton::Right,
-                cx.listener(|view, _: &MouseUpEvent, window, cx| {
-                    if !view.play_button(2, false, window, cx) {
+                cx.listener(|view, event: &MouseUpEvent, window, cx| {
+                    if !view.play_button(2, false, event.position, window, cx) {
                         view.end_look();
                     }
                 }),
@@ -1745,7 +1777,9 @@ impl Render for WorkspaceView {
                 if !event.is_held {
                     view.key(&event.keystroke, false, cx);
                 }
-                view.key(&event.keystroke, true, cx);
+                if view.key(&event.keystroke, true, cx) {
+                    cx.stop_propagation();
+                }
             }))
             // Always, the measurement box's focus or not: a camera key held
             // as the box took the keyboard is still released here, or the
@@ -1833,7 +1867,13 @@ impl Render for WorkspaceView {
                             max_scale,
                         ));
                     },
-                    |_, _: (), _, _| {},
+                    // While a game runs, what the keyboard types comes as
+                    // the platform's text, for its TextBoxes and chat.
+                    move |_, _: (), window, cx| {
+                        if let Some((focus, view)) = text_input {
+                            window.handle_input(&focus, game_text::GameText(view), cx);
+                        }
+                    },
                 )
                 .absolute()
                 // Pinned rather than left to `absolute`'s default: with no inset

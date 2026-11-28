@@ -48,6 +48,9 @@ const HOTBAR_FONT: &str = "Source Sans Pro";
 const WHITE: u32 = 0xf7f7f8;
 /// The top bar buttons' fill.
 const BAR: u32 = 0x191f24;
+/// Below this view height (logical pixels) the Escape menu packs tighter.
+const SHORT_MENU: f32 = 600.;
+
 /// The confirm and Resume buttons' blue.
 const BLUE: u32 = 0x1e3072;
 /// The equipped slot's outline.
@@ -286,6 +289,10 @@ impl CoreGuiView {
         if self.state.is_none() {
             return false;
         }
+        // The game's focused TextBox takes `/` and Escape itself.
+        if self.draft.is_none() && !self.menu && self.state.as_ref().is_some_and(|s| s.typing) {
+            return false;
+        }
         let key = keystroke.key.as_str();
         if let Some(draft) = self.draft.as_mut() {
             if pressed {
@@ -302,17 +309,8 @@ impl CoreGuiView {
                     "backspace" => {
                         draft.pop();
                     }
-                    "space" => draft.push(' '),
-                    "v" if keystroke.modifiers.secondary() => {}
-                    _ => {
-                        if let Some(typed) = keystroke
-                            .key_char
-                            .as_ref()
-                            .filter(|c| !c.chars().any(char::is_control))
-                        {
-                            draft.push_str(typed);
-                        }
-                    }
+                    // What a key types arrives as text (`paste`).
+                    _ => {}
                 }
             }
             return true;
@@ -356,8 +354,8 @@ impl CoreGuiView {
         }
     }
 
-    /// Ctrl+V (Cmd+V) in the chat bar: the clipboard's text, on one line.
-    /// Whether the bar took it.
+    /// Text typed or pasted (Ctrl+V, Cmd+V) into the chat bar, on one
+    /// line. Whether the bar took it.
     pub(crate) fn paste(&mut self, text: &str) -> bool {
         let Some(draft) = self.draft.as_mut() else {
             return false;
@@ -390,6 +388,11 @@ impl CoreGuiView {
     /// Whether the Escape menu is up (the game's `GuiService.MenuIsOpen`).
     pub(crate) fn menu_open(&self) -> bool {
         self.menu
+    }
+
+    /// Whether the chat bar is open, typing a message.
+    pub(crate) fn chatting(&self) -> bool {
+        self.draft.is_some()
     }
 
     /// Whether the menu or the chat bar holds the keyboard (the game's
@@ -1130,6 +1133,10 @@ impl WorkspaceView {
     fn core_menu(&self, cx: &mut Context<Self>) -> Div {
         let core = &self.core_gui;
         let can_reset = core.can_reset();
+        // A view of a docked editor's usual height packs the menu tighter,
+        // so the People page shows its players without scrolling.
+        let height = self.viewport.get().size.1 as f32 / self.play_scale.max(0.01);
+        let short = height < SHORT_MENU;
         let panel = div()
             .h_full()
             .w(px(840.))
@@ -1142,8 +1149,8 @@ impl WorkspaceView {
         let backdrop = div()
             .absolute()
             .inset_0()
-            .pt(px(72.))
-            .pb(px(52.))
+            .pt(px(if short { 64. } else { 72. }))
+            .pb(px(if short { 12. } else { 52. }))
             .flex()
             .justify_center()
             .bg(rgba(0x00000080))
@@ -1221,7 +1228,7 @@ impl WorkspaceView {
         }
         let tabs = div()
             .mx(px(24.))
-            .h(px(60.))
+            .h(px(if short { 48. } else { 60. }))
             .flex()
             .border_b_1()
             .border_color(rgba(0xffffff26))
@@ -1254,7 +1261,7 @@ impl WorkspaceView {
                     )
             }));
         let page = match core.tab {
-            Tab::People => self.menu_people(),
+            Tab::People => self.menu_people(short),
             Tab::Settings => self.menu_settings(cx),
             tab => div().px(px(32.)).pt(px(24.)).text_size(px(16.)).text_color(rgb(0xc4c6ca)).child(
                 match tab {
@@ -1266,7 +1273,7 @@ impl WorkspaceView {
         };
         let buttons = div()
             .px(px(20.))
-            .pb(px(20.))
+            .pb(px(if short { 12. } else { 20. }))
             .flex()
             .gap(px(9.))
             .child(
@@ -1330,7 +1337,7 @@ impl WorkspaceView {
     }
 
     /// The menu's People page: Invite Friends, then everyone in the server.
-    fn menu_people(&self) -> Div {
+    fn menu_people(&self, short: bool) -> Div {
         let players = self
             .core_gui
             .state
@@ -1349,13 +1356,13 @@ impl WorkspaceView {
         };
         div()
             .px(px(32.))
-            .pt(px(18.))
+            .pt(px(if short { 10. } else { 18. }))
             .flex()
             .flex_col()
-            .gap(px(14.))
+            .gap(px(if short { 8. } else { 14. }))
             .child(
                 div()
-                    .h(px(48.))
+                    .h(px(if short { 40. } else { 48. }))
                     .px(px(20.))
                     .flex()
                     .items_center()
@@ -1744,10 +1751,11 @@ mod tests {
         assert!(!view.chat_open);
         assert!(press(&mut view, "/"));
         assert!(view.chat_open && view.has_keys());
-        press(&mut view, "h");
-        press(&mut view, "i");
+        // A key's characters come as the platform's text, not from the key.
+        press(&mut view, "q");
+        assert!(view.paste("h\u{e9}"));
         press(&mut view, "enter");
-        assert_eq!(view.take_actions(), [CoreAction::Say("hi".into())]);
+        assert_eq!(view.take_actions(), [CoreAction::Say("h\u{e9}".into())]);
         assert!(view.chat_open && !view.has_keys());
     }
 

@@ -64,7 +64,7 @@ pub(crate) use gui::{
 };
 pub use gui::{
     player_gui, pseudo_localize, rich_runs, set_player_gui, shows_screen, GuiScrolls, PseudoLocale,
-    RichRun, SafeInsets, ScrollTarget, ThumbGrab,
+    RichRun, SafeInsets, ScrollTarget, ThumbGrab, NO_PLAYER_GUI,
 };
 pub(crate) use highlight::{DepthMode, Highlight, MAX_HIGHLIGHTS};
 pub(crate) use identity::PartId;

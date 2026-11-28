@@ -244,8 +244,8 @@ impl Shell {
                     true,
                     cx.listener(|shell, _, window, cx| {
                         // Server & Clients' window closes with the session;
-                        // a peer popped out of it goes back to its tab.
-                        if shell.local_run_dock_back(cx) {
+                        // a peer popped out of it closes as its tab does.
+                        if shell.local_run_close_apart(cx) {
                         } else if shell.play.live.local.peer.is_some() {
                             shell.local_run_stop(cx);
                         } else if shell.request_quit(cx) {

@@ -167,13 +167,14 @@ impl PlayInput {
         true
     }
 
-    /// Characters typed or pasted, for the game's focused TextBox.
+    /// Characters typed or pasted, for the game's focused TextBox. Empty,
+    /// it tells the game up front that text comes this way: the platform
+    /// sends a key's text after the key, and a box must not type the key's
+    /// US character first.
     pub(crate) fn text(&mut self, text: &str) {
-        if !text.is_empty() {
-            self.queued.push(Input::Text {
-                text: text.to_owned(),
-            });
-        }
+        self.queued.push(Input::Text {
+            text: text.to_owned(),
+        });
     }
 
     /// Shift, which only ever arrives as a modifier change.

@@ -892,6 +892,12 @@ impl Hooks for ServerHooks {
         Ok(None)
     }
 
+    /// Studio puts `Selection` in a test's DataModels too, so the command
+    /// bar's `game.Selection` works during Play as it does in Edit.
+    fn implicit_service(&self, name: &str) -> bool {
+        name == "Selection"
+    }
+
     fn game_member(&self, lua: &Lua, key: &str) -> Result<Option<Value>> {
         match key {
             "IsLoaded" => flag(lua, self.loaded.get()),

@@ -195,6 +195,7 @@ fn every_message_and_value_crosses_unchanged() {
             chat: true,
             chat_bar: false,
             topbar: true,
+            typing: true,
         }),
         chat: vec![ChatLine {
             prefix: "a:".into(),

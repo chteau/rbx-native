@@ -86,9 +86,13 @@ impl TestWindowHandle {
             Some(view) => view.read(cx).windows(),
             None => vec![self.handle],
         };
-        for window in windows {
-            let _ = window.update(cx, |_, window, _| window.remove_window());
-        }
+        // Once the update that ended the session is over: a window can't
+        // be closed while it's handling the click that asked.
+        cx.defer(move |cx| {
+            for window in windows {
+                let _ = window.update(cx, |_, window, _| window.remove_window());
+            }
+        });
     }
 }
 
@@ -323,6 +327,25 @@ impl Shell {
         self.local_run_route_rows(output, cx);
     }
 
+    /// Who the test players play as, in the Server tab's Output, where
+    /// the test's own lines are (this window's Output stays the edit
+    /// place's).
+    pub(super) fn local_run_server_note(&mut self, note: String, cx: &mut Context<Self>) {
+        let server = self.play.live.local.running.as_ref().and_then(|run| {
+            run.windows
+                .iter()
+                .find(|w| w.home == Home::Server)
+                .and_then(|w| w.shell.upgrade())
+        });
+        match server {
+            Some(shell) => shell.update(cx, |shell, cx| {
+                push_row(&mut shell.output, Feedback::Info(note));
+                cx.notify();
+            }),
+            None => push_row(&mut self.output, Feedback::Info(note)),
+        }
+    }
+
     /// A tab for each player who has none: the test players once they
     /// joined.
     pub(super) fn local_run_open_player_windows(&mut self, cx: &mut Context<Self>) {
@@ -441,6 +464,11 @@ impl Shell {
                 viewport.core_gui.badges = badges;
                 viewport.set_play_local(home != Home::Server);
             });
+            // The server has no player: Studio's Server view draws no
+            // screen, StarterGui's included.
+            if home == Home::Server {
+                shell.show_player_gui(Some(rbx_viewer::NO_PLAYER_GUI), cx);
+            }
         });
         if let Some(run) = self.play.live.local.running.as_mut() {
             if handle.is_some() {
@@ -904,7 +932,7 @@ impl Shell {
         self.dom = dom.clone();
         self.dom.take_changes();
         if !client {
-            self.show_player_gui(None, cx);
+            self.show_player_gui(Some(rbx_viewer::NO_PLAYER_GUI), cx);
         }
         let snapshots = self.dom.snapshot(&changes);
         self.viewport
