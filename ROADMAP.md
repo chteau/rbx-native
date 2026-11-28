@@ -3945,6 +3945,18 @@ shipped or built and what can't be: `docs/research/devforum-requests/README.md`)
   catalog for the editor's own text, a language picker in Studio Settings,
   English and French first.
 
+### Platform
+- [ ] 📋 **Android port of the whole app**: most of the people asking
+  about RbxNative are on phones and tablets, so the full editor should run
+  there too, not just a viewer. The renderer (wgpu on Vulkan/GLES) and the
+  file formats port as they are; the big pieces are a GPUI back end for
+  Android (or a touch shell around the same views), a touch-first layout
+  (bigger hit targets, the docks as sheets and tabs, a gizmo you can drag
+  with a finger, an on-screen modifier row for shortcuts), the Android
+  Keystore in place of the OS keyring, the system file picker for places
+  and models, and Play through Local Run since the Linux clients can't be
+  embedded there. Plugins, luau-lsp and File Sync need their own check.
+
 ### Play / Test workflow
 - [x] **Shareable bug repros**: the Playtests dock's Export repro… writes
   one `.rbxrepro` (the recording, the place or just its id and hash, the
