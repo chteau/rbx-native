@@ -35,6 +35,42 @@ pub(in crate::shell) const EXPORT_DIR_VARIABLE: &str = "RBX_STUDIO_EXPORT_DIR";
 /// The `source` an export's row carries in the Output dock.
 const SOURCE: &str = "Export";
 
+/// The folder the last save dialog was confirmed in, where the next opens.
+static LAST_DIRECTORY: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// Where a save dialog opens: the folder last saved to, else the place's
+/// own, unless that is one this app keeps for itself (an untitled place's
+/// temp folder, a cloud place's cached copy), which gets Documents.
+fn start_directory(place: &Path, last: Option<PathBuf>) -> PathBuf {
+    if let Some(last) = last {
+        return last;
+    }
+    let ours = |dir: &Path| {
+        let temp = std::env::temp_dir();
+        dir.as_os_str().is_empty()
+            || dir.starts_with(&temp)
+            || temp.canonicalize().is_ok_and(|temp| dir.starts_with(temp))
+            || crate::settings::default_config_dir().is_some_and(|config| dir.starts_with(config))
+    };
+    match place.parent() {
+        Some(parent) if !ours(parent) => parent.to_path_buf(),
+        _ => documents(),
+    }
+}
+
+/// The user's Documents folder, else their home, else the working one.
+fn documents() -> PathBuf {
+    let home = std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    let documents = home.join("Documents");
+    if documents.is_dir() {
+        documents
+    } else {
+        home
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Export {
     Model,
@@ -191,18 +227,20 @@ impl Shell {
             self.export_to(kind, &roots, &Path::new(&directory).join(suggested), cx);
             return;
         }
-        let directory = self
-            .path
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."));
+        let last = LAST_DIRECTORY.lock().ok().and_then(|last| last.clone());
+        let directory = start_directory(&self.path, last);
         let picked = cx.prompt_for_new_path(&directory, Some(&suggested));
         cx.spawn(async move |this, cx| {
             let Ok(picked) = picked.await else {
                 return;
             };
             let _ = this.update(cx, |shell, cx| match picked {
-                Ok(Some(path)) => shell.export_to(kind, &roots, &path, cx),
+                Ok(Some(path)) => {
+                    if let (Ok(mut last), Some(parent)) = (LAST_DIRECTORY.lock(), path.parent()) {
+                        *last = Some(parent.to_path_buf());
+                    }
+                    shell.export_to(kind, &roots, &path, cx)
+                }
                 Ok(None) => {}
                 // No file chooser portal to ask: say so rather than a menu
                 // row that silently does nothing.

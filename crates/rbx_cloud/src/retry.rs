@@ -104,6 +104,9 @@ fn backoff(
 ) -> Option<Duration> {
     let exponential = FIRST_BACKOFF * 2u32.pow(retry - 1);
     let delay = match outcome {
+        // Refused before it left because the app is offline: asking again
+        // is refused the same way, so it fails at once.
+        Err(CloudError::Transport(message)) if rbx_net::is_offline_message(message) => return None,
         // A connection that dropped mid-burst says nothing about the asset.
         Err(CloudError::Transport(_)) if !only_rate_limits => exponential,
         Ok(response) if only_rate_limits && response.status == 429 => retry_after(response)
@@ -279,6 +282,15 @@ mod tests {
 
         assert_eq!(result.unwrap().status, 200);
         assert_eq!(waited, [Duration::from_millis(500)]);
+    }
+
+    #[test]
+    fn a_request_refused_offline_fails_at_once() {
+        let refused = format!("io: {}", rbx_net::offline_error());
+        let (result, waited) = run(vec![Err(CloudError::Transport(refused))]);
+
+        assert!(result.is_err());
+        assert!(waited.is_empty());
     }
 
     // The statuses the asset path reads itself: a 404 is the answer, and a

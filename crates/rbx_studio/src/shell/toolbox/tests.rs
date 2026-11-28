@@ -280,6 +280,12 @@ fn a_part_inserted_where_one_sits_stacks_on_it() {
         .unwrap();
     dom.set_property(spawn, "CFrame", Variant::CFrame(cframe(0., 0.5, 0.)))
         .unwrap();
+    // A place's Terrain, with the map-sized box Studio saves it with.
+    let terrain = dom.new_instance("Terrain", "Terrain", Some(workspace));
+    dom.set_property(terrain, "size", Variant::Vector3(vec3(2044., 252., 2044.)))
+        .unwrap();
+    dom.set_property(terrain, "CFrame", Variant::CFrame(cframe(0., 0., 0.)))
+        .unwrap();
     let first = block(&mut dom, 1.5);
     clear_overlaps(&mut dom, workspace, first);
     assert!(near(position(&dom, first)[1], 1.5));

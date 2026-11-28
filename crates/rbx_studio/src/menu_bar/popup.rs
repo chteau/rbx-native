@@ -86,7 +86,7 @@ pub(super) fn dropdown(
             .map(|display| display.visible_bounds().bottom()),
     );
     // Read once as the menu opens: a command that needs Roblox reads
-    // "You're offline" under its name, greyed out.
+    // "You're offline" beside its name, greyed out.
     let offline = crate::offline::blocked();
     PopupMenu::build(window, cx, move |menu, _, _| {
         let menu = items.iter().fold(menu, |menu, item| match item {
@@ -102,10 +102,10 @@ pub(super) fn dropdown(
             {
                 let (label, shortcut_action) = (name.clone(), action.boxed_clone());
                 let cut_off = offline && crate::offline::needs_roblox(action.as_ref());
-                let detail = match cut_off {
-                    true => Some(crate::offline::TIP),
-                    false => primary_detail(name),
-                };
+                // Offline, the reason sits where the shortcut would, on the
+                // row's own line: a second line under every greyed command
+                // made the File menu taller than a 1080p screen.
+                let detail = (!cut_off).then(|| primary_detail(name)).flatten();
                 let row_height = if detail.is_some() {
                     tokens::primary_target()
                 } else {
@@ -122,8 +122,10 @@ pub(super) fn dropdown(
                             .or_else(|| {
                                 Kbd::binding_for_action(shortcut_action.as_ref(), None, window)
                             });
+                        let hint = hint.filter(|_| !cut_off);
                         let fallback = match hint {
                             Some(_) => None,
+                            None if cut_off => Some(crate::offline::TIP.to_owned()),
                             None => crate::shortcuts::command_for_action(shortcut_action.as_ref())
                                 .and_then(crate::shortcuts::hint),
                         };

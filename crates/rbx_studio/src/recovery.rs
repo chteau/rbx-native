@@ -75,8 +75,9 @@ pub(crate) fn copy_path(folder: &Path, place: &Path, slot: u32) -> PathBuf {
     folder.join(format!("{stem} (recovery {hash:08x}{slot}).{extension}"))
 }
 
-/// The lock file beside `copy`. It stays on disk; only the OS lock on it
-/// means anything, and the OS drops that when its holder exits or dies.
+/// The lock file beside `copy`. Only the OS lock on it means anything, and
+/// the OS drops that when its holder exits or dies; an editor closing with
+/// no copy left deletes it (see [`release`]).
 fn lock_path(copy: &Path) -> PathBuf {
     let mut name = copy.file_name().unwrap_or_default().to_os_string();
     name.push(".lock");
@@ -110,15 +111,22 @@ pub(crate) fn claim(folder: &Path, place: &Path) -> std::io::Result<(PathBuf, Fi
 /// (no process holds their lock), each with its lock now held so no editor
 /// starting meanwhile claims the slot before the caller moves the copy
 /// aside. `own` is this session's copy, skipped. Slots are claimed lowest
-/// first and lock files stay on disk, so the first slot without one ends
-/// the search.
+/// first, but a closed editor's lock file goes with it, so the search ends
+/// only after a run of slots without one.
 pub(crate) fn orphans(folder: &Path, place: &Path, own: &Path) -> Vec<(PathBuf, File)> {
+    const GAP: u32 = 8;
     let mut found = Vec::new();
+    let mut missing = 0;
     for slot in 1.. {
         let copy = copy_path(folder, place, slot);
         let Ok(lock) = File::options().write(true).open(lock_path(&copy)) else {
-            break;
+            missing += 1;
+            if missing > GAP {
+                break;
+            }
+            continue;
         };
+        missing = 0;
         if copy != own && copy.exists() && lock.try_lock().is_ok() {
             found.push((copy, lock));
         }
@@ -160,7 +168,11 @@ pub(crate) fn leftovers(folder: &Path) -> Vec<Leftover> {
             let path = entry.path();
             let file = entry.file_name().to_string_lossy().into_owned();
             let (name, _) = file.split_once(" (recovery ")?;
-            if file.ends_with(".lock") || is_temp(&file) || is_held(&path) {
+            if let Some(copy) = file.strip_suffix(".lock") {
+                sweep_lock(&path, &path.with_file_name(copy));
+                return None;
+            }
+            if is_temp(&file) || is_held(&path) {
                 return None;
             }
             let meta = entry.metadata().ok().filter(|meta| meta.is_file())?;
@@ -179,6 +191,18 @@ pub(crate) fn leftovers(folder: &Path) -> Vec<Leftover> {
     found
 }
 
+/// Deletes a lock file guarding no copy that no editor holds: one left by
+/// an editor that quit or died rather than closing its place.
+fn sweep_lock(lock: &Path, copy: &Path) {
+    let free = File::options()
+        .write(true)
+        .open(lock)
+        .is_ok_and(|file| file.try_lock().is_ok());
+    if free && !copy.exists() {
+        let _ = std::fs::remove_file(lock);
+    }
+}
+
 /// Whether a running editor holds `copy`'s lock. The lock is taken only to
 /// find out and dropped at once.
 fn is_held(copy: &Path) -> bool {
@@ -186,6 +210,15 @@ fn is_held(copy: &Path) -> bool {
         .write(true)
         .open(lock_path(copy))
         .is_ok_and(|lock| matches!(lock.try_lock(), Err(TryLockError::WouldBlock)))
+}
+
+/// An editor done with `copy`: its lock file is deleted when no copy is
+/// left to guard, so closed places don't leave empty `.lock` files behind.
+/// Called while the lock is still held, so no other editor can be using it.
+pub(crate) fn release(copy: &Path) {
+    if !copy.exists() {
+        let _ = std::fs::remove_file(lock_path(copy));
+    }
 }
 
 /// Deletes a leftover copy, and its lock file when it is a live-named one
@@ -273,6 +306,24 @@ mod tests {
             Path::new(&format!("{}.lock", first.display()))
         );
         assert!(!is_temp(&lock_path(&first).to_string_lossy()));
+    }
+
+    #[test]
+    fn a_closed_or_quit_editor_leaves_no_empty_lock_file() {
+        let folder =
+            std::env::temp_dir().join(format!("rbx-recovery-release-{}", std::process::id()));
+        let place = Path::new("/games/Obby.rbxl");
+        let (closed, lock) = claim(&folder, place).unwrap();
+        release(&closed);
+        drop(lock);
+        assert!(!lock_path(&closed).exists());
+        let (running, _held) = claim(&folder, place).unwrap();
+        let (quit, quit_lock) = claim(&folder, place).unwrap();
+        drop(quit_lock);
+        assert!(leftovers(&folder).is_empty());
+        assert!(lock_path(&running).exists(), "a held lock stays");
+        assert!(!lock_path(&quit).exists(), "a free one with no copy goes");
+        let _ = std::fs::remove_dir_all(&folder);
     }
 
     /// Each `File` holds its own lock (flock on Unix, LockFileEx on

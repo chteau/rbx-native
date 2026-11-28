@@ -7206,7 +7206,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_net"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "ureq",
 ]
@@ -7333,7 +7333,7 @@ dependencies = [
 
 [[package]]
 name = "rbx_studio"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

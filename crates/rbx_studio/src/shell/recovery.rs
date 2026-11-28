@@ -52,6 +52,14 @@ pub(super) struct Recovery {
     saves: u64,
 }
 
+impl Drop for Recovery {
+    fn drop(&mut self) {
+        if let (Some(copy), Some(_)) = (&self.copy, &self._lock) {
+            recovery::release(copy);
+        }
+    }
+}
+
 impl Recovery {
     pub(super) fn new(enabled: bool, minutes: u32, place: &Path) -> Self {
         Recovery {
@@ -74,10 +82,9 @@ impl Recovery {
     /// dropped. `saves` carries over, so a copy of the old place still being
     /// written knows a save landed and deletes itself.
     fn moved_to(&self, place: &Path) -> Self {
-        Recovery {
-            saves: self.saves,
-            ..Recovery::new(self.enabled, self.minutes, place)
-        }
+        let mut moved = Recovery::new(self.enabled, self.minutes, place);
+        moved.saves = self.saves;
+        moved
     }
 
     pub(super) fn enabled(&self) -> bool {

@@ -89,6 +89,8 @@ pub(crate) enum MenuId {
     UiResolution,
     /// Test › Offline: update or remove the place's offline pack.
     OfflinePack,
+    TestPlayers,
+    TestData,
     UiInsert,
     UiConstraint,
     ViewportScreen,
@@ -164,6 +166,8 @@ impl MenuId {
             MenuId::InsertOptions => "menu-insert-options",
             MenuId::UiResolution => "menu-ui-resolution",
             MenuId::OfflinePack => "menu-offline-pack",
+            MenuId::TestPlayers => "menu-test-players",
+            MenuId::TestData => "menu-test-data",
             MenuId::UiInsert => "menu-ui-insert",
             MenuId::UiConstraint => "menu-ui-constraint",
             MenuId::ViewportScreen => "menu-viewport-screen",

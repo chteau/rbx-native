@@ -93,6 +93,19 @@ pub(super) fn install_app(cx: &mut App) {
             crate::open_settings_from_home(None, cx);
         }
     });
+    // Help works with no place open, so About and the logs are reachable
+    // from a fresh launch.
+    cx.on_action(|_: &MenuAbout, cx| {
+        if Target
+            .update(cx, |shell, cx| shell.open_settings_on("about", cx))
+            .is_err()
+        {
+            crate::open_settings_from_home(Some("about"), cx);
+        }
+    });
+    cx.on_action(|_: &MenuOpenLogs, cx| crate::crash_log::open_folder(cx));
+    cx.on_action(|_: &MenuDocumentation, cx| cx.open_url(DOCUMENTATION_URL));
+    cx.on_action(|_: &MenuDeveloperForum, cx| cx.open_url(DEVELOPER_FORUM_URL));
     cx.on_action(|_: &MenuQuit, cx| {
         // No editor open (Home, the wizard) has nothing to ask.
         if Target
@@ -112,7 +125,6 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     }
     let shell = Target;
     cx.on_action(|_: &MenuOpenAutoSaves, cx| crate::recovery::open_folder(cx));
-    cx.on_action(|_: &MenuOpenLogs, cx| crate::crash_log::open_folder(cx));
     cx.on_action({
         move |action: &MenuInsertTemplate, cx| {
             let index = action.index;
@@ -252,11 +264,6 @@ pub(super) fn install(shell: &Entity<Shell>, cx: &mut App) {
     cx.on_action({
         move |_: &MenuBetaFeatures, cx| {
             let _ = shell.update(cx, |shell, cx| shell.open_settings_on("beta", cx));
-        }
-    });
-    cx.on_action({
-        move |_: &MenuAbout, cx| {
-            let _ = shell.update(cx, |shell, cx| shell.open_settings_on("about", cx));
         }
     });
     cx.on_action({
@@ -579,8 +586,6 @@ fn install_studio_menus(shell: Target, cx: &mut App) {
     cx.on_action(move |_: &MenuToggleTerrainEditor, cx| {
         let _ = shell.update(cx, |shell, cx| shell.menu_toggle_terrain_editor(cx));
     });
-    cx.on_action(|_: &MenuDocumentation, cx| cx.open_url(DOCUMENTATION_URL));
-    cx.on_action(|_: &MenuDeveloperForum, cx| cx.open_url(DEVELOPER_FORUM_URL));
 }
 
 /// Where Studio's Help › Documentation and Developer Forum go.

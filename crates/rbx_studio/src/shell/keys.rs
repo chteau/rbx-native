@@ -267,24 +267,34 @@ impl Shell {
 
     /// A part from the ribbon or the Model menu, as Studio inserts one
     /// (measured in Studio 0.748): always into Workspace, whatever is
-    /// selected, resting on whatever the view's centre line hits past the
-    /// selection, its centre on the move grid when snapping is on, lifted
-    /// clear of any part it would sink into (so a second one stacks on the
-    /// first). A block is 4 × 1 × 2 there, not `Instance.new`'s 4 × 1.2 × 2.
+    /// selected, named plainly after its class, resting on whatever the
+    /// view's centre line hits past the part this inserted last, its centre
+    /// on the move grid when snapping is on, lifted clear of any part it
+    /// would sink into (so a second one stacks on the first). A block is
+    /// 4 × 1 × 2 there, not `Instance.new`'s 4 × 1.2 × 2.
     pub(crate) fn insert_part_in_view(
         &mut self,
         class: &str,
         shape: Option<u32>,
         cx: &mut Context<Self>,
     ) {
-        // Past the selection, which after an insert is the part just put
-        // there: the next one lands where the view points and stacks on it.
-        let aim = self.aim_past(self.selected_all(), cx);
+        // Past the part just put there while it is still selected, so the
+        // next one lands where the view points and stacks on it. A part the
+        // user selected themselves is aimed at like any other.
+        let skipped: Vec<Ref> = self
+            .selected_all()
+            .iter()
+            .copied()
+            .filter(|&part| Some(part) == self.last_part_insert)
+            .collect();
+        let aim = self.aim_past(&skipped, cx);
         let snap = self.transform.translate;
         let step = snap.enabled.then_some(snap.increment);
         let workspace = explorer::find_by_name(&self.dom, "Workspace");
         let block = class == "Part" && shape.is_none_or(|shape| shape == PART_TYPE_BLOCK);
-        self.insert_instance_placed(class, shape, workspace, cx, |dom, part| {
+        let inserted = std::cell::Cell::new(None);
+        self.insert_instance_placed(class, shape, workspace, false, cx, |dom, part| {
+            inserted.set(Some(part));
             if block {
                 let _ = dom.set_property(
                     part,
@@ -304,6 +314,7 @@ impl Shell {
                 super::toolbox::clear_overlaps(dom, workspace, part);
             }
         });
+        self.last_part_insert = inserted.get();
     }
 
     /// "Insert ModuleScript (Class)" (see `menu_bar`): the one script insert
@@ -338,7 +349,7 @@ impl Shell {
         under: Option<Ref>,
         cx: &mut Context<Self>,
     ) {
-        self.insert_instance_placed(class, shape, under, cx, |dom, reference| {
+        self.insert_instance_placed(class, shape, under, true, cx, |dom, reference| {
             if let Some(text) = source {
                 crate::script_editor::source::write(dom, reference, text);
             }
@@ -353,6 +364,7 @@ impl Shell {
         class: &str,
         shape: Option<u32>,
         under: Option<Ref>,
+        increment: bool,
         cx: &mut Context<Self>,
         finish: impl FnOnce(&mut WeakDom, Ref),
     ) {
@@ -362,7 +374,7 @@ impl Shell {
         // A new instance is named after its class; the increment preference
         // is what turns a second `Part` into `Part1` (see
         // `explorer::insert::incremented_name`).
-        let name = if self.increment_names() {
+        let name = if increment && self.increment_names() {
             explorer::insert::incremented_name(&self.dom, parent, class)
         } else {
             class.to_owned()

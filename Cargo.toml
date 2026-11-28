@@ -8,7 +8,7 @@ members = ["crates/*"]
 [workspace.package]
 # The app's release version: the editor and rbx_net (whose User-Agent every
 # HTTP request sends) both take it from here.
-version = "0.2.3"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.96"
 license = "MIT"

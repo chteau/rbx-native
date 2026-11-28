@@ -185,7 +185,10 @@ impl Shell {
         // update (a menu action or a click); removing the window from inside
         // its own handler is refused the same way.
         cx.defer(move |cx| {
-            crate::open_home_again(cx);
+            let maximized = handle
+                .update(cx, |_, window, _| window.is_maximized())
+                .unwrap_or(false);
+            crate::open_home_again(maximized, cx);
             let _ = handle.update(cx, |_, window, _| window.remove_window());
         });
     }

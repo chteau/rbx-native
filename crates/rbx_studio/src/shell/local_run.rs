@@ -1141,9 +1141,8 @@ impl Shell {
     }
 
     /// Test › Players: 1 to [`MAX_PLAYERS`], for the next Play (local).
-    pub(crate) fn local_run_next_players(&mut self, cx: &mut Context<Self>) {
-        let local = &mut self.play.live.local;
-        local.players = local.players % MAX_PLAYERS + 1;
+    pub(crate) fn set_local_run_players(&mut self, players: usize, cx: &mut Context<Self>) {
+        self.play.live.local.players = players.clamp(1, MAX_PLAYERS);
         cx.notify();
     }
 

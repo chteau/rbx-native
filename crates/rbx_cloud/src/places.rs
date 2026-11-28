@@ -3,12 +3,30 @@
 //! can show on an unrestricted key (Open Cloud has no "list my universes";
 //! the Creator Dashboard's own `universes/v1/search` is cookie-only).
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 use crate::error::{self, CloudError};
 use crate::experiences::Experience;
 use crate::universes::Owner;
+
+/// Place id to universe id, as [`Client::universe_of_place`] found them.
+fn known_universes() -> std::sync::MutexGuard<'static, HashMap<u64, Option<u64>>> {
+    static KNOWN: std::sync::OnceLock<std::sync::Mutex<HashMap<u64, Option<u64>>>> =
+        std::sync::OnceLock::new();
+    KNOWN
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+/// Records that `place_id` is in `universe_id`, from a listing the caller
+/// already has (a cached My Games), so no lookup asks again.
+pub fn remember_universe_of_place(place_id: u64, universe_id: u64) {
+    known_universes().insert(place_id, Some(universe_id));
+}
 
 #[derive(Deserialize)]
 struct UniverseOfPlaceRaw {
@@ -114,7 +132,22 @@ impl Client {
     /// `GET /universes/v1/places/{id}/universe`: anonymous, and answers for
     /// private places too (checked live, 2026-09-25). `None` for a place id
     /// that does not exist.
+    ///
+    /// A place never changes universe, so each answer is kept for the
+    /// process (and seeded by [`remember_universe_of_place`]): a My Games
+    /// refresh then asks only about places it hasn't seen, instead of
+    /// firing one lookup per created place every time and running into
+    /// HTTP 429.
     pub fn universe_of_place(&self, place_id: u64) -> Result<Option<u64>, CloudError> {
+        if let Some(&known) = known_universes().get(&place_id) {
+            return Ok(known);
+        }
+        let universe_id = self.fetch_universe_of_place(place_id)?;
+        known_universes().insert(place_id, universe_id);
+        Ok(universe_id)
+    }
+
+    fn fetch_universe_of_place(&self, place_id: u64) -> Result<Option<u64>, CloudError> {
         let url = self.apis_url(&format!("/universes/v1/places/{place_id}/universe"));
         let response = self.get_raw(&url, false, true)?;
         if !(200..300).contains(&response.status) {

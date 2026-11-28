@@ -489,6 +489,9 @@ pub(super) fn clear_overlaps(dom: &mut WeakDom, within: Ref, part: Ref) {
     let others: Vec<(Vec3, Vec3)> = subtree(dom, within)
         .into_iter()
         .filter(|&other| other != part)
+        // Terrain's `Size` is a box around the whole map, not something a
+        // part can sit on: lifting out of it put every insert 126 studs up.
+        .filter(|&other| dom.get(other).is_some_and(|i| i.class() != "Terrain"))
         .filter_map(|other| pick::model_of(dom, other).map(bounds))
         .collect();
     // Each lift clears one more part at most, so this many always settle.

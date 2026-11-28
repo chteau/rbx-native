@@ -65,6 +65,9 @@ pub(crate) struct SettingsWindow {
     search: Entity<InputState>,
     /// Layout's name field for a new named layout.
     layout_name: Entity<InputState>,
+    /// The saved layout being renamed in place, and its name field.
+    renaming_layout: Option<String>,
+    layout_rename: Entity<InputState>,
     sliders: viewport::Sliders,
     /// Viewport › Advanced's calibration fields.
     calibration: viewport::CalibrationFields,
@@ -215,6 +218,16 @@ impl SettingsWindow {
                 }
             },
         ));
+        let layout_rename = cx.new(|cx| InputState::new(window, cx));
+        subscriptions.push(cx.subscribe_in(
+            &layout_rename,
+            window,
+            |this, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                    this.commit_layout_rename(cx);
+                }
+            },
+        ));
         // Anything that changes a setting elsewhere, the dock, a menu,
         // notifies the shell; this window has nothing of its own to redraw
         // from. A menu item naming a page (Help › About RbxNative) while
@@ -254,6 +267,8 @@ impl SettingsWindow {
             page,
             search,
             layout_name,
+            renaming_layout: None,
+            layout_rename,
             sliders,
             calibration,
             search_counts: Vec::new(),

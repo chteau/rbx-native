@@ -17,9 +17,14 @@ use std::rc::Rc;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::*;
 
+/// Long labels wrap at [`MAX_WIDTH`]: one line wider than the space beside
+/// the pointer was pushed off the window's left edge.
 pub(crate) fn text(label: impl Into<SharedString>, window: &mut Window, cx: &mut App) -> AnyView {
-    Tooltip::new(label.into()).build(window, cx)
+    let label = label.into();
+    Tooltip::element(move |_, _| div().max_w(MAX_WIDTH).child(label.clone())).build(window, cx)
 }
+
+const MAX_WIDTH: Pixels = px(360.);
 
 /// Re-checks hover after a wheel scroll, for whatever window this is a
 /// child of.

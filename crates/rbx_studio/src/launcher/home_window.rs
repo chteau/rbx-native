@@ -281,7 +281,8 @@ impl HomeWindow {
     }
 
     /// Draws again whenever the network comes or goes: what needs Roblox is
-    /// greyed out offline (`crate::offline`).
+    /// greyed out offline (`crate::offline`), and checks the key again when
+    /// it comes back.
     /// Home opens before any editor, so it starts the network watch and
     /// applies Settings › Account's switch itself.
     fn follow_network(&mut self, cx: &mut Context<Self>) {
@@ -296,9 +297,14 @@ impl HomeWindow {
                     .timer(std::time::Duration::from_secs(2))
                     .await;
                 let now = rbx_net::status();
-                let changed = std::mem::replace(&mut net, now) != now;
-                let alive = this.update(cx, |_, cx| {
-                    if changed {
+                let was = std::mem::replace(&mut net, now);
+                let alive = this.update(cx, |this, cx| {
+                    // Back online: a key check that couldn't reach Roblox
+                    // runs again, rather than saying so until Home reopens.
+                    if was.offline() && !now.offline() && matches!(this.key, KeyState::Unchecked) {
+                        this.reload(cx);
+                    }
+                    if was != now {
                         cx.notify();
                     }
                 });

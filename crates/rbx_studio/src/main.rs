@@ -365,7 +365,22 @@ fn main() {
     let app = gpui_kit::application()
         .with_assets(gpui_kit::assets::AllAssets)
         .with_quit_mode(gpui_kit::QuitMode::LastWindowClosed);
+    // macOS hands a place opened from Finder or `open -a` to the app as an
+    // open-document event, not as an argument: the launch's own arrives
+    // before `run` starts, later ones while it runs.
+    let (opened_tx, mut opened) = futures::channel::mpsc::unbounded::<PathBuf>();
+    app.on_open_urls(move |urls| {
+        for url in urls {
+            if let Some(path) = url::Url::parse(&url)
+                .ok()
+                .and_then(|url| url.to_file_path().ok())
+            {
+                let _ = opened_tx.unbounded_send(path);
+            }
+        }
+    });
     app.run(move |cx| {
+        let path = path.or_else(|| opened.try_recv().ok());
         gpui_kit::init(cx);
         install_fonts(cx);
         theme::startup(&theme, &overrides, cx);
@@ -432,6 +447,9 @@ fn main() {
                 }
                 home::Route::Home => launcher::open_home(Rc::new(RefCell::new(Some(boot))), cx),
             });
+            while let Some(path) = futures::StreamExt::next(&mut opened).await {
+                cx.update(|cx| launcher::open_document(path, cx));
+            }
         })
         .detach();
     });
@@ -451,7 +469,8 @@ fn themed(settings: Settings, mode: ThemeMode) -> Settings {
 /// File › Close Place's way back: Home again, with a boot read from disk as
 /// `main` reads it (the session saved its settings as they changed). The
 /// launch aids (`--select`, `--run`) were for the first place only.
-pub(crate) fn open_home_again(cx: &mut App) {
+/// `maximized` when the editor it replaces was, so Home comes back the same.
+pub(crate) fn open_home_again(maximized: bool, cx: &mut App) {
     let user = packs::UserContent::load();
     let settings = themed(Settings::load(), user.theme.palette.mode);
     let boot = EditorBoot {
@@ -459,7 +478,7 @@ pub(crate) fn open_home_again(cx: &mut App) {
         launch: Launch::default(),
         user,
     };
-    launcher::open_home(Rc::new(RefCell::new(Some(boot))), cx);
+    launcher::open_home_maximized(Rc::new(RefCell::new(Some(boot))), maximized, cx);
 }
 
 /// File › New / Open…: a new editor window on `path`, with the boot read
