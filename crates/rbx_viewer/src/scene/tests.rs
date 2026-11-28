@@ -377,15 +377,15 @@ fn absorbing_the_same_union_twice_merges_it_once() {
     assert_eq!(scene.parts().len(), parts_before);
 }
 
-/// Only a place that actually holds glass pays for the copy a refracting
-/// surface reads (see `renderer::post::Targets::want_refraction`), so the
-/// question has to be answered from the scene rather than assumed.
+/// Only a place that actually holds glass or see-through Neon pays for the
+/// copy those surfaces read (see `renderer::post::Targets::want_refraction`),
+/// so the question has to be answered from the scene rather than assumed.
 #[test]
-fn a_place_knows_whether_anything_in_it_is_glass() {
+fn a_place_knows_whether_anything_in_it_reads_behind() {
     let database = ReflectionDatabase::embedded();
     assert!(!Scene::from_dom(&test_place(), &database)
         .unwrap()
-        .has_glass());
+        .reads_behind());
 
     let mut dom = test_place();
     let part = dom
@@ -403,7 +403,18 @@ fn a_place_knows_whether_anything_in_it_is_glass() {
         .properties_mut()
         .insert("Material".to_string(), Variant::Enum(1568));
 
-    assert!(Scene::from_dom(&dom, &database).unwrap().has_glass());
+    assert!(Scene::from_dom(&dom, &database).unwrap().reads_behind());
+
+    // See-through Neon blends over the copy too; opaque Neon doesn't.
+    let mut set = |key: &str, value| {
+        dom.get_mut(part)
+            .unwrap()
+            .properties_mut()
+            .insert(key.to_string(), value);
+        Scene::from_dom(&dom, &database).unwrap().reads_behind()
+    };
+    assert!(!set("Material", Variant::Enum(288)));
+    assert!(set("Transparency", Variant::Float32(0.4)));
 }
 
 // A plugin's 0/0 once put a whole model at NaN, and the scene's bounds, the

@@ -229,9 +229,10 @@ pub(crate) struct Renderer {
     /// What every surface pipeline above was built for: the HDR format, and the
     /// profile's `msaa_samples` as far as the adapter allows (see `post`).
     target: Target,
-    /// Whether anything in the scene is `Glass`, and so whether the frame
-    /// pays for the copy a refracting surface reads, see
-    /// `post::Targets::capture_refraction`.
+    /// Whether anything in the scene reads the scene behind it (see
+    /// `scene::reads_behind`), and so whether the frame pays for the copy it
+    /// reads, see `post::Targets::capture_refraction`. An edit can only turn
+    /// it on; the next rebuild works out whether it is still needed.
     refracting: bool,
     /// Whether the frame is drawn as an isolated view (see
     /// [`Renderer::set_isolated`]): no environment, neutral light, a flat
@@ -459,7 +460,7 @@ impl Renderer {
             quality: *quality,
             calibration: Default::default(),
             target,
-            refracting: scene.has_glass(),
+            refracting: scene.reads_behind(),
             isolated: false,
             place_ortho: false,
             fullbright: false,

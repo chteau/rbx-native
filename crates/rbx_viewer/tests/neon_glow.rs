@@ -215,3 +215,29 @@ fn opaque_neon_squares_its_colour_and_glows_past_a_line() {
         halo(column(2))
     );
 }
+
+/// See-through Neon blends in the square root of radiance, as in Studio 0.748
+/// (Future, quality 21, Transparency 0.4 over a black wall): grey 60 stays dark
+/// at 14 rather than turning light grey, grey 128 reads 148 and (0, 85, 255)
+/// reads (0, 47, 238) rather than cyan. The wall here is near-black and lit,
+/// not black, hence the slack.
+#[test]
+fn a_see_through_neon_part_keeps_its_colour() {
+    let Some(pixels) = render(&place_of(&[
+        ([60, 60, 60], 0.4),
+        ([128, 128, 128], 0.4),
+        ([0, 85, 255], 0.4),
+    ])) else {
+        return;
+    };
+    let column = |i: u32| SIZE.0 / 2 - 49 + 49 * i;
+    let cy = SIZE.1 / 2;
+    let near = |got: [u8; 3], want: [u8; 3]| got.iter().zip(want).all(|(g, w)| g.abs_diff(w) <= 12);
+
+    let dark = pixel(&pixels, column(0), cy);
+    assert!(near(dark, [14, 14, 14]), "grey 60 middle {dark:?}");
+    let grey = pixel(&pixels, column(1), cy);
+    assert!(near(grey, [148, 148, 148]), "grey 128 middle {grey:?}");
+    let blue = pixel(&pixels, column(2), cy);
+    assert!(near(blue, [0, 47, 238]), "blue middle {blue:?}");
+}

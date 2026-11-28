@@ -149,7 +149,7 @@ impl Renderer {
         // filtered `placements` drops, the same map `Renderer::new` seeds it
         // with. Without this a full rebuild (an asset streaming in, a beam or
         // particle resolving) stripped every mesh part's outline and gizmo.
-        self.refracting = scene.has_glass();
+        self.refracting = scene.reads_behind();
         self.selection.rebuild(device, scene.all_placements());
         // The same instances, but new `Part` records and new mesh uploads,
         // so the cue masks are rebuilt around them rather than kept.
