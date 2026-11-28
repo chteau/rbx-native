@@ -73,19 +73,14 @@ fn fetch_saved_key(
     Ok((newest, rbx_presence::secret::read(&dom)))
 }
 
-/// Whether filling in the presence key is an edit to save. Copying in the
-/// key the place already has on Roblox (`saved`, none here yet) only
-/// catches this copy up: no undo step, and quitting asks nothing. A fresh
-/// key or a new relay is the user's to save or publish.
-fn is_edit(had: bool, saved: bool) -> bool {
-    had || !saved
-}
-
 impl Shell {
     /// Makes sure the place holds the key and the relay, writing what is
-    /// missing in one undoable edit: the key from the saved place when one
-    /// was found (`saved`), else a fresh one, and the owner setup's relay.
-    /// Returns the key, or `None` when the place has no `ServerStorage`.
+    /// missing: the key from the saved place when one was found (`saved`),
+    /// else a fresh one, and the owner setup's relay. This runs on its own
+    /// when presence connects, which is when a place opens, so it is no
+    /// edit: no undo step, and a place nobody touched closes without asking
+    /// to save. The key goes along with the next save. Returns the key, or
+    /// `None` when the place has no `ServerStorage`.
     pub(super) fn presence_setup(
         &mut self,
         saved: Option<String>,
@@ -96,13 +91,8 @@ impl Shell {
         if let (Some(secret), Some(_)) = (&had, &relay) {
             return Some(secret.clone());
         }
-        let edit = is_edit(had.is_some(), saved.is_some());
         let unsaved = self.recovery.unsaved();
-        if edit {
-            self.push_history();
-        } else {
-            self.dom.take_changes();
-        }
+        self.dom.take_changes();
         let minted = had.is_none() && saved.is_none();
         let secret = had
             .clone()
@@ -117,11 +107,7 @@ impl Shell {
         let changes = self.dom.take_changes();
         self.rebuild_explorer(cx);
         self.reflect_changes(&changes, cx);
-        if edit {
-            self.record_history_change(changes);
-        } else {
-            self.recovery.set_unsaved(unsaved);
-        }
+        self.recovery.set_unsaved(unsaved);
         if !written {
             self.output.push(
                 "Presence",
@@ -306,15 +292,8 @@ impl Shell {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_edit, owner_relay};
+    use super::owner_relay;
     use rbx_presence::relay::{RelayConfig, RelayKind};
-
-    #[test]
-    fn taking_the_key_saved_on_roblox_leaves_the_place_saved() {
-        assert!(!is_edit(false, true));
-        assert!(is_edit(false, false));
-        assert!(is_edit(true, false));
-    }
 
     #[test]
     fn a_blank_url_is_auto_and_only_auto_goes_without_one() {

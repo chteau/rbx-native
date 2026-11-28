@@ -286,6 +286,7 @@ fn main() {
         if let Ok(cache) = rbx_assets::AssetCache::new(None) {
             cache.trim_to_default();
         }
+        home::untitled::sweep();
     });
     // Loaded once, up front: the CLI's `--quality` still wins when given (see
     // `parse`), and the Explorer's initial visibility set comes straight from
@@ -317,6 +318,9 @@ fn main() {
         quality,
         ..settings
     };
+    // From here on stderr is the app's, not the command line's: copied into
+    // the session log, which Help › Open Logs Folder finds.
+    crash_log::start_session();
     // Before any place is built: the first build starts at this level
     // instead of the top, which a small GPU may not even fit.
     rbx_viewer::prefer_level(quality);
@@ -377,6 +381,8 @@ fn main() {
         cx.on_app_quit(|_| {
             crash_log::quit_cleanly();
             rbx_presence::client::leave_all(PRESENCE_LEAVE_LIMIT);
+            home::untitled::discard_all();
+            crash_log::finish_session();
             async {}
         })
         .detach();
@@ -416,6 +422,7 @@ fn main() {
                     if let Err(failed) = open_editor(&path, boot, cx) {
                         let (message, _) = *failed;
                         eprintln!("rbxstudio: {message}");
+                        crash_log::finish_session();
                         std::process::exit(1);
                     }
                     launcher::startup::check_in_background(has_key, cx);
@@ -535,7 +542,10 @@ pub(crate) fn open_editor(
             )))
         }
     };
-    if let Err(err) = home::remember(home::RecentPlace {
+    // An untitled place joins the Recent list once it's saved somewhere.
+    if home::untitled::is_untitled(path) {
+        home::untitled::opened(path);
+    } else if let Err(err) = home::remember(home::RecentPlace {
         path: dunce::canonicalize(path).unwrap_or(path.to_path_buf()),
         universe_id: None,
         place_id: None,
@@ -668,16 +678,25 @@ enum SettingsHost {
 
 impl Global for SettingsHost {}
 
+/// The page Home asked its Settings to open on while the host loaded.
+struct HomeSettingsPage(&'static str);
+
+impl Global for HomeSettingsPage {}
+
 /// Studio Settings with no place open. The Settings window is built around
 /// an editor (it applies every change to one live), so Home gets a hidden
 /// one over an empty place that starts no plugins, presence or MCP, never
 /// takes the menus, and goes when Settings closes. The window opens first
 /// and its pages fill in once that place has loaded off the UI thread.
-pub(crate) fn open_settings_from_home(cx: &mut App) {
+/// `page` names the page to show (as `Page::from_key` reads it).
+pub(crate) fn open_settings_from_home(page: Option<&'static str>, cx: &mut App) {
     match cx.try_global::<SettingsHost>() {
         Some(SettingsHost::Ready { shell, .. }) => {
             if let Some(shell) = shell.upgrade() {
-                shell.update(cx, |shell, cx| shell.open_settings(cx));
+                shell.update(cx, |shell, cx| match page {
+                    Some(page) => shell.open_settings_on(page, cx),
+                    None => shell.open_settings(cx),
+                });
                 return;
             }
         }
@@ -686,9 +705,19 @@ pub(crate) fn open_settings_from_home(cx: &mut App) {
             let Some(window) = *window else {
                 return;
             };
+            if let Some(page) = page {
+                cx.set_global(HomeSettingsPage(page));
+            }
             if shell::bring_settings_forward(window.into(), cx) {
                 return;
             }
+        }
+        None => {}
+    }
+    match page {
+        Some(page) => cx.set_global(HomeSettingsPage(page)),
+        None if cx.has_global::<HomeSettingsPage>() => {
+            cx.remove_global::<HomeSettingsPage>();
         }
         None => {}
     }
@@ -762,7 +791,14 @@ fn host_settings(
     options.focus = false;
     let mut host = None;
     let opened = cx.open_window(options, |window, cx| {
-        let shell = cx.new(|cx| Shell::new("Settings", place, settings, launch, user, window, cx));
+        let page = cx
+            .has_global::<HomeSettingsPage>()
+            .then(|| cx.remove_global::<HomeSettingsPage>().0);
+        let shell = cx.new(|cx| {
+            let mut shell = Shell::new("Settings", place, settings, launch, user, window, cx);
+            shell.settings_open_on = page;
+            shell
+        });
         host = Some(shell.downgrade());
         cx.new(|cx| Root::new(crate::window_blur::wrap(shell, cx), window, cx))
     });
@@ -990,6 +1026,7 @@ fn read_script(path: &Path) -> String {
         Ok(source) => source,
         Err(err) => {
             eprintln!("rbxstudio: failed to read {}: {err}", path.display());
+            crash_log::finish_session();
             std::process::exit(1);
         }
     }

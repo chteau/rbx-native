@@ -103,7 +103,7 @@ fn the_title_is_the_class_and_the_quoted_name() {
 
     assert_eq!(
         properties.title(part()).as_deref(),
-        Some("Part \"Baseplate\"")
+        Some("Properties - Part \"Baseplate\"")
     );
     assert_eq!(properties.title(Ref::new(99)), None);
 }

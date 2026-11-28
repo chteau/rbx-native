@@ -146,7 +146,22 @@ impl HomeWindow {
                 })
             })
             .when(add_by_link, |this| {
-                this.child(
+                let left = px(search_left + search_width + HEAD_GAP);
+                // Resolving a link asks Roblox which game it is. Greyed the
+                // way New experience is: a dimmed button (`opacity`) read as
+                // enabled on Windows.
+                this.child(if crate::offline::blocked() {
+                    ui::disabled_button("games-add-link", "Add by link")
+                        .h(px(32.))
+                        .absolute()
+                        .left(left)
+                        .top(px(2.))
+                        .cursor_not_allowed()
+                        .tooltip(|window, cx| {
+                            crate::shell::tooltip::text(crate::offline::TIP, window, cx)
+                        })
+                        .into_any_element()
+                } else {
                     ui::icon_button(
                         "games-add-link",
                         "link",
@@ -156,23 +171,18 @@ impl HomeWindow {
                     )
                     .h(px(32.))
                     .absolute()
-                    .left(px(search_left + search_width + HEAD_GAP))
+                    .left(left)
                     .top(px(2.))
-                    // Resolving a link asks Roblox which game it is.
-                    .map(|button| match crate::offline::blocked() {
-                        true => button.opacity(0.5).cursor_not_allowed().tooltip(
-                            |window, cx| crate::shell::tooltip::text(crate::offline::TIP, window, cx),
-                        ),
-                        false => button.on_click(cx.listener(|this, _, window, cx| {
-                            this.link_open = !this.link_open;
-                            let focus = this.link.read(cx).focus_handle(cx);
-                            if this.link_open {
-                                focus.focus(window, cx);
-                            }
-                            cx.notify();
-                        })),
-                    }),
-                )
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.link_open = !this.link_open;
+                        let focus = this.link.read(cx).focus_handle(cx);
+                        if this.link_open {
+                            focus.focus(window, cx);
+                        }
+                        cx.notify();
+                    }))
+                    .into_any_element()
+                })
             })
     }
 }

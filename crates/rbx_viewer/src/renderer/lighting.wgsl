@@ -11,6 +11,10 @@ struct Uniforms {
     // declare the same pair under their own `Frame` struct. z: where the
     // `ForceField` pattern window is in its cycle, 0 to 1 (`pipeline::shimmer_phase`).
     viewport: vec4<f32>,
+    // x: the alpha an opaque Neon surface writes: 0 where the bloom threshold
+    // reads it (see `post.wgsl`'s `NEON_GLOW`), 1 in a pass with no bloom
+    // after it, a `ViewportFrame` bake, whose alpha is coverage.
+    glow: vec4<f32>,
 }
 
 struct LightingUniform {

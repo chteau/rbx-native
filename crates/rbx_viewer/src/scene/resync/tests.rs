@@ -915,3 +915,39 @@ fn the_extent_follows_a_part_out_and_back_in() {
     assert!(scene.refresh_bounds(), "the part holding the edge is gone");
     assert_eq!(*scene.bounds(), recounted(&scene));
 }
+
+// The 0.3.0 macOS run's ghost: an IntersectOperation destroyed from the
+// Command Bar left the view, then came back the next time the file mesh
+// pass rebuilt the resolved set (a mesh landing, a new MeshPart), drawn
+// where it no longer was, until a full rebuild.
+#[test]
+fn a_carved_union_deleted_stays_gone_when_meshes_resolve_again() {
+    let (mut dom, _, _) = union_place();
+    let database = ReflectionDatabase::embedded();
+    let mut scene = Scene::from_dom(&dom, &database).unwrap();
+    let mut evaluations = UnionEvaluations::default();
+    let mut assets = HashMap::new();
+    assets.insert(
+        AssetRef::Id(UNION_ASSET),
+        union_tests_support::asset_bytes(&[union_tests_support::Leaf::additive(Vec3::ZERO, 4.0)]),
+    );
+    scene.resolve_unions(assets, &mut evaluations);
+    let drawn = |scene: &Scene| {
+        scene
+            .resolved_file_meshes()
+            .instances
+            .iter()
+            .any(|instance| instance.referent == Ref::new(UNION))
+    };
+    assert!(drawn(&scene), "the fixture asset must carve to a mesh");
+
+    dom.remove(Ref::new(UNION));
+    let _ = resync_with(&mut scene, &dom, UNION, &evaluations);
+    assert!(!drawn(&scene));
+
+    let mut meshes = HashMap::new();
+    meshes.insert(AssetRef::Id(1), Arc::new(fake_mesh()));
+    scene.resolve_file_meshes(meshes, HashMap::new());
+    scene.resolve_unions(HashMap::new(), &mut evaluations);
+    assert!(!drawn(&scene));
+}

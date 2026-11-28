@@ -165,6 +165,9 @@ enum Command {
     /// Lets go of the viewer (`true`) or rebuilds it from the mirror
     /// (`false`); see [`Pump::park`].
     Park(bool),
+    /// Rebuilds the scene from the mirror, which asks again for every asset
+    /// that failed for this machine's reasons (offline, a dropped request).
+    Refetch,
     Stop,
 }
 
@@ -446,6 +449,13 @@ impl Pump {
     /// is applied, in order, once it is back.
     pub(super) fn park(&self, parked: bool) {
         let _ = self.commands.send(Command::Park(parked));
+    }
+
+    /// Fetches again what failed while the network was gone: the scene is
+    /// rebuilt from the mirror, and a rebuild asks for every asset that
+    /// failed for this machine's reasons (see `Headless::reload`).
+    pub(super) fn refetch(&self) {
+        let _ = self.commands.send(Command::Refetch);
     }
 
     /// The next message waiting, without ever blocking the UI thread.
@@ -1060,6 +1070,10 @@ fn apply(command: Command, rendering: &mut Rendering<'_>) -> bool {
         Command::Canvas(request) => rendering.canvas.set(request),
         // The last word wins: shown again in the same batch is not parked.
         Command::Park(parked) => *rendering.park = parked,
+        Command::Refetch => match rendering.viewer.reload(rendering.mirror) {
+            Ok(()) => *rendering.rebuilt = true,
+            Err(err) => eprintln!("rbxstudio: refetch failed: {err}"),
+        },
         Command::Stop => return false,
     }
 

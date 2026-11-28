@@ -143,7 +143,7 @@ fn download(url: &str, progress: &Progress) -> Result<Vec<u8>, String> {
         .into();
     let mut response = agent
         .get(url)
-        .header("User-Agent", "rbx-native")
+        .header("User-Agent", rbx_net::USER_AGENT)
         .call()
         .map_err(|err| format!("could not download {url}: {err}"))?;
     let announced = response

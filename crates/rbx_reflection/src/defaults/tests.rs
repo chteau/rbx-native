@@ -131,6 +131,16 @@ fn stored_names_put_the_saved_spelling_first() {
 }
 
 #[test]
+fn mesh_size_reads_the_saved_initial_size() {
+    let db = database();
+
+    // Studio saves a MeshPart's MeshSize as InitialSize; reading the
+    // scriptable name off a loaded place used to give 0, 0, 0.
+    assert_eq!(db.stored_names("MeshPart", "MeshSize")[0], "InitialSize");
+    assert_eq!(db.canonical_name("MeshPart", "MeshSize"), "InitialSize");
+}
+
+#[test]
 fn a_database_without_defaults_still_answers_by_name() {
     let db = ReflectionDatabase::from_json_str(API_DUMP_JSON).unwrap();
 

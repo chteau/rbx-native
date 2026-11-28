@@ -272,7 +272,7 @@ fn a_face_that_is_not_a_font_is_never_adopted() {
 
     assert!(!fonts.adopt(&library, std::slice::from_ref(&face)));
     assert!(!fonts.knows(&face));
-    assert!(fonts.loaded.contains(&asset), "not worth a second try");
+    assert!(fonts.loaded.contains_key(&asset), "not worth a second try");
     assert!(!fonts.adopt(&library, std::slice::from_ref(&face)));
 }
 
@@ -305,3 +305,44 @@ fn a_repeated_measurement_or_shape_is_served_from_the_cache() {
 }
 
 mod studio;
+
+// Two families naming the same face file, as Roblox's `LegacyArial.json` and
+// `Arimo.json` both name `Arimo-Regular.ttf`: the file loads once, and the
+// family that comes second still draws in it rather than in the fallback.
+#[test]
+fn two_families_sharing_a_face_file_both_draw_in_it() {
+    let bytes = std::fs::read(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../assets/fonts/Manrope-Regular.ttf"
+    ))
+    .unwrap();
+    let asset = AssetRef::Native("fonts/Manrope-Regular.ttf".to_string());
+    let first = Face::named("Manrope", 400, false);
+    let second = Face::named("LegacyManrope", 400, false);
+    let mut library = Library::default();
+    for face in [&first, &second] {
+        library.families.insert(
+            face.family.clone(),
+            Family {
+                name: "whatever the JSON says".to_string(),
+                faces: vec![Entry {
+                    weight: 400,
+                    italic: false,
+                    asset: asset.clone(),
+                }],
+            },
+        );
+    }
+    library.faces.insert(asset, Arc::new(bytes));
+    let mut fonts = Typesetter::new();
+
+    assert!(fonts.adopt(&library, std::slice::from_ref(&first)));
+    assert!(!fonts.knows(&second));
+    assert!(fonts.adopt(&library, &[first.clone(), second.clone()]));
+    assert!(fonts.knows(&second));
+    assert!(!fonts.adopt(&library, &[first.clone(), second.clone()]));
+    assert_eq!(
+        fonts.measure(&plain(second, 20.0), 20.0, None),
+        fonts.measure(&plain(first, 20.0), 20.0, None)
+    );
+}
