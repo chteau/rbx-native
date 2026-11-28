@@ -83,6 +83,7 @@ fn rects(dom: &WeakDom) -> Vec<Rect> {
 mod clips;
 mod constraints;
 mod containers;
+mod enum_fonts;
 mod flex;
 mod grid;
 mod group;

@@ -25,7 +25,7 @@ pub(super) use atlas::{Glyph, GlyphAtlas};
 pub(super) use edit::{scroll_to, SELECTED_TEXT, SELECTION};
 pub use edit::{GuiTextEdit, GuiTextLine, GuiTextMap};
 
-use crate::fonts::{Face, Family, Library};
+use crate::fonts::{Entry, Face, Family, Library};
 use crate::scene::{gui_span_face, GuiAlign, GuiText, GuiTextMeasure, GuiTextSpan};
 
 /// `Enum.FontWeight.SemiBold`: from here up a face is bold, Roblox's docs on
@@ -60,8 +60,9 @@ pub(super) struct Typesetter {
     families: HashMap<AssetRef, Family>,
     /// Face file → its line box in ems (see [`em`]).
     ems: HashMap<AssetRef, f32>,
-    /// Every face file already handed to the font system.
-    loaded: HashSet<AssetRef>,
+    /// Every face file already handed to the font system, with the family
+    /// name fontdb filed it under (`None` when it held no face).
+    loaded: HashMap<AssetRef, Option<String>>,
     /// Bounds already measured, by what decides them (see [`measure_key`]).
     /// A `TextScaled` label measures its whole string once per step of the
     /// size search on every layout, and a layout follows every edit, so a
@@ -122,7 +123,7 @@ impl Typesetter {
             atlas: GlyphAtlas::new(),
             families: HashMap::new(),
             ems: HashMap::new(),
-            loaded: HashSet::new(),
+            loaded: HashMap::new(),
             measured: HashMap::new(),
             shaped: HashMap::new(),
             kerns: HashMap::new(),
@@ -143,9 +144,17 @@ impl Typesetter {
             let Some(bytes) = library.faces.get(&entry.asset) else {
                 continue;
             };
-            if !self.loaded.insert(entry.asset.clone()) {
+            if let Some(name) = self.loaded.get(&entry.asset) {
+                // A file two families name is loaded once, and the second
+                // family still has to learn the name it goes by: Roblox's
+                // `LegacyArial.json` and `Arimo.json` both name
+                // `Arimo-Regular.ttf`.
+                if let Some(name) = name.clone() {
+                    added |= self.file_under(face, entry, name);
+                }
                 continue;
             }
+            self.loaded.insert(entry.asset.clone(), None);
             let db = self.system.db_mut();
             let known: HashSet<_> = db.faces().map(|info| info.id).collect();
             db.load_font_data(bytes.to_vec());
@@ -166,26 +175,20 @@ impl Typesetter {
                 // Roblox picks. The family name does come from the tables
                 // ("Gotham SSm" for `GothamSSm.json`), being what fontdb
                 // matches on.
+                let db = self.system.db_mut();
                 db.remove_face(info.id);
                 info.weight = Weight(entry.weight);
                 info.style = match entry.italic {
                     true => Style::Italic,
                     false => Style::Normal,
                 };
-                if let Some((name, _)) = info.families.first() {
-                    let family =
-                        self.families
-                            .entry(face.family.clone())
-                            .or_insert_with(|| Family {
-                                name: name.clone(),
-                                faces: Vec::new(),
-                            });
-                    if !family.faces.contains(entry) {
-                        family.faces.push(entry.clone());
-                    }
+                let name = info.families.first().map(|(name, _)| name.clone());
+                db.push_face_info(info);
+                if let Some(name) = name {
+                    self.loaded.insert(entry.asset.clone(), Some(name.clone()));
+                    self.file_under(face, entry, name);
                     added = true;
                 }
-                db.push_face_info(info);
             }
         }
         if added {
@@ -193,6 +196,23 @@ impl Typesetter {
             self.shaped.clear();
         }
         added
+    }
+
+    /// Files `entry` under `face`'s family, known to fontdb as `name`.
+    /// `true` when the family did not have it yet.
+    fn file_under(&mut self, face: &Face, entry: &Entry, name: String) -> bool {
+        let family = self
+            .families
+            .entry(face.family.clone())
+            .or_insert_with(|| Family {
+                name,
+                faces: Vec::new(),
+            });
+        let fresh = !family.faces.contains(entry);
+        if fresh {
+            family.faces.push(entry.clone());
+        }
+        fresh
     }
 
     /// Whether `face`'s family has landed, for a test to check on.
